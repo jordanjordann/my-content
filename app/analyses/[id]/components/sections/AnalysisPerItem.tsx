@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import type { PerItemSectionProps } from "@/app/analyses/[id]/types";
 
+/** Per-item breakdown with strengths, weaknesses, and key moments. */
 export function AnalysisPerItem({ items, results }: PerItemSectionProps) {
   return (
     <div className="flex flex-col gap-4">

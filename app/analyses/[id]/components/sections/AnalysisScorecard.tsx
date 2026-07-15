@@ -12,6 +12,7 @@ const DIMENSIONS: { key: keyof import("@/lib/api/analyses/types").Scorecard; lab
   { key: "brandConsistency", label: "Brand Consistency" },
 ];
 
+/** Radial score display with per-dimension breakdown. */
 export function AnalysisScorecard({ results }: ScorecardSectionProps) {
   const { overallScore, scorecard, summary } = results;
   const scoreColor = getScoreColor(overallScore);

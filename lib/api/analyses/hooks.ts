@@ -4,11 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getAnalyses, getAnalysis, analyzeContent, deleteAnalysis } from "@/lib/api/analyses/api";
 import { ANALYSIS_KEYS } from "@/lib/api/analyses/constants";
-import type { ContentAnalysis } from "@/lib/api/analyses/types";
 
-export { ANALYSIS_KEYS } from "@/lib/api/analyses/constants";
-
-export function useAnalyses() {
+export function useAnalysesQuery() {
   return useQuery({
     queryKey: ANALYSIS_KEYS.lists(),
     queryFn: getAnalyses,
@@ -18,24 +15,18 @@ export function useAnalyses() {
   });
 }
 
-export function useAnalysis(id: string) {
+export function useAnalysisQuery(id: string) {
   return useQuery({
     queryKey: ANALYSIS_KEYS.detail(id),
     queryFn: () => getAnalysis(id),
     staleTime: 30_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
-    select: (data) => {
-      const results = data.results as ContentAnalysis | null;
-      return {
-        ...data,
-        results,
-      };
-    },
+    select: (data) => data,
   });
 }
 
-export function useAnalyzeContent() {
+export function useAnalyzeContentMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -47,7 +38,7 @@ export function useAnalyzeContent() {
   });
 }
 
-export function useDeleteAnalysis() {
+export function useDeleteAnalysisMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({

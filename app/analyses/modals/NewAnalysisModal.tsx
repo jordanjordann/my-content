@@ -16,6 +16,7 @@ import { UrlChipInput } from "@/components/UrlChipInput";
 import type { UrlChip } from "@/components/UrlChipInput";
 import type { NewAnalysisModalProps } from "@/app/analyses/types";
 
+/** Dialog for creating a new analysis with URL input and optional prompt. */
 export function NewAnalysisModal({
   open,
   onOpenChange,
@@ -35,14 +36,14 @@ export function NewAnalysisModal({
 
   const handleSubmit = () => {
     const urls = chips.map((c) => c.url);
-    if (urls.length > 0 && prompt.trim()) {
+    if (urls.length > 0) {
       onSubmit(urls, prompt.trim());
       setChips([]);
       setPrompt("");
     }
   };
 
-  const canSubmit = chips.length > 0 && prompt.trim().length > 0 && !isAnalyzing;
+  const canSubmit = chips.length > 0 && !isAnalyzing;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

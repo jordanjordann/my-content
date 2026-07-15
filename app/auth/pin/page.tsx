@@ -2,21 +2,21 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStatus } from "@/lib/api/auth";
+import { useAuthStatusQuery } from "@/lib/api/auth";
 import { PinScreen } from "@/components/PinScreen";
 import { LoaderCircleIcon } from "lucide-react";
 
 export default function PinPage() {
   const router = useRouter();
-  const authStatus = useAuthStatus();
+  const { data: authData, status } = useAuthStatusQuery();
 
   useEffect(() => {
-    if (authStatus.data?.authenticated) {
+    if (authData?.authenticated) {
       router.push("/analyses");
     }
-  }, [authStatus.data?.authenticated, router]);
+  }, [authData?.authenticated, router]);
 
-  if (authStatus.status === "pending") {
+  if (status === "pending") {
     return (
       <div className="flex min-h-dvh items-center justify-center">
         <LoaderCircleIcon className="size-6 animate-spin text-muted-foreground" />

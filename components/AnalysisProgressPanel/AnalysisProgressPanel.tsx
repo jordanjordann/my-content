@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Progress } from "@/components/ui/progress";
 import type { AnalysisProgressPanelProps } from "./types";
 
+/** Collapsible panel showing real-time analysis progress with step indicators. */
 export function AnalysisProgressPanel({
   progress,
   onDismiss,

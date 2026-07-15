@@ -1,9 +1,10 @@
-import { X } from "lucide-react";
 import { useEffect } from "react";
 
-import type { UrlChipInputProps, UrlChip } from "./types";
+import type { UrlChipInputProps } from "./types";
 import { validateUrl, splitPastedUrls } from "./helpers";
+import { Chip } from "./Chip";
 
+/** Chip-style input for pasting or typing multiple URLs with validation. */
 export function UrlChipInput({
   chips,
   onAdd,
@@ -76,42 +77,4 @@ export function UrlChipInput({
       )}
     </div>
   );
-}
-
-function Chip({ chip, onRemove }: { chip: UrlChip; onRemove: () => void }) {
-  const isError = !!chip.error;
-  const displayUrl = shortenUrl(chip.url);
-
-  return (
-    <div
-      className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-        isError
-          ? "bg-destructive/10 text-destructive"
-          : "bg-secondary text-secondary-foreground"
-      }`}
-    >
-      <span className="max-w-[200px] truncate">{displayUrl}</span>
-      {isError && (
-        <span className="ml-1 max-w-[120px] truncate opacity-70">
-          ({chip.error})
-        </span>
-      )}
-      <button
-        type="button"
-        onClick={onRemove}
-        className="ml-1 rounded-full p-0.5 hover:bg-black/10 dark:hover:bg-white/10"
-      >
-        <X className="h-3 w-3" />
-      </button>
-    </div>
-  );
-}
-
-function shortenUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return parsed.pathname;
-  } catch {
-    return url.length > 40 ? `${url.slice(0, 37)}...` : url;
-  }
 }

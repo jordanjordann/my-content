@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { SidebarProps } from "./types";
 
+/** App sidebar with navigation links and a collapsible layout wrapper. */
 export function Sidebar({ children }: SidebarProps) {
   const pathname = usePathname();
 

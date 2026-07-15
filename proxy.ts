@@ -6,7 +6,7 @@ const AUTH_COOKIE_NAME = "my_content_session";
 const protectedPaths = ["/analyses"];
 const publicPaths = ["/auth/pin"];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const token = request.cookies.get(AUTH_COOKIE_NAME)?.value;
   const isAuthenticated = token !== undefined;

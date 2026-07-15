@@ -7,7 +7,7 @@ import { AUTH_KEYS } from "@/lib/api/auth/constants";
 
 export { AUTH_KEYS } from "@/lib/api/auth/constants";
 
-export function useAuthStatus() {
+export function useAuthStatusQuery() {
   return useQuery({
     queryKey: AUTH_KEYS.status(),
     queryFn: getAuthStatus,
@@ -17,7 +17,7 @@ export function useAuthStatus() {
   });
 }
 
-export function useSubmitPin() {
+export function useSubmitPinMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({

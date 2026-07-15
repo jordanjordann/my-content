@@ -14,3 +14,12 @@ export function splitPastedUrls(text: string): string[] {
     .map((s) => s.trim())
     .filter(Boolean);
 }
+
+export function shortenUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname;
+  } catch {
+    return url.length > 40 ? `${url.slice(0, 37)}...` : url;
+  }
+}

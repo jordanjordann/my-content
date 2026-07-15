@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { AnalysisCardProps } from "@/app/analyses/types";
 
+/** Card displaying an analysis summary with status, score, and actions. */
 export function AnalysisCard({
   analysis,
   onClick,
@@ -21,22 +22,8 @@ export function AnalysisCard({
 }: AnalysisCardProps) {
   const router = useRouter();
 
-  const statusColor =
-    analysis.status === "completed"
-      ? "bg-green-500/10 text-green-600 dark:text-green-400"
-      : analysis.status === "failed"
-        ? "bg-destructive/10 text-destructive"
-        : "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400";
-
-  const scoreColor =
-    analysis.overallScore != null
-      ? analysis.overallScore >= 7
-        ? "text-green-600 dark:text-green-400"
-        : analysis.overallScore >= 5
-          ? "text-yellow-600 dark:text-yellow-400"
-          : "text-destructive"
-      : "text-muted-foreground";
-
+  const statusColor = getStatusColor(analysis.status);
+  const scoreIcon = getScoreIcon(analysis.status, analysis.overallScore);
   const dateStr = formatDate(analysis.createdAt);
 
   return (
@@ -47,22 +34,14 @@ export function AnalysisCard({
         className="flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center"
         onClick={() => onClick(analysis.id)}
       >
-        {analysis.status === "completed" && analysis.overallScore != null ? (
-          <span className={`text-2xl font-bold ${scoreColor}`}>
-            {analysis.overallScore}
-          </span>
-        ) : analysis.status === "failed" ? (
-          <span className="text-2xl text-destructive">✕</span>
-        ) : (
-          <Clock className="h-6 w-6 animate-pulse text-yellow-500" />
-        )}
+        {scoreIcon}
       </div>
 
       <div
         className="min-w-0 flex-1 cursor-pointer"
         onClick={() => onClick(analysis.id)}
       >
-        <p className="truncate text-sm font-medium">{analysis.prompt}</p>
+        <p className="truncate text-sm font-medium">{analysis.prompt || "No prompt"}</p>
         <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
           <span>{dateStr}</span>
           <span>·</span>
@@ -103,6 +82,29 @@ export function AnalysisCard({
       </div>
     </Card>
   );
+}
+
+function getStatusColor(status: string): string {
+  if (status === "completed") return "bg-green-500/10 text-green-600 dark:text-green-400";
+  if (status === "failed") return "bg-destructive/10 text-destructive";
+  return "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400";
+}
+
+function getScoreColor(score: number | null): string {
+  if (score == null) return "text-muted-foreground";
+  if (score >= 7) return "text-green-600 dark:text-green-400";
+  if (score >= 5) return "text-yellow-600 dark:text-yellow-400";
+  return "text-destructive";
+}
+
+function getScoreIcon(status: string, score: number | null) {
+  if (status === "completed" && score != null) {
+    return <span className={`text-2xl font-bold ${getScoreColor(score)}`}>{score}</span>;
+  }
+  if (status === "failed") {
+    return <span className="text-2xl text-destructive">✕</span>;
+  }
+  return <Clock className="h-6 w-6 animate-pulse text-yellow-500" />;
 }
 
 function formatDate(dateStr: string): string {

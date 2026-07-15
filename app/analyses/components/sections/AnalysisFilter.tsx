@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/select";
 import type { AnalysisFilterProps } from "@/app/analyses/types";
 
+/** Dropdown filter for selecting analyses by account. */
 export function AnalysisFilter({
   accounts,
   selectedAccount,

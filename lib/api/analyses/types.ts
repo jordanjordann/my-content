@@ -1,6 +1,6 @@
 export type AnalysisListItem = {
   id: string;
-  prompt: string;
+  prompt: string | null;
   status: "pending" | "completed" | "failed";
   itemCount: number;
   platforms: ("instagram" | "youtube")[];
@@ -57,7 +57,7 @@ export type ContentAnalysis = {
 
 export type AnalysisDetail = {
   id: string;
-  prompt: string;
+  prompt: string | null;
   status: string;
   items: ContentItemRecord[];
   results: ContentAnalysis | null;

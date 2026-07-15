@@ -15,7 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { useAuthStatus, useSubmitPin } from "@/lib/api/auth";
+import { useAuthStatusQuery, useSubmitPinMutation } from "@/lib/api/auth";
 
 const capabilities = [
   "PIN-gated workspace",
@@ -23,13 +23,14 @@ const capabilities = [
   "Video-native Gemini analysis",
 ];
 
+/** Full-screen authentication gate with PIN setup and unlock modes. */
 export function PinScreen() {
   const router = useRouter();
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const authStatus = useAuthStatus();
-  const submitPinMutation = useSubmitPin();
+  const { data: authData, isSuccess: authSuccess } = useAuthStatusQuery();
+  const { mutate: submitPin, isPending } = useSubmitPinMutation();
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -41,8 +42,8 @@ export function PinScreen() {
       return;
     }
 
-    submitPinMutation.mutate(
-      { pin, pinConfigured: authStatus.data?.pinConfigured ?? false },
+    submitPin(
+      { pin, pinConfigured: authData?.pinConfigured ?? false },
       {
         onSuccess: () => router.push("/analyses"),
         onError: (err) => {
@@ -53,13 +54,14 @@ export function PinScreen() {
     );
   }
 
-  const isPending = submitPinMutation.isPending;
-  const mode = authStatus.data?.pinConfigured ? "unlock" : "setup";
+  const mode = authData?.pinConfigured ? "unlock" : "setup";
   const title = mode === "setup" ? "Initialize content analysis vault" : "Unlock content analysis vault";
   const description =
     mode === "setup"
       ? "Create the operator PIN before any content, prompts, or model outputs are stored."
       : "Authenticate to resume the content intelligence workspace.";
+  const modeLabel = mode === "setup" ? "Create vault PIN" : "Unlock workspace";
+  const buttonLabel = isPending ? "Verifying secure session" : modeLabel;
 
   return (
     <div className="relative min-h-dvh overflow-hidden p-4 sm:p-6 lg:p-8 flex items-center justify-center">
@@ -70,7 +72,7 @@ export function PinScreen() {
               <LockKeyholeIcon className="size-5" aria-hidden="true" />
             </div>
             <div className="rounded-full border bg-secondary px-3 py-1 font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
-              {authStatus.isSuccess ? "Secure route ready" : "Syncing status"}
+              {authSuccess ? "Secure route ready" : "Syncing status"}
             </div>
           </div>
           <div className="flex flex-col gap-2">
@@ -92,7 +94,7 @@ export function PinScreen() {
                 type="password"
                 value={pin}
                 aria-invalid={Boolean(error)}
-                disabled={!authStatus.data || isPending}
+                disabled={!authData || isPending}
                 onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 4))}
               />
               <p className="text-sm text-muted-foreground">
@@ -119,9 +121,9 @@ export function PinScreen() {
             </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-4">
-            <Button className="h-12 w-full" disabled={!authStatus.data || isPending || pin.length !== 4} type="submit">
+            <Button className="h-12 w-full" disabled={!authData || isPending || pin.length !== 4} type="submit">
               {isPending ? <LoaderCircleIcon data-icon="inline-start" className="animate-spin" aria-hidden="true" /> : null}
-              {isPending ? "Verifying secure session" : mode === "setup" ? "Create vault PIN" : "Unlock workspace"}
+              {buttonLabel}
             </Button>
             <div className="flex w-full items-center justify-between gap-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-2">

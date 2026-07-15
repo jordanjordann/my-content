@@ -5,6 +5,7 @@ import { BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AnalysisEmptyProps } from "@/app/analyses/types";
 
+/** Empty state shown when no analyses exist, with a CTA to create one. */
 export function AnalysisEmpty({ onNewAnalysis }: AnalysisEmptyProps) {
   return (
     <div className="flex flex-col items-center justify-center py-20">

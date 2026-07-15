@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AnalysisDetailHeaderProps } from "@/app/analyses/[id]/types";
 
+/** Header for the analysis detail page showing metadata, status, and back navigation. */
 export function AnalysisDetailHeader({ analysis, onBack }: AnalysisDetailHeaderProps) {
   const dateStr = formatDate(analysis.createdAt);
 
@@ -30,7 +31,7 @@ export function AnalysisDetailHeader({ analysis, onBack }: AnalysisDetailHeaderP
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h1 className="truncate text-xl font-semibold">{analysis.prompt}</h1>
+            <h1 className="truncate text-xl font-semibold">{analysis.prompt || "No prompt"}</h1>
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

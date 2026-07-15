@@ -27,16 +27,13 @@ export async function POST(request: Request) {
       );
     }
 
-    if (typeof prompt !== "string" || prompt.trim().length === 0) {
-      return NextResponse.json({ error: "Prompt is required." }, { status: 400 });
-    }
-
     const invalidUrls = urls.filter((u) => typeof u !== "string");
     if (invalidUrls.length > 0) {
       return NextResponse.json({ error: "All URLs must be strings." }, { status: 400 });
     }
 
-    const result = await runAnalysis({ urls: urls as string[], prompt: prompt as string });
+    const analysisPrompt = typeof prompt === "string" ? prompt : "";
+    const result = await runAnalysis({ urls: urls as string[], prompt: analysisPrompt });
 
     return NextResponse.json({
       analysisId: result.analysisId,

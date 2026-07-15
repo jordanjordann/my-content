@@ -2,6 +2,7 @@
 
 import type { SuggestionsSectionProps } from "@/app/analyses/[id]/types";
 
+/** List of actionable suggestions for content improvement. */
 export function AnalysisSuggestions({ results }: SuggestionsSectionProps) {
   const { suggestions } = results;
 

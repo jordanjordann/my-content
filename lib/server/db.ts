@@ -62,7 +62,7 @@ export async function getAnalysesList() {
 
   return result.rows.map((row) => ({
     id: row.id as string,
-    prompt: row.prompt as string,
+    prompt: (row.prompt as string) ?? null,
     status: row.status as string,
     itemCount: Number(row.item_count),
     createdAt: row.created_at as string,
@@ -150,7 +150,7 @@ export async function getAnalysisDetail(analysisId: string) {
 
   return {
     id: analysisRow.id as string,
-    prompt: analysisRow.prompt as string,
+    prompt: (analysisRow.prompt as string) ?? null,
     status: analysisRow.status as string,
     createdAt: analysisRow.created_at as string,
     items,
