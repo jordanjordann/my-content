@@ -1,20 +1,46 @@
 "use client";
 
-import { BarChart3 } from "lucide-react";
+import { BarChart3, SearchX } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { AnalysisEmptyProps } from "@/app/app/analyses/types";
 
-/** Empty state shown when no analyses exist, with a CTA to create one. */
-export function AnalysisEmptySection({ onNewAnalysis }: AnalysisEmptyProps) {
+const VARIANTS = {
+  no_data: {
+    Icon: BarChart3,
+    title: "No analyses yet",
+    body: "Paste some URLs and get AI-powered insights on your content.",
+  },
+  no_matches: {
+    Icon: SearchX,
+    title: "No matching results",
+    body: "Try adjusting your filters or clear them to see all analyses.",
+  },
+} as const;
+
+/** Empty state shown when no analyses exist or no filters match, with context-aware text and CTA. */
+export function AnalysisEmptySection({
+  context,
+  onNewAnalysis,
+  onClearFilters,
+}: AnalysisEmptyProps) {
+  const { Icon, title, body } = VARIANTS[context];
+
   return (
     <div className="flex flex-col items-center justify-center py-20">
-      <BarChart3 className="mb-4 h-16 w-16 text-muted-foreground/50" />
-      <h2 className="mb-2 text-xl font-semibold">No analyses yet</h2>
-      <p className="mb-6 text-sm text-muted-foreground">
-        Paste some URLs and get AI-powered insights on your content.
+      <Icon className="mb-4 h-16 w-16 text-muted-foreground/50" aria-hidden="true" />
+      <h2 className="mb-2 text-xl font-semibold">{title}</h2>
+      <p className="mb-6 max-w-sm text-center text-sm text-muted-foreground">
+        {body}
       </p>
-      <Button onClick={onNewAnalysis}>New Analysis</Button>
+      {context === "no_data" && onNewAnalysis && (
+        <Button onClick={onNewAnalysis}>New Analysis</Button>
+      )}
+      {context === "no_matches" && onClearFilters && (
+        <Button variant="outline" onClick={onClearFilters}>
+          Clear filters
+        </Button>
+      )}
     </div>
   );
 }

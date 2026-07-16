@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analyses Dashboard — Filter Bar Prototype</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          colors: {
+            border: 'oklch(0.88 0.025 252)',
+            input: 'oklch(0.88 0.025 252)',
+            ring: 'oklch(0.72 0.18 55)',
+            background: 'oklch(0.985 0.004 248)',
+            foreground: 'oklch(0.18 0.022 255)',
+            primary: { DEFAULT: 'oklch(0.58 0.22 260)', foreground: 'oklch(0.985 0.004 248)' },
+            secondary: { DEFAULT: 'oklch(0.94 0.018 252)', foreground: 'oklch(0.2 0.034 255)' },
+            muted: { DEFAULT: 'oklch(0.94 0.018 252)', foreground: 'oklch(0.48 0.038 252)' },
+            accent: { DEFAULT: 'oklch(0.72 0.18 55)', foreground: 'oklch(0.16 0.025 255)' },
+            card: { DEFAULT: 'oklch(1 0 0)', foreground: 'oklch(0.18 0.022 255)' },
+            destructive: 'oklch(0.64 0.21 25)',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom scrollbar for table */
+    .table-scroll::-webkit-scrollbar { height: 6px; }
+    .table-scroll::-webkit-scrollbar-track { background: transparent; }
+    .table-scroll::-webkit-scrollbar-thumb { background: oklch(0.88 0.025 252); border-radius: 3px; }
+    .dark .table-scroll::-webkit-scrollbar-thumb { background: oklch(0.22 0.044 255); }
+
+    /* Smooth theme transition */
+    *, *::before, *::after { transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease; }
+
+    /* Filter active styles matching shadcn indigo accent */
+    .filter-active {
+      background-color: oklch(0.55 0.24 260) !important;
+      color: white !important;
+      border-color: oklch(0.55 0.24 260) !important;
+    }
+    html:not(.dark) .filter-active {
+      background-color: oklch(0.55 0.24 260) !important;
+    }
+    .dark .filter-active {
+      background-color: oklch(0.68 0.18 255) !important;
+      border-color: oklch(0.68 0.18 255) !important;
+    }
+
+    /* Segmented toggle styles */
+    .segment-group button:first-child { border-radius: 0.5rem 0 0 0.5rem; }
+    .segment-group button:last-child { border-radius: 0 0.5rem 0.5rem 0; }
+    .segment-group button:not(:last-child) { border-right-width: 0; }
+
+    /* Multi-select chip styles */
+    .chip-group button { border-radius: 9999px; }
+
+    /* Dropdown select simulation */
+    .select-trigger { min-width: 180px; }
+
+    /* Tab indicator */
+    .state-tab.active {
+      border-bottom: 2px solid oklch(0.55 0.24 260);
+      color: oklch(0.55 0.24 260);
+    }
+    .dark .state-tab.active {
+      border-bottom-color: oklch(0.68 0.18 255);
+      color: oklch(0.68 0.18 255);
+    }
+  </style>
+</head>
+<body class="bg-background font-sans text-foreground min-h-screen">
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- PROTOTYPE NAVIGATION — Switch between state views -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="border-b border-border bg-card/80 backdrop-blur sticky top-0 z-50">
+  <div class="max-w-7xl mx-auto px-4">
+    <div class="flex items-center justify-between h-12">
+      <div class="flex items-center gap-1">
+        <!-- Prototype label -->
+        <span class="text-xs font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded">PROTOTYPE</span>
+      </div>
+      <div class="flex items-center gap-6">
+        <!-- State tabs -->
+        <nav class="flex items-center gap-0" role="tablist" aria-label="Demo states">
+          <button class="state-tab active text-sm font-medium px-3 py-3 border-b-2 border-transparent text-muted-foreground hover:text-foreground transition" role="tab" aria-selected="true" onclick="showState('default')">1. Default</button>
+          <button class="state-tab text-sm font-medium px-3 py-3 border-b-2 border-transparent text-muted-foreground hover:text-foreground transition" role="tab" aria-selected="false" onclick="showState('active')">2. Active Filters</button>
+          <button class="state-tab text-sm font-medium px-3 py-3 border-b-2 border-transparent text-muted-foreground hover:text-foreground transition" role="tab" aria-selected="false" onclick="showState('empty')">3. Empty Results</button>
+        </nav>
+        <!-- Dark mode toggle -->
+        <button onclick="toggleTheme()" class="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted transition" aria-label="Toggle dark mode">
+          <svg id="sun-icon" class="h-4 w-4 hidden dark:inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          <svg id="moon-icon" class="h-4 w-4 inline dark:hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <span class="dark:hidden">Dark</span>
+          <span class="hidden dark:inline">Light</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- STATE 1: Default — No filters, full table         -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div id="state-default" class="state-view">
+<div class="max-w-7xl mx-auto p-6">
+
+  <!-- Page Header -->
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-2xl font-bold tracking-tight">Analyses</h1>
+    <button class="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition">
+      <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      New Analysis
+    </button>
+  </div>
+
+  <!-- ═══ FILTER BAR ═══ -->
+  <!-- Design Notes:
+       - Single compact row using flex-wrap for responsive behavior
+       - 8px gap between all controls (Tailwind gap-2)
+       - Controls flow left-to-right: Account > Platform > Media Type > Sort
+       - "Clear all" is hidden when no filters are active
+       - All controls use shadcn-style CSS variables for theme sync
+  -->
+  <div class="flex flex-wrap items-center gap-2 mb-4" role="toolbar" aria-label="Analysis filters">
+
+    <!-- 1. Account Dropdown -->
+    <div class="relative">
+      <button class="select-trigger inline-flex items-center justify-between h-9 px-3 rounded-md border border-border bg-background text-sm hover:bg-muted/50 transition" aria-expanded="false" aria-haspopup="listbox" aria-label="Filter by account">
+        <span class="text-muted-foreground">All accounts</span>
+        <svg class="ml-2 h-4 w-4 text-muted-foreground flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+    </div>
+
+    <!-- 2. Platform Segmented Toggle (3-state) -->
+    <div class="inline-flex rounded-md border border-border overflow-hidden segment-group" role="radiogroup" aria-label="Filter by platform">
+      <button class="filter-active h-9 px-3 text-xs font-medium transition" role="radio" aria-checked="true">All</button>
+      <button class="h-9 px-3 text-xs font-medium text-muted-foreground bg-background hover:bg-muted transition" role="radio" aria-checked="false">Instagram</button>
+      <button class="h-9 px-3 text-xs font-medium text-muted-foreground bg-background hover:bg-muted transition" role="radio" aria-checked="false">YouTube</button>
+    </div>
+
+    <!-- 3. Media Type Multi-select Chips (4 independent toggles) -->
+    <div class="inline-flex gap-1.5 chip-group" role="group" aria-label="Filter by media type">
+      <button class="h-8 px-3 text-xs font-medium text-muted-foreground border border-border bg-background hover:bg-muted transition" aria-pressed="false">Reel</button>
+      <button class="h-8 px-3 text-xs font-medium text-muted-foreground border border-border bg-background hover:bg-muted transition" aria-pressed="false">Post</button>
+      <button class="h-8 px-3 text-xs font-medium text-muted-foreground border border-border bg-background hover:bg-muted transition" aria-pressed="false">Carousel</button>
+      <button class="h-8 px-3 text-xs font-medium text-muted-foreground border border-border bg-background hover:bg-muted transition" aria-pressed="false">Short</button>
+    </div>
+
+    <!-- 4. Sort Dropdown -->
+    <div class="relative">
+      <button class="inline-flex items-center justify-between h-9 px-3 rounded-md border border-border bg-background text-sm hover:bg-muted/50 transition" aria-label="Sort analyses">
+        <span class="text-muted-foreground mr-2">Sort:</span>
+        <span>Newest</span>
+        <svg class="ml-2 h-4 w-4 text-muted-foreground flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+    </div>
+
+    <!-- 5. Clear All Link — HIDDEN when no filters active -->
+    <div class="flex-1 flex justify-end">
+      <button class="text-sm text-primary hover:text-primary/80 font-medium underline underline-offset-4 hidden">
+        Clear all
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══ DATA TABLE ═══ -->
+  <div class="rounded-lg border border-border bg-card text-card-foreground shadow-sm">
+    <div class="relative w-full overflow-auto table-scroll">
+      <table class="w-full caption-bottom text-sm">
+        <thead>
+          <tr class="border-b border-border">
+            <th class="h-12 px-3 text-left align-middle font-medium text-muted-foreground w-[48px]">Thumb</th>
+            <th class="h-12 px-3 text-left align-middle font-medium text-muted-foreground w-[48px]">Platform</th>
+            <th class="h-12 px-3 text-left align-middle font-medium text-muted-foreground">Title</th>
+            <th class="h-12 px-3 text-center align-middle font-medium text-muted-foreground">Score</th>
+            <th class="h-12 px-3 text-center align-middle font-medium text-muted-foreground">Hook</th>
+            <th class="h-12 px-3 text-center align-middle font-medium text-muted-foreground">Reel</th>
+            <th class="h-12 px-3 text-center align-middle font-medium text-muted-foreground">Vis</th>
+            <th class="h-12 px-3 text-center align-middle font-medium text-muted-foreground">A/V</th>
+            <th class="h-12 px-3 text-center align-middle font-medium text-muted-foreground">Trend</th>
+            <th class="h-12 px-3 text-center align-middle font-medium text-muted-foreground">CTA</th>
+            <th class="h-12 px-3 text-center align-middle font-medium text-muted-foreground">Brand</th>
+            <th class="h-12 px-3 text-right align-middle font-medium text-muted-foreground w-[48px]"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Row 1 -->
+          <tr class="border-b border-border hover:bg-muted/50 transition">
+            <td class="p-3 align-middle"><div class="h-10 w-10 rounded overflow-hidden bg-muted flex items-center justify-center"><span class="text-xs text-muted-foreground">📷</span></div></td>
+            <td class="p-3 align-middle"><span class="inline-flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold bg-pink-500/10 text-pink-600 dark:text-pink-400">IG</span></td>
+            <td class="p-3 align-middle max-w-[200px]"><p class="truncate text-sm font-medium cursor-pointer">5 Morning Routine Hacks That Changed My Life</p></td>
+            <td class="p-3 align-middle text-center"><div class="inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold bg-green-500/10 text-green-600 dark:text-green-400">8.2</div></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">8</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">9</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">7</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">8</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">6</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">5</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">7</span></td>
+            <td class="p-3 align-middle text-right"><button class="rounded-md p-1.5 text-muted-foreground hover:bg-muted transition"><svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button></td>
+          </tr>
+          <!-- Row 2 -->
+          <tr class="border-b border-border hover:bg-muted/50 transition">
+            <td class="p-3 align-middle"><div class="h-10 w-10 rounded overflow-hidden bg-muted flex items-center justify-center"><span class="text-xs text-muted-foreground">📷</span></div></td>
+            <td class="p-3 align-middle"><span class="inline-flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold bg-red-500/10 text-red-600 dark:text-red-400">YT</span></td>
+            <td class="p-3 align-middle max-w-[200px]"><p class="truncate text-sm font-medium cursor-pointer">I Tried Every AI Tool So You Don't Have To</p></td>
+            <td class="p-3 align-middle text-center"><div class="inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold bg-green-500/10 text-green-600 dark:text-green-400">7.5</div></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">8</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">7</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">7</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">6</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">8</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">7</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">5</span></td>
+            <td class="p-3 align-middle text-right"><button class="rounded-md p-1.5 text-muted-foreground hover:bg-muted transition"><svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button></td>
+          </tr>
+          <!-- Row 3 -->
+          <tr class="border-b border-border hover:bg-muted/50 transition">
+            <td class="p-3 align-middle"><div class="h-10 w-10 rounded overflow-hidden bg-muted flex items-center justify-center"><span class="text-xs text-muted-foreground">📷</span></div></td>
+            <td class="p-3 align-middle"><span class="inline-flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold bg-pink-500/10 text-pink-600 dark:text-pink-400">IG</span></td>
+            <td class="p-3 align-middle max-w-[200px]"><p class="truncate text-sm font-medium cursor-pointer">Behind the Scenes: My Home Studio Setup Tour</p></td>
+            <td class="p-3 align-middle text-center"><div class="inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">6.1</div></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">5</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">6</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">8</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">5</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-muted-foreground">—</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-destructive">3</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">6</span></td>
+            <td class="p-3 align-middle text-right"><button class="rounded-md p-1.5 text-muted-foreground hover:bg-muted transition"><svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button></td>
+          </tr>
+          <!-- Row 4 -->
+          <tr class="border-b border-border hover:bg-muted/50 transition">
+            <td class="p-3 align-middle"><div class="h-10 w-10 rounded overflow-hidden bg-muted flex items-center justify-center"><span class="text-xs text-muted-foreground">📷</span></div></td>
+            <td class="p-3 align-middle"><span class="inline-flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold bg-pink-500/10 text-pink-600 dark:text-pink-400">IG</span></td>
+            <td class="p-3 align-middle max-w-[200px]"><p class="truncate text-sm font-medium cursor-pointer">Why Nobody Talks About This Instagram Algorithm Shift</p></td>
+            <td class="p-3 align-middle text-center"><div class="inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold bg-green-500/10 text-green-600 dark:text-green-400">9.0</div></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">10</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">9</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">8</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">9</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">9</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">8</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">9</span></td>
+            <td class="p-3 align-middle text-right"><button class="rounded-md p-1.5 text-muted-foreground hover:bg-muted transition"><svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button></td>
+          </tr>
+          <!-- Row 5 -->
+          <tr class="border-b border-border hover:bg-muted/50 transition">
+            <td class="p-3 align-middle"><div class="h-10 w-10 rounded overflow-hidden bg-muted flex items-center justify-center"><span class="text-xs text-muted-foreground">📷</span></div></td>
+            <td class="p-3 align-middle"><span class="inline-flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold bg-red-500/10 text-red-600 dark:text-red-400">YT</span></td>
+            <td class="p-3 align-middle max-w-[200px]"><p class="truncate text-sm font-medium cursor-pointer">How I Edit My Videos in Under 30 Minutes</p></td>
+            <td class="p-3 align-middle text-center"><div class="inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">5.8</div></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">6</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">5</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">7</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">4</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">6</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-destructive">4</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">6</span></td>
+            <td class="p-3 align-middle text-right"><button class="rounded-md p-1.5 text-muted-foreground hover:bg-muted transition"><svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button></td>
+          </tr>
+          <!-- Row 6 -->
+          <tr class="border-b border-border hover:bg-muted/50 transition">
+            <td class="p-3 align-middle"><div class="h-10 w-10 rounded overflow-hidden bg-muted flex items-center justify-center"><span class="text-xs text-muted-foreground">📷</span></div></td>
+            <td class="p-3 align-middle"><span class="inline-flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold bg-pink-500/10 text-pink-600 dark:text-pink-400">IG</span></td>
+            <td class="p-3 align-middle max-w-[200px]"><p class="truncate text-sm font-medium cursor-pointer">Unpopular Opinion: You Don't Need a Ring Light</p></td>
+            <td class="p-3 align-middle text-center"><div class="inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold bg-destructive/10 text-destructive">3.4</div></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-destructive">3</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">4</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-destructive">3</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">4</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-destructive">2</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-muted-foreground">—</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-destructive">3</span></td>
+            <td class="p-3 align-middle text-right"><button class="rounded-md p-1.5 text-muted-foreground hover:bg-muted transition"><svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button></td>
+          </tr>
+          <!-- Row 7 -->
+          <tr class="border-b border-border hover:bg-muted/50 transition">
+            <td class="p-3 align-middle"><div class="h-10 w-10 rounded overflow-hidden bg-muted flex items-center justify-center"><span class="text-xs text-muted-foreground">📷</span></div></td>
+            <td class="p-3 align-middle"><span class="inline-flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold bg-red-500/10 text-red-600 dark:text-red-400">YT</span></td>
+            <td class="p-3 align-middle max-w-[200px]"><p class="truncate text-sm font-medium cursor-pointer">React 19 Features You Actually Need to Know</p></td>
+            <td class="p-3 align-middle text-center"><div class="inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold bg-green-500/10 text-green-600 dark:text-green-400">7.3</div></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">7</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">5</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">7</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">8</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">8</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">5</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">8</span></td>
+            <td class="p-3 align-middle text-right"><button class="rounded-md p-1.5 text-muted-foreground hover:bg-muted transition"><svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <p class="mt-3 text-xs text-muted-foreground">Showing 7 of 7 analyses</p>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- STATE 2: Active Filters — Some filters selected   -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div id="state-active" class="state-view hidden">
+<div class="max-w-7xl mx-auto p-6">
+
+  <!-- Page Header -->
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-2xl font-bold tracking-tight">Analyses</h1>
+    <button class="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition">
+      <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      New Analysis
+    </button>
+  </div>
+
+  <!-- ═══ FILTER BAR — WITH ACTIVE FILTERS ═══ -->
+  <div class="flex flex-wrap items-center gap-2 mb-4" role="toolbar" aria-label="Analysis filters">
+
+    <!-- 1. Account Dropdown — "All accounts" (default, not active) -->
+    <div class="relative">
+      <button class="select-trigger inline-flex items-center justify-between h-9 px-3 rounded-md border border-border bg-background text-sm hover:bg-muted/50 transition" aria-expanded="false" aria-haspopup="listbox" aria-label="Filter by account">
+        <span class="text-muted-foreground">All accounts</span>
+        <svg class="ml-2 h-4 w-4 text-muted-foreground flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+    </div>
+
+    <!-- 2. Platform — "Instagram" selected -->
+    <div class="inline-flex rounded-md border border-border overflow-hidden segment-group" role="radiogroup" aria-label="Filter by platform">
+      <button class="h-9 px-3 text-xs font-medium text-muted-foreground bg-background hover:bg-muted transition" role="radio" aria-checked="false">All</button>
+      <button class="filter-active h-9 px-3 text-xs font-medium transition" role="radio" aria-checked="true">Instagram</button>
+      <button class="h-9 px-3 text-xs font-medium text-muted-foreground bg-background hover:bg-muted transition" role="radio" aria-checked="false">YouTube</button>
+    </div>
+
+    <!-- 3. Media Type — "Reel" and "Short" selected -->
+    <div class="inline-flex gap-1.5 chip-group" role="group" aria-label="Filter by media type">
+      <button class="filter-active h-8 px-3 text-xs font-medium transition" aria-pressed="true">Reel</button>
+      <button class="h-8 px-3 text-xs font-medium text-muted-foreground border border-border bg-background hover:bg-muted transition" aria-pressed="false">Post</button>
+      <button class="h-8 px-3 text-xs font-medium text-muted-foreground border border-border bg-background hover:bg-muted transition" aria-pressed="false">Carousel</button>
+      <button class="filter-active h-8 px-3 text-xs font-medium transition" aria-pressed="true">Short</button>
+    </div>
+
+    <!-- 4. Sort — "Highest Score" selected -->
+    <div class="relative">
+      <button class="inline-flex items-center justify-between h-9 px-3 rounded-md border border-border bg-background text-sm hover:bg-muted/50 transition" aria-label="Sort analyses">
+        <span class="text-muted-foreground mr-2">Sort:</span>
+        <span>Highest Score</span>
+        <svg class="ml-2 h-4 w-4 text-muted-foreground flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+    </div>
+
+    <!-- 5. Clear All Link — VISIBLE when filters are active -->
+    <div class="flex-1 flex justify-end">
+      <button class="text-sm text-[oklch(0.58_0.22_260)] hover:text-[oklch(0.48_0.20_260)] font-medium underline underline-offset-4 inline-flex items-center gap-1">
+        <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+        Clear all
+      </button>
+    </div>
+  </div>
+
+  <!-- Active filter badges row (optional visual reinforcement) -->
+  <div class="flex items-center gap-2 mb-4 pb-4 border-b border-border">
+    <span class="text-xs text-muted-foreground">Active:</span>
+    <span class="inline-flex items-center gap-1 h-5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-medium px-2">
+      Instagram
+      <button class="hover:bg-indigo-500/20 rounded-full p-0.5 transition" aria-label="Remove Instagram filter"><svg class="h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </span>
+    <span class="inline-flex items-center gap-1 h-5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-medium px-2">
+      Reel + Short
+      <button class="hover:bg-indigo-500/20 rounded-full p-0.5 transition" aria-label="Remove media type filter"><svg class="h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </span>
+    <span class="inline-flex items-center gap-1 h-5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-medium px-2">
+      Highest Score
+      <button class="hover:bg-indigo-500/20 rounded-full p-0.5 transition" aria-label="Remove sort filter"><svg class="h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </span>
+  </div>
+
+  <!-- ═══ FILTERED DATA TABLE ═══ -->
+  <div class="rounded-lg border border-border bg-card text-card-foreground shadow-sm">
+    <div class="relative w-full overflow-auto table-scroll">
+      <table class="w-full caption-bottom text-sm">
+        <thead>
+          <tr class="border-b border-border">
+            <th class="h-12 px-3 text-left align-middle font-medium text-muted-foreground w-[48px]">Thumb</th>
+            <th class="h-12 px-3 text-left align-middle font-medium text-muted-foreground w-[48px]">Plat</th>
+            <th class="h-12 px-3 text-left align-middle font-medium text-muted-foreground">Title</th>
+            <th class="h-12 px-3 text-center align-middle font-medium text-muted-foreground">Score</th>
+            <th class="h-12 px-3 text-center align-middle font-medium text-muted-foreground">Hook</th>
+            <th class="h-12 px-3 text-center align-middle font-medium text-muted-foreground">Reel</th>
+            <th class="h-12 px-3 text-center align-middle font-medium text-muted-foreground">Vis</th>
+            <th class="h-12 px-3 text-center align-middle font-medium text-muted-foreground">A/V</th>
+            <th class="h-12 px-3 text-center align-middle font-medium text-muted-foreground">Trend</th>
+            <th class="h-12 px-3 text-center align-middle font-medium text-muted-foreground">CTA</th>
+            <th class="h-12 px-3 text-center align-middle font-medium text-muted-foreground">Brand</th>
+            <th class="h-12 px-3 text-right align-middle font-medium text-muted-foreground w-[48px]"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Row: Highest score first, IG Reels only -->
+          <tr class="border-b border-border hover:bg-muted/50 transition">
+            <td class="p-3 align-middle"><div class="h-10 w-10 rounded overflow-hidden bg-muted flex items-center justify-center"><span class="text-xs text-muted-foreground">📷</span></div></td>
+            <td class="p-3 align-middle"><span class="inline-flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold bg-pink-500/10 text-pink-600 dark:text-pink-400">IG</span></td>
+            <td class="p-3 align-middle max-w-[200px]"><p class="truncate text-sm font-medium cursor-pointer">Why Nobody Talks About This Instagram Algorithm Shift</p></td>
+            <td class="p-3 align-middle text-center"><div class="inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold bg-green-500/10 text-green-600 dark:text-green-400">9.0</div></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">10</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">9</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">8</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">9</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">9</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">8</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">9</span></td>
+            <td class="p-3 align-middle text-right"><button class="rounded-md p-1.5 text-muted-foreground hover:bg-muted transition"><svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button></td>
+          </tr>
+          <tr class="border-b border-border hover:bg-muted/50 transition">
+            <td class="p-3 align-middle"><div class="h-10 w-10 rounded overflow-hidden bg-muted flex items-center justify-center"><span class="text-xs text-muted-foreground">📷</span></div></td>
+            <td class="p-3 align-middle"><span class="inline-flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold bg-pink-500/10 text-pink-600 dark:text-pink-400">IG</span></td>
+            <td class="p-3 align-middle max-w-[200px]"><p class="truncate text-sm font-medium cursor-pointer">5 Morning Routine Hacks That Changed My Life</p></td>
+            <td class="p-3 align-middle text-center"><div class="inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold bg-green-500/10 text-green-600 dark:text-green-400">8.2</div></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">8</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">9</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">7</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">8</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">6</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">5</span></td>
+            <td class="p-3 align-middle text-center"><span class="text-sm font-semibold tabular-nums text-green-600 dark:text-green-400">7</span></td>
+            <td class="p-3 align-middle text-right"><button class="rounded-md p-1.5 text-muted-foreground hover:bg-muted transition"><svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <p class="mt-3 text-xs text-muted-foreground">Showing 2 of 7 analyses <span class="text-foreground font-medium">· 5 hidden by filters</span></p>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- STATE 3: Empty Results — No matches               -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div id="state-empty" class="state-view hidden">
+<div class="max-w-7xl mx-auto p-6">
+
+  <!-- Page Header -->
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-2xl font-bold tracking-tight">Analyses</h1>
+    <button class="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition">
+      <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      New Analysis
+    </button>
+  </div>
+
+  <!-- ═══ FILTER BAR — All filters active, zero results ═══ -->
+  <div class="flex flex-wrap items-center gap-2 mb-4" role="toolbar" aria-label="Analysis filters">
+
+    <!-- Account — "@sarahcreates" selected -->
+    <div class="relative">
+      <button class="select-trigger inline-flex items-center justify-between h-9 px-3 rounded-md border border-border bg-background text-sm hover:bg-muted/50 transition" aria-expanded="false" aria-haspopup="listbox" aria-label="Filter by account">
+        <span>@sarahcreates</span>
+        <svg class="ml-2 h-4 w-4 text-muted-foreground flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+    </div>
+
+    <!-- Platform — "YouTube" selected -->
+    <div class="inline-flex rounded-md border border-border overflow-hidden segment-group" role="radiogroup" aria-label="Filter by platform">
+      <button class="h-9 px-3 text-xs font-medium text-muted-foreground bg-background hover:bg-muted transition" role="radio" aria-checked="false">All</button>
+      <button class="h-9 px-3 text-xs font-medium text-muted-foreground bg-background hover:bg-muted transition" role="radio" aria-checked="false">Instagram</button>
+      <button class="filter-active h-9 px-3 text-xs font-medium transition" role="radio" aria-checked="true">YouTube</button>
+    </div>
+
+    <!-- Media Type — "Carousel" selected (doesn't exist on YT = no results) -->
+    <div class="inline-flex gap-1.5 chip-group" role="group" aria-label="Filter by media type">
+      <button class="h-8 px-3 text-xs font-medium text-muted-foreground border border-border bg-background hover:bg-muted transition" aria-pressed="false">Reel</button>
+      <button class="h-8 px-3 text-xs font-medium text-muted-foreground border border-border bg-background hover:bg-muted transition" aria-pressed="false">Post</button>
+      <button class="filter-active h-8 px-3 text-xs font-medium transition" aria-pressed="true">Carousel</button>
+      <button class="h-8 px-3 text-xs font-medium text-muted-foreground border border-border bg-background hover:bg-muted transition" aria-pressed="false">Short</button>
+    </div>
+
+    <!-- Sort — "Lowest Score" selected -->
+    <div class="relative">
+      <button class="inline-flex items-center justify-between h-9 px-3 rounded-md border border-border bg-background text-sm hover:bg-muted/50 transition" aria-label="Sort analyses">
+        <span class="text-muted-foreground mr-2">Sort:</span>
+        <span>Lowest Score</span>
+        <svg class="ml-2 h-4 w-4 text-muted-foreground flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+    </div>
+
+    <!-- Clear All Link — VISIBLE -->
+    <div class="flex-1 flex justify-end">
+      <button class="text-sm text-[oklch(0.58_0.22_260)] hover:text-[oklch(0.48_0.20_260)] font-medium underline underline-offset-4 inline-flex items-center gap-1">
+        <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+        Clear all
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══ EMPTY STATE — "No matching results" ═══ -->
+  <div class="rounded-lg border border-border bg-card text-card-foreground shadow-sm">
+    <div class="flex flex-col items-center justify-center py-16 px-4 text-center">
+      <!-- Filter icon -->
+      <div class="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-4">
+        <svg class="h-6 w-6 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+          <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>
+        </svg>
+      </div>
+      <h3 class="text-base font-semibold mb-1">No matching results</h3>
+      <p class="text-sm text-muted-foreground max-w-sm mb-4">
+        No analyses match your current filters. Try adjusting or clearing the filters to see more content.
+      </p>
+      <button class="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-md border border-border bg-background text-sm font-medium hover:bg-muted transition">
+        <svg class="h-4 w-4 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+        Clear all filters
+      </button>
+    </div>
+  </div>
+
+  <!-- Design note: contrast this with "No analyses exist" empty state -->
+  <div class="mt-6 p-4 rounded-lg border border-dashed border-muted-foreground/30">
+    <p class="text-xs text-muted-foreground font-mono mb-2">// Design Note: Empty state differentiation</p>
+    <p class="text-sm">
+      This is the <strong class="text-destructive">"no matching results"</strong> empty state — triggered by filters returning zero rows.
+      Contrast with the <strong class="text-foreground">"no analyses exist"</strong> state (shown when the database is empty),
+      which should have a different message, icon, and a "New Analysis" CTA button.
+    </p>
+  </div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- DESIGN ANNOTATIONS                                  -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="max-w-7xl mx-auto px-6 pb-12">
+  <div class="mt-8 pt-6 border-t border-border">
+    <h2 class="text-lg font-semibold mb-4">Design Annotations</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+      <div class="p-4 rounded-lg border border-border bg-card">
+        <h3 class="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+          <span class="h-2 w-2 rounded-full bg-indigo-500"></span>
+          Spacing
+        </h3>
+        <ul class="text-xs text-muted-foreground space-y-1">
+          <li><code>gap-2</code> (8px) between all filter controls</li>
+          <li><code>gap-1.5</code> (6px) between media type chips</li>
+          <li>Control height: <code>h-9</code> (36px) standard, <code>h-8</code> (32px) for chips</li>
+          <li>Page padding: <code>p-6</code> (24px)</li>
+          <li>Table cell padding: <code>p-3</code> (12px)</li>
+          <li>8px grid rhythm throughout</li>
+        </ul>
+      </div>
+
+      <div class="p-4 rounded-lg border border-border bg-card">
+        <h3 class="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+          <span class="h-2 w-2 rounded-full bg-indigo-500"></span>
+          Colors
+        </h3>
+        <ul class="text-xs text-muted-foreground space-y-1">
+          <li><strong>Active bg:</strong> <code>oklch(0.55 0.24 260)</code> (light), <code>oklch(0.68 0.18 255)</code> (dark)</li>
+          <li><strong>Active text:</strong> white on both modes</li>
+          <li><strong>Border:</strong> CSS var <code>--border</code> synced with theme</li>
+          <li><strong>Muted hover:</strong> <code>bg-muted/50</code></li>
+          <li><strong>Score colors:</strong> green ≥7, yellow ≥5, red &lt;5</li>
+          <li><strong>Clear all:</strong> indigo text with underline, indigo hover</li>
+        </ul>
+      </div>
+
+      <div class="p-4 rounded-lg border border-border bg-card">
+        <h3 class="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+          <span class="h-2 w-2 rounded-full bg-indigo-500"></span>
+          Component Decisions
+        </h3>
+        <ul class="text-xs text-muted-foreground space-y-1">
+          <li><strong>Platform:</strong> Segmented toggle — single-select radio group (All | IG | YT)</li>
+          <li><strong>Media type:</strong> Multi-select chips — any combination, OR logic</li>
+          <li><strong>Account:</strong> Select dropdown — falls back to "All accounts"</li>
+          <li><strong>Sort:</strong> Select dropdown — 4 options, "Newest" default</li>
+          <li><strong>Clear all:</strong> Right-aligned text link, hidden when no filters active</li>
+          <li>All controls use shadcn CSS variables for theme consistency</li>
+        </ul>
+      </div>
+
+      <div class="p-4 rounded-lg border border-border bg-card">
+        <h3 class="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+          <span class="h-2 w-2 rounded-full bg-indigo-500"></span>
+          Accessibility
+        </h3>
+        <ul class="text-xs text-muted-foreground space-y-1">
+          <li><code>role="toolbar"</code> on filter container</li>
+          <li><code>aria-pressed</code> on media type chips</li>
+          <li><code>role="radiogroup"</code> + <code>aria-checked</code> on platform toggle</li>
+          <li>Keyboard navigation via standard button/tab order</li>
+          <li>Contrast ratio: ≥4.5:1 for all text on backgrounds</li>
+          <li>Touch targets: minimum 32-36px height</li>
+        </ul>
+      </div>
+
+      <div class="p-4 rounded-lg border border-border bg-card">
+        <h3 class="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+          <span class="h-2 w-2 rounded-full bg-indigo-500"></span>
+          Behavior
+        </h3>
+        <ul class="text-xs text-muted-foreground space-y-1">
+          <li>Instant filter application — no "Apply" button</li>
+          <li>URL search params: <code>?account=x&amp;platform=ig&amp;mediaType=reel,short&amp;sort=newest</code></li>
+          <li>Tabular-nums for all score columns (prevents width jitter)</li>
+          <li>Table rows: hover:bg-muted/50 transition</li>
+          <li>Framer Motion for row entrance animations in production</li>
+        </ul>
+      </div>
+
+      <div class="p-4 rounded-lg border border-border bg-card">
+        <h3 class="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+          <span class="h-2 w-2 rounded-full bg-indigo-500"></span>
+          Empty States
+        </h3>
+        <ul class="text-xs text-muted-foreground space-y-1">
+          <li><strong>"No matching results":</strong> filter icon, "Clear all filters" button</li>
+          <li><strong>"No analyses exist":</strong> different message, "New Analysis" CTA</li>
+          <li>Footer shows "X of Y" count with hidden count when filtered</li>
+          <li>Active filter badges row for visual reinforcement (optional)</li>
+          <li>Persistent state: URL params survive page refresh</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- INTERACTIVE JAVASCRIPT                               -->
+<!-- ═══════════════════════════════════════════════════ -->
+<script>
+  // State switching
+  function showState(state) {
+    document.querySelectorAll('.state-view').forEach(el => el.classList.add('hidden'));
+    document.getElementById('state-' + state).classList.remove('hidden');
+    document.querySelectorAll('.state-tab').forEach(el => {
+      el.classList.remove('active');
+      el.setAttribute('aria-selected', 'false');
+    });
+    event.target.classList.add('active');
+    event.target.setAttribute('aria-selected', 'true');
+  }
+
+  // Theme toggle
+  function toggleTheme() {
+    document.documentElement.classList.toggle('dark');
+  }
+
+  // Interactive: Media type chip toggling (demo only)
+  document.querySelectorAll('.chip-group button').forEach(btn => {
+    btn.addEventListener('click', function() {
+      this.classList.toggle('filter-active');
+      const pressed = this.classList.contains('filter-active');
+      this.setAttribute('aria-pressed', pressed);
+    });
+  });
+
+  // Interactive: Platform segment toggling (demo only)
+  document.querySelectorAll('.segment-group').forEach(group => {
+    group.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', function() {
+        group.querySelectorAll('button').forEach(b => {
+          b.classList.remove('filter-active');
+          b.classList.add('text-muted-foreground', 'bg-background');
+          b.setAttribute('aria-checked', 'false');
+        });
+        this.classList.add('filter-active');
+        this.classList.remove('text-muted-foreground', 'bg-background');
+        this.setAttribute('aria-checked', 'true');
+      });
+    });
+  });
+
+  // Interactive: Clear all button demo
+  document.querySelectorAll('button').forEach(btn => {
+    if (btn.textContent.trim() === 'Clear all' || btn.textContent.trim().includes('Clear all filters')) {
+      btn.addEventListener('click', function() {
+        // Reset all filters in current view
+        const view = btn.closest('.state-view');
+        if (view) {
+          view.querySelectorAll('.chip-group button').forEach(c => {
+            c.classList.remove('filter-active');
+            c.setAttribute('aria-pressed', 'false');
+          });
+          view.querySelectorAll('.segment-group button').forEach(b => {
+            b.classList.remove('filter-active');
+          });
+          // Activate "All" in segment
+          view.querySelectorAll('.segment-group').forEach(g => {
+            g.querySelector('button').classList.add('filter-active');
+            g.querySelector('button').setAttribute('aria-checked', 'true');
+          });
+        }
+      });
+    }
+  });
+
+  // Check system preference for dark mode
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    document.documentElement.classList.add('dark');
+  }
+</script>
+
+</body>
+</html>

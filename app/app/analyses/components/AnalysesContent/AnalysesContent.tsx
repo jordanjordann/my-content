@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
@@ -8,14 +8,23 @@ import { Button } from "@/components/ui/button";
 import { useAnalysesQuery, useAnalyzeContentMutation, useDeleteAnalysisMutation } from "@/lib/api/analyses";
 import type { ProgressState } from "@/app/app/analyses/components/progress/AnalysisProgressPanel/types";
 import { AnalysisDataTable } from "@/app/app/analyses/components/grids/AnalysisDataTable";
-import { AnalysisGridSkeleton } from "@/app/app/analyses/components/grids/AnalysisGridSkeleton";
 import { AnalysisFilterSection } from "@/app/app/analyses/components/sections/AnalysisFilterSection";
 import { AnalysisEmptySection } from "@/app/app/analyses/components/sections/AnalysisEmptySection";
 import { NewAnalysisModal } from "@/app/app/analyses/components/modals/NewAnalysisModal";
 import { AnalysisProgressPanel } from "@/app/app/analyses/components/progress/AnalysisProgressPanel";
 import { AnalysisDetailModal } from "@/app/app/analyses/components/modals/AnalysisDetailModal";
+import type { FilterState } from "@/app/app/analyses/types";
 
-/** Displays the analyses list and coordinates its creation and detail modals. */
+function buildQueryString(state: FilterState): string {
+  const params = new URLSearchParams();
+  if (state.account) params.set("account", state.account);
+  if (state.platform) params.set("platform", state.platform);
+  if (state.mediaTypes.length > 0) params.set("mediaType", state.mediaTypes.join(","));
+  if (state.sort === "oldest") params.set("sort", "oldest");
+  return params.toString();
+}
+
+/** Displays the analyses list with filters, coordinates creation and detail modals. */
 export function AnalysesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -26,10 +35,48 @@ export function AnalysesContent() {
   const { mutate: removeAnalysis, isPending: isDeleting } = useDeleteAnalysisMutation();
   const [modalOpen, setModalOpen] = useState(false);
   const [progress, setProgress] = useState<ProgressState | null>(null);
-  const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
+
+  const [filterState, setFilterState] = useState<FilterState>(() => ({
+    account: searchParams.get("account") || null,
+    platform: searchParams.get("platform") || undefined,
+    mediaTypes: searchParams.get("mediaType")?.split(",").filter(Boolean) ?? [],
+    sort: searchParams.get("sort") === "oldest" ? "oldest" : "newest",
+  }));
 
   const analyses = data?.analyses ?? [];
   const accounts = data?.accounts ?? [];
+
+  const filteredAnalyses = useMemo(() => {
+    let result = [...(data?.analyses ?? [])];
+    if (filterState.account) result = result.filter((a) => a.username === filterState.account);
+    if (filterState.platform) result = result.filter((a) => a.platform === filterState.platform);
+    if (filterState.mediaTypes.length > 0) result = result.filter((a) => filterState.mediaTypes.includes(a.mediaType));
+    if (filterState.sort === "oldest") result.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    else result.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return result;
+  }, [data, filterState]);
+
+  const hasActiveFilters =
+    filterState.account !== null ||
+    filterState.platform !== undefined ||
+    filterState.mediaTypes.length > 0 ||
+    filterState.sort !== "newest";
+
+  function syncURL(state: FilterState) {
+    const qs = buildQueryString(state);
+    router.replace(`/app/analyses${qs ? `?${qs}` : ""}`);
+  }
+
+  const handleFiltersChange = (filters: FilterState) => {
+    setFilterState(filters);
+    syncURL(filters);
+  };
+
+  const handleClearAll = () => {
+    const defaults: FilterState = { account: null, platform: undefined, mediaTypes: [], sort: "newest" };
+    setFilterState(defaults);
+    syncURL(defaults);
+  };
 
   const handleAnalyze = (urls: string[], prompt: string) => {
     setModalOpen(false);
@@ -97,23 +144,26 @@ export function AnalysesContent() {
       <div className="flex flex-col gap-4 p-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Analyses</h1>
-          <div className="flex items-center gap-3">
-            <AnalysisFilterSection
-              accounts={accounts}
-              selectedAccount={selectedAccount}
-              onSelect={setSelectedAccount}
-            />
-            <Button onClick={() => setModalOpen(true)}>New Analysis</Button>
-          </div>
+          <Button onClick={() => setModalOpen(true)}>New Analysis</Button>
         </div>
 
+        <AnalysisFilterSection
+          accounts={accounts}
+          filters={filterState}
+          onFiltersChange={handleFiltersChange}
+          hasActiveFilters={hasActiveFilters}
+          onClearAll={handleClearAll}
+        />
+
         {isPending ? (
-          <AnalysisGridSkeleton />
+          <p className="text-muted-foreground">Loading...</p>
         ) : analyses.length === 0 ? (
-          <AnalysisEmptySection onNewAnalysis={() => setModalOpen(true)} />
+          <AnalysisEmptySection context="no_data" onNewAnalysis={() => setModalOpen(true)} />
+        ) : filteredAnalyses.length === 0 ? (
+          <AnalysisEmptySection context="no_matches" onClearFilters={handleClearAll} />
         ) : (
           <AnalysisDataTable
-            analyses={analyses}
+            analyses={filteredAnalyses}
             onAnalysisClick={(id) => router.push(`/app/analyses?id=${id}`)}
             onDelete={handleDelete}
             isDeleting={isDeleting}

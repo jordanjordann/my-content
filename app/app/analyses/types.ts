@@ -1,27 +1,7 @@
-import type { AnalysisListItem } from "@/lib/api/analyses/types";
-
-export type AnalysisCardProps = {
-  analysis: AnalysisListItem;
-  onClick: (id: string) => void;
-  onDelete?: (id: string) => void;
-  isDeleting?: boolean;
-};
-
-export type AnalysisGridProps = {
-  analyses: AnalysisListItem[];
-  onAnalysisClick: (id: string) => void;
-  onDelete?: (id: string) => void;
-  isDeleting?: boolean;
-};
-
-export type AnalysisFilterProps = {
-  accounts: string[];
-  selectedAccount: string | null;
-  onSelect: (account: string | null) => void;
-};
-
 export type AnalysisEmptyProps = {
-  onNewAnalysis: () => void;
+  context: "no_data" | "no_matches";
+  onNewAnalysis?: () => void;
+  onClearFilters?: () => void;
 };
 
 export type NewAnalysisModalProps = {
@@ -29,4 +9,19 @@ export type NewAnalysisModalProps = {
   onOpenChange: (open: boolean) => void;
   onSubmit: (urls: string[], prompt: string) => void;
   isAnalyzing: boolean;
+};
+
+export type FilterState = {
+  account: string | null;
+  platform: string | undefined;
+  mediaTypes: string[];
+  sort: "newest" | "oldest";
+};
+
+export type AnalysisFilterBarProps = {
+  accounts: string[];
+  filters: FilterState;
+  onFiltersChange: (filters: FilterState) => void;
+  hasActiveFilters: boolean;
+  onClearAll: () => void;
 };
