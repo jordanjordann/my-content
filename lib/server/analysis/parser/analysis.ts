@@ -7,19 +7,29 @@ export function parseContentAnalysis(text: string): ContentAnalysis {
 
   const overallScore = typeof parsed.overallScore === "number" ? parsed.overallScore : 0;
   const summary = typeof parsed.summary === "string" ? parsed.summary : "";
-  const perItem = Array.isArray(parsed.perItem) ? parsed.perItem : [];
-  const suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : [];
+  const strengths = validateStringArray(parsed.strengths);
+  const weaknesses = validateStringArray(parsed.weaknesses);
+  const keyMoments = validateStringArray(parsed.keyMoments);
+  const suggestions = validateStringArray(parsed.suggestions);
   const scorecard = validateScorecard(parsed.scorecard);
   const patterns = validatePatterns(parsed.patterns);
 
   return {
     overallScore,
     summary,
-    perItem,
+    strengths,
+    weaknesses,
+    keyMoments,
     scorecard,
     patterns,
     suggestions,
   };
+}
+
+function validateStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function extractJson(text: string): string {

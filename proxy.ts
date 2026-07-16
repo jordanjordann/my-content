@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 
 const AUTH_COOKIE_NAME = "my_content_session";
 
-const protectedPaths = ["/analyses"];
+const protectedPaths = ["/app"];
 const publicPaths = ["/auth/pin"];
 
 export function proxy(request: NextRequest) {
@@ -20,7 +20,7 @@ export function proxy(request: NextRequest) {
 
   if (publicPaths.some((path) => pathname.startsWith(path))) {
     if (isAuthenticated) {
-      const url = new URL("/analyses", request.url);
+      const url = new URL("/app/analyses", request.url);
       return NextResponse.redirect(url);
     }
   }

@@ -14,7 +14,11 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { urls, prompt } = body as { urls?: unknown; prompt?: unknown };
+    const { urls, prompt, existingId } = body as {
+      urls?: unknown;
+      prompt?: unknown;
+      existingId?: string;
+    };
 
     if (!Array.isArray(urls) || urls.length === 0) {
       return NextResponse.json({ error: "No URLs provided." }, { status: 400 });
@@ -33,12 +37,26 @@ export async function POST(request: Request) {
     }
 
     const analysisPrompt = typeof prompt === "string" ? prompt : "";
-    const result = await runAnalysis({ urls: urls as string[], prompt: analysisPrompt });
+    const analysisIds: string[] = [];
+    const failedUrls: { url: string; index: number; error: string }[] = [];
+
+    for (const [index, url] of (urls as string[]).entries()) {
+      try {
+        const result = await runAnalysis({ url, prompt: analysisPrompt, existingId });
+        analysisIds.push(result.analysisId);
+      } catch (error) {
+        failedUrls.push({
+          url,
+          index,
+          error: error instanceof Error ? error.message : "Analysis failed.",
+        });
+      }
+    }
 
     return NextResponse.json({
-      analysisId: result.analysisId,
-      itemsAnalyzed: result.itemsAnalyzed,
-      failedItems: result.failedItems,
+      analysisIds,
+      analysesCreated: analysisIds.length,
+      failedUrls,
     });
   } catch (error) {
     return NextResponse.json(

@@ -1,12 +1,3 @@
-export interface ContentItemAnalysis {
-  url: string;
-  mediaType: string;
-  score: number;
-  strengths: string[];
-  weaknesses: string[];
-  keyMoments: string[];
-}
-
 export interface Scorecard {
   hookStrength: number;
   retentionFlow: number;
@@ -26,7 +17,9 @@ export interface Patterns {
 export interface ContentAnalysis {
   overallScore: number;
   summary: string;
-  perItem: ContentItemAnalysis[];
+  strengths: string[];
+  weaknesses: string[];
+  keyMoments: string[];
   scorecard: Scorecard;
   patterns: Patterns;
   suggestions: string[];
@@ -34,8 +27,6 @@ export interface ContentAnalysis {
 
 export interface AnalyzeResult {
   analysisId: string;
-  itemsAnalyzed: number;
-  failedItems: { url: string; index: number; error: string }[];
   content: ContentAnalysis;
   rawGemini: string;
 }

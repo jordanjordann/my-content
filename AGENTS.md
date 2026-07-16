@@ -18,30 +18,39 @@ ModuleName/
 └── helpers.ts                # Pure helper functions
 ```
 
-Sub-components inside a module's `components/` folder are **single `.tsx` files** organized into type-based subdirectories — not full module directories:
+Sub-components inside a module's `components/` folder follow this structure:
 
 ```
 ModuleName/
-├── index.tsx               # Barrel
+├── index.tsx               # Barrel — re-exports all sub-components
 ├── ModuleName.tsx          # Main component
-├── types.ts                # All sub-component props go here (no local types.ts)
+├── types.ts                # Props for main component and sub-components
 ├── helpers.ts
 ├── constants.ts
 └── components/
-    ├── header/             # ReelHeader.tsx, PageHeader.tsx (flat files)
-    ├── sections/           # ScoreSection.tsx, PersonalStyleSection.tsx
-    ├── grids/              # ScorecardGrid.tsx, QualityGrid.tsx
-    ├── cards/              # ViralFormulaCard.tsx, StatsCard.tsx
-    ├── lists/              # TagList.tsx, SuggestionList.tsx
-    └── modals/             # NewAnalysisModal.tsx, AnalysisModal.tsx
+    ├── header/
+    │   └── SomethingHeader/        # Module directory for sub-component
+    │       ├── index.tsx           # Barrel — re-exports SomethingHeader and its types
+    │       ├── SomethingHeader.tsx  # Implementation
+    │       ├── types.ts            # Types specific to SomethingHeader
+    │       ├── constants.ts        # Constants specific to SomethingHeader
+    │       └── helpers.ts          # Helpers specific to SomethingHeader
+    ├── sections/           # Flat files or module directories
+    ├── grids/              # Flat files or module directories
+    ├── cards/              # Flat files or module directories
+    ├── lists/              # Flat files or module directories
+    └── modals/             # Flat files or module directories
 ```
 
-Sub-components are single `.tsx` files — no `index.tsx`, no local `types.ts`, no module wrapper. Their props live in the parent module's `types.ts`.
+Sub-components can be either:
+- **Flat files** (simple sub-components): single `.tsx` file, no barrel, no local types/constants/helpers. Props live in the parent module's `types.ts`.
+- **Module directories** (complex sub-components): full module with `index.tsx`, `types.ts`, `constants.ts`, `helpers.ts`. Props, constants, and helpers specific to this sub-component live locally.
 
-Name components after their type suffix (`*Header`, `*Section`, `*Grid`, `*Card`, `*List`) — the suffix must match the subdirectory it lives in (e.g. `AnalysisResultsSection` in `sections/`, `ScorecardGrid` in `grids/`).
+The barrel stops at sub-component level — do not create barrels for sub-sub-components (internal helpers within a sub-component module).
+
+Name components after their type suffix (`*Header`, `*Section`, `*Grid`, `*Card`, `*List`) — the suffix must match the subdirectory it lives in (e.g. `AnalysisScorecardSection` in `sections/`, `AnalysisGrid` in `grids/`).
 
 - **One component per file** — each `.tsx` file exports exactly one component.
-- **Props in the nearest parent `types.ts`** — every component's props are defined in a module `types.ts`, never inline.
 - **Top-level modules** (at `components/` root or in `app/`) are full module directories with `index.tsx`, `types.ts`, `helpers.ts`, `constants.ts` as needed.
 <!-- END:module-conventions -->
 

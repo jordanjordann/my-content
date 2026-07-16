@@ -2,32 +2,19 @@ export type AnalysisListItem = {
   id: string;
   prompt: string | null;
   status: "pending" | "completed" | "failed";
-  itemCount: number;
-  platforms: ("instagram" | "youtube")[];
-  overallScore: number | null;
-  createdAt: string;
-};
-
-export type ContentItemRecord = {
-  id: string;
   url: string;
   platform: "instagram" | "youtube";
   mediaType: "reel" | "post" | "carousel" | "short";
   username: string;
+  overallScore: number | null;
+  scorecard: Scorecard | null;
   thumbnailUrl: string | null;
   viewCount: number | null;
   postDate: string | null;
-  caption: string | null;
   durationSec: number | null;
-};
-
-export type ContentItemAnalysis = {
-  url: string;
-  mediaType: string;
-  score: number;
-  strengths: string[];
-  weaknesses: string[];
-  keyMoments: string[];
+  caption: string | null;
+  title: string | null;
+  createdAt: string;
 };
 
 export type Scorecard = {
@@ -49,7 +36,9 @@ export type Patterns = {
 export type ContentAnalysis = {
   overallScore: number;
   summary: string;
-  perItem: ContentItemAnalysis[];
+  strengths: string[];
+  weaknesses: string[];
+  keyMoments: string[];
   scorecard: Scorecard;
   patterns: Patterns;
   suggestions: string[];
@@ -58,8 +47,17 @@ export type ContentAnalysis = {
 export type AnalysisDetail = {
   id: string;
   prompt: string | null;
-  status: string;
-  items: ContentItemRecord[];
+  status: "pending" | "completed" | "failed";
+  title: string | null;
+  url: string;
+  platform: "instagram" | "youtube";
+  mediaType: "reel" | "post" | "carousel" | "short";
+  username: string;
+  thumbnailUrl: string | null;
+  viewCount: number | null;
+  postDate: string | null;
+  caption: string | null;
+  durationSec: number | null;
   results: ContentAnalysis | null;
   createdAt: string;
 };
@@ -70,9 +68,9 @@ export type AnalysesListResponse = {
 };
 
 export type AnalyzeResponse = {
-  analysisId: string;
-  itemsAnalyzed: number;
-  failedItems: { url: string; index: number; error: string }[];
+  analysisIds: string[];
+  analysesCreated: number;
+  failedUrls: { url: string; index: number; error: string }[];
   error?: string;
 };
 

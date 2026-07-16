@@ -1,6 +1,7 @@
 export type AnalysisStep =
   | "classifying"
   | "fetching"
+  | "summarizing"
   | "downloading"
   | "uploading"
   | "analyzing"

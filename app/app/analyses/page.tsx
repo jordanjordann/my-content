@@ -1,0 +1,11 @@
+import { Suspense } from "react";
+
+import { AnalysesContent } from "@/app/app/analyses/components/AnalysesContent";
+
+export default function AnalysesPage() {
+  return (
+    <Suspense fallback={<div className="p-6">Loading...</div>}>
+      <AnalysesContent />
+    </Suspense>
+  );
+}

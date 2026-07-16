@@ -79,36 +79,94 @@ export async function closeBrowser(browser: Browser): Promise<void> {
 
 export async function extractMetadata(page: Page, url: string): Promise<MediaMetadata> {
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+  await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => undefined);
 
   const metadata = await page.evaluate(() => {
     const result: Record<string, unknown> = {};
 
+    const getMeta = (selector: string) =>
+      document.querySelector(selector)?.getAttribute("content") ?? null;
+
+    const applyMedia = (media: Record<string, unknown>) => {
+      Object.assign(result, media);
+
+      const captionEdges = media.edge_media_to_caption as
+        | { edges?: Array<{ node?: { text?: string } }> }
+        | undefined;
+      const caption = captionEdges?.edges?.[0]?.node?.text;
+      if (caption) result.caption = caption;
+
+      if (media.display_url) result.display_url = media.display_url;
+      if (media.thumbnail_src) result.thumbnail_src = media.thumbnail_src;
+    };
+
     try {
-      const scripts = document.querySelectorAll("script[type='application/json']");
+      const scripts = Array.from(document.querySelectorAll("script"));
       for (const script of scripts) {
+        const text = script.textContent ?? "";
+
         try {
-          const data = JSON.parse(script.textContent ?? "{}");
+          const data = JSON.parse(text);
           if (data?.require) {
             for (const entry of data.require) {
-              if (entry?.[3]?.__bbox?.result) {
-                Object.assign(result, entry[3].__bbox.result);
-              }
+              const bboxResult = entry?.[3]?.__bbox?.result;
+              if (bboxResult) Object.assign(result, bboxResult);
             }
           }
         } catch {
-          // Skip invalid JSON
+          // Continue to legacy global-state parsing below.
+        }
+
+        if (!text.includes("edge_media_to_caption") && !text.includes("shortcode_media")) {
+          continue;
+        }
+
+        const jsonMatch = text.match(/window\.__INITIAL_STATE__\s*=\s*({.+?});\s*$/m) ??
+          text.match(/window\._sharedData\s*=\s*({.+?});\s*$/m);
+
+        if (!jsonMatch?.[1]) continue;
+
+        try {
+          const parsed = JSON.parse(jsonMatch[1]);
+          const entryData = parsed.entry_data?.PostPage?.[0] ?? parsed.entry_data?.ReelsMedia?.[0];
+          const media = entryData?.graphql?.shortcode_media ?? entryData?.graphql?.reels_media?.[0];
+          if (media) applyMedia(media);
+        } catch {
+          // Skip invalid legacy payloads.
         }
       }
     } catch {
-      // Fallback to OG tags
+      // Fallback to meta tags below.
     }
 
-    if (!result.shortcode) {
-      const ogUrl = document.querySelector('meta[property="og:url"]') as HTMLMetaElement | null;
-      if (ogUrl?.content) {
-        const parts = ogUrl.content.split("/");
-        result.shortcode = parts[parts.length - 2] ?? parts[parts.length - 1];
+    const ogUrl = getMeta('meta[property="og:url"]');
+    if (!result.shortcode && ogUrl) {
+      const parts = ogUrl.split("/").filter(Boolean);
+      result.shortcode = parts[parts.length - 1] ?? "";
+    }
+
+    const ogTitle = getMeta('meta[property="og:title"]');
+    const ogDescription = getMeta('meta[property="og:description"]');
+    const ogImage = getMeta('meta[property="og:image"]');
+    const twitterImage = getMeta('meta[name="twitter:image"]');
+
+    if (!result.caption && ogTitle) {
+      const quotedCaption = ogTitle.match(/:\s*["“](.+?)["”]\s*$/);
+      if (quotedCaption?.[1]) result.caption = quotedCaption[1];
+    }
+
+    if (!result.caption && ogDescription) {
+      const quotedCaption = ogDescription.match(/:\s*["“](.+?)["”]\s*$/);
+      if (quotedCaption?.[1]) {
+        result.caption = quotedCaption[1];
+      } else {
+        const parts = ogDescription.split(" · ");
+        result.caption = parts.length > 1 ? parts.slice(1).join(" · ") : ogDescription;
       }
+    }
+
+    if (!result.thumbnail_src && !result.display_url) {
+      result.thumbnail_src = ogImage ?? twitterImage;
     }
 
     return result;

@@ -3,8 +3,6 @@ import { NextResponse } from "next/server";
 import {
   getAnalysesList,
   getUniqueAccounts,
-  getAnalysisPlatforms,
-  getAnalysisResult,
   deleteAnalysis,
 } from "@/lib/server/db";
 import { isAuthenticated } from "@/lib/server/auth";
@@ -19,18 +17,25 @@ export async function GET() {
 
     const [analyses, accounts] = await Promise.all([getAnalysesList(), getUniqueAccounts()]);
 
-    const analysesWithDetails = await Promise.all(
-      analyses.map(async (analysis) => {
-        const [platforms, resultContent] = await Promise.all([
-          getAnalysisPlatforms(analysis.id),
-          getAnalysisResult(analysis.id),
-        ]);
-
+    const analysesWithDetails = analyses.map((analysis) => {
         let overallScore: number | null = null;
-        if (resultContent) {
+        let scorecard = null;
+        if (analysis.resultContent) {
           try {
-            const parsed = JSON.parse(resultContent) as { overallScore?: number };
+            const parsed = JSON.parse(analysis.resultContent) as {
+              overallScore?: number;
+              scorecard?: {
+                hookStrength: number;
+                retentionFlow: number;
+                visualPolish: number;
+                audioVisualSync: number;
+                trendAlignment: number;
+                callToAction: number;
+                brandConsistency: number;
+              };
+            };
             overallScore = typeof parsed.overallScore === "number" ? parsed.overallScore : null;
+            scorecard = parsed.scorecard ?? null;
           } catch {
             // Ignore parse errors
           }
@@ -40,13 +45,21 @@ export async function GET() {
           id: analysis.id,
           prompt: analysis.prompt,
           status: analysis.status,
-          itemCount: analysis.itemCount,
-          platforms,
+          url: analysis.url,
+          platform: analysis.platform,
+          mediaType: analysis.mediaType,
+          username: analysis.username,
           overallScore,
+          scorecard,
+          thumbnailUrl: analysis.thumbnailUrl,
+          viewCount: analysis.viewCount,
+          postDate: analysis.postDate,
+          durationSec: analysis.durationSec,
+          caption: analysis.caption,
+          title: analysis.title,
           createdAt: analysis.createdAt,
         };
-      }),
-    );
+      });
 
     return NextResponse.json({
       analyses: analysesWithDetails,

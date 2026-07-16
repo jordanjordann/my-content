@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getAnalysisDetail, getAnalysisResult } from "@/lib/server/db";
+import { getAnalysisDetail } from "@/lib/server/db";
 import { isAuthenticated } from "@/lib/server/auth";
 
 export const runtime = "nodejs";
@@ -21,11 +21,10 @@ export async function GET(
       return NextResponse.json({ error: "Analysis not found." }, { status: 404 });
     }
 
-    const resultContent = await getAnalysisResult(id);
     let results: unknown = null;
-    if (resultContent) {
+    if (detail.resultContent) {
       try {
-        results = JSON.parse(resultContent);
+        results = JSON.parse(detail.resultContent);
       } catch {
         results = null;
       }
@@ -35,7 +34,16 @@ export async function GET(
       id: detail.id,
       prompt: detail.prompt,
       status: detail.status,
-      items: detail.items,
+      title: detail.title,
+      url: detail.url,
+      platform: detail.platform,
+      mediaType: detail.mediaType,
+      username: detail.username,
+      thumbnailUrl: detail.thumbnailUrl,
+      viewCount: detail.viewCount,
+      postDate: detail.postDate,
+      caption: detail.caption,
+      durationSec: detail.durationSec,
       results,
       createdAt: detail.createdAt,
     });

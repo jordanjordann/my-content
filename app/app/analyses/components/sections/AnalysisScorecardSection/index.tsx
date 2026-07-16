@@ -1,0 +1,1 @@
+export { AnalysisScorecardSection } from "./AnalysisScorecardSection";
