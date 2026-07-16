@@ -154,12 +154,20 @@ export function AnalysisDetailModal({ id, onClose }: AnalysisDetailModalProps) {
                     <div className="relative aspect-[9/16] overflow-hidden rounded-xl border bg-secondary">
                       {data.thumbnailUrl ? (
                         <>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={data.thumbnailUrl}
-                            alt={data.username}
-                            className="h-full w-full object-cover"
-                          />
+                          <a
+                            href={data.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={`Open ${data.platform} content by ${data.username} in a new tab`}
+                            className="block h-full w-full"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={data.thumbnailUrl}
+                              alt={data.username}
+                              className="h-full w-full object-cover"
+                            />
+                          </a>
                           <div className="absolute left-2 top-2 rounded-md bg-black/60 p-1.5 text-white/80">
                             {data.mediaType === "reel" ? (
                               <FilmIcon className="size-3.5" />
