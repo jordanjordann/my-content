@@ -32,10 +32,10 @@ export function Sidebar({ children }: SidebarProps) {
             Analysis
           </p>
           <Link
-            href="/analyses"
+            href="/app/analyses"
             className={cn(
               "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors hover:bg-sidebar-accent",
-              pathname?.startsWith("/analyses") && "bg-sidebar-accent text-sidebar-foreground",
+              pathname?.startsWith("/app/analyses") && "bg-sidebar-accent text-sidebar-foreground",
             )}
           >
             <BarChart3Icon className="size-4 text-accent" aria-hidden="true" />
