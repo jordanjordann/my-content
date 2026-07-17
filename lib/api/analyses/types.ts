@@ -1,9 +1,13 @@
+export type AnalysisPlatform = "instagram" | "youtube";
+
+export type AnalysisStatus = "pending" | "completed" | "failed";
+
 export type AnalysisListItem = {
   id: string;
   prompt: string | null;
-  status: "pending" | "completed" | "failed";
+  status: AnalysisStatus;
   url: string;
-  platform: "instagram" | "youtube";
+  platform: AnalysisPlatform;
   mediaType: "reel" | "post" | "carousel" | "short";
   username: string;
   overallScore: number | null;
@@ -15,6 +19,11 @@ export type AnalysisListItem = {
   caption: string | null;
   title: string | null;
   createdAt: string;
+};
+
+/** `AnalysisListItem` with a precomputed, normalized search index over title/caption/prompt. */
+export type AnalysisListItemIndexed = AnalysisListItem & {
+  searchText: string;
 };
 
 export type Scorecard = {
@@ -47,10 +56,10 @@ export type ContentAnalysis = {
 export type AnalysisDetail = {
   id: string;
   prompt: string | null;
-  status: "pending" | "completed" | "failed";
+  status: AnalysisStatus;
   title: string | null;
   url: string;
-  platform: "instagram" | "youtube";
+  platform: AnalysisPlatform;
   mediaType: "reel" | "post" | "carousel" | "short";
   username: string;
   thumbnailUrl: string | null;
