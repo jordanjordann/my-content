@@ -5,16 +5,14 @@ import type {
   AnalysisPlatform,
   AnalysisStatus,
 } from "@/lib/api/analyses/types";
+import { normalize } from "@/lib/api/analyses/helpers";
 import { FILTER_PARAM_KEYS, PLATFORM_OPTIONS, STATUS_OPTIONS } from "@/app/app/analyses/constants";
 import type { AnalysisFilters, FilterDimension } from "@/app/app/analyses/types";
 
 const PLATFORM_VALUES = new Set<string>(PLATFORM_OPTIONS.map((option) => option.value));
 const STATUS_VALUES = new Set<string>(STATUS_OPTIONS.map((option) => option.value));
 
-/** Lowercase, trim, and collapse whitespace runs to a single space. */
-export function normalize(s: string): string {
-  return s.toLowerCase().trim().replace(/\s+/g, " ");
-}
+export { normalize };
 
 /**
  * Parses a comma-separated URL param into a trimmed, de-duped list.

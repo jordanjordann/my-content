@@ -31,6 +31,16 @@ export function useAnalysisFilters() {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // `setKeyword`'s pending timer must read the latest filters/searchParams at fire time, not
+  // from the closure of the render that scheduled it — otherwise an interleaved immediate write
+  // (e.g. a checkbox toggle inside the 300ms debounce window) gets silently clobbered by the
+  // debounced write resolving stale state. See TDD §7.2. Synced in an effect (not during render)
+  // per this repo's `react-hooks/refs` rule, which forbids mutating a ref in the render body.
+  const latest = useRef({ filters, searchParams });
+  useEffect(() => {
+    latest.current = { filters, searchParams };
+  });
+
   useEffect(
     () => () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -78,10 +88,12 @@ export function useAnalysisFilters() {
     (q: string) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
-        writeFilters({ ...filters, q });
+        const { filters: f, searchParams: sp } = latest.current;
+        const qs = buildFilterQueryString(new URLSearchParams(sp), { ...f, q });
+        router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
       }, KEYWORD_DEBOUNCE_MS);
     },
-    [filters, writeFilters],
+    [router, pathname],
   );
 
   const clearAll = useCallback(() => {

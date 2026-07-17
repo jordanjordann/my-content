@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getAnalyses, getAnalysis, analyzeContent, deleteAnalysis } from "@/lib/api/analyses/api";
 import { ANALYSIS_KEYS } from "@/lib/api/analyses/constants";
 import type { AnalysesListResponse, AnalysisListItemIndexed } from "@/lib/api/analyses/types";
-import { normalize } from "@/app/app/analyses/helpers";
+import { normalize } from "@/lib/api/analyses/helpers";
 
 /**
  * Precomputes the keyword search index (`searchText`) for each analysis. Only title/caption/
