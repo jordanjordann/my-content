@@ -56,21 +56,26 @@ export async function resolveProfile({
   }
 
   try {
-    const raw = await getInstagramProfile(username);
+    const envelope = await getInstagramProfile(username);
+    const raw = envelope.data?.user;
+
+    if (!raw) {
+      throw new Error(`ScrapeCreators returned no data.user for profile ${username}`);
+    }
 
     return await upsertProfile({
       platform,
       username,
-      externalId: (raw.id ?? raw.pk) != null ? String(raw.id ?? raw.pk) : null,
-      followerCount: raw.edge_followed_by?.count ?? raw.follower_count ?? null,
-      followingCount: raw.edge_follow?.count ?? raw.following_count ?? null,
+      externalId: raw.id != null ? String(raw.id) : null,
+      followerCount: raw.edge_followed_by?.count ?? null,
+      followingCount: raw.edge_follow?.count ?? null,
       fullName: raw.full_name ?? null,
       profilePicUrl: raw.profile_pic_url ?? null,
       biography: raw.biography ?? null,
       isVerified: raw.is_verified ?? null,
       isBusinessAccount: raw.is_business_account ?? null,
       isPrivate: raw.is_private ?? null,
-      rawPayload: JSON.stringify(raw),
+      rawPayload: JSON.stringify(envelope),
     });
   } catch (error) {
     console.error(`[Profiles] resolveProfile failed for ${platform}/${username}:`, error);
