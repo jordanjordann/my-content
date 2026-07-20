@@ -1,7 +1,8 @@
 /**
  * Raw ScrapeCreators response types.
  *
- * Confirmed against live payloads (a reel and a 12-slide carousel):
+ * Confirmed against live payloads (a reel and a 12-slide carousel), fetched
+ * with `trim: false` (see lib/server/scrapecreators/instagram.ts for why):
  * `/v1/instagram/post` returns an envelope —
  * `{ success, credits_remaining, data: { xdt_shortcode_media: {...} }, status }`
  * — wrapping the Instagram GraphQL `xdt_shortcode_media` shape. There is no
@@ -10,6 +11,15 @@
  * envelope + media shape. Unwrapping `data.xdt_shortcode_media` happens at
  * the fetcher call site (lib/server/analysis/fetcher/instagram.ts), not
  * here — this module only owns transport types.
+ *
+ * `/v1/instagram/profile` was captured live (2026-07-20, see
+ * /tmp/sc-profile-response.json) and confirmed to return
+ * `{ success, credits_remaining, data: { user: {...} }, status }` — same
+ * envelope shape regardless of `trim`. There is no flat
+ * `follower_count`/`following_count`/`pk` variant; that was an unverified
+ * fallback that never matched a real payload and has been removed.
+ * Unwrapping `data.user` happens at the call site
+ * (lib/server/profiles/service.ts), not here.
  */
 
 export interface ScrapeCreatorsImageResource {
@@ -127,10 +137,15 @@ export interface ScrapeCreatorsPostEnvelope {
   [key: string]: unknown;
 }
 
-/** Raw response from `/v1/instagram/profile`. */
-export interface ScrapeCreatorsProfileResponse {
+/**
+ * `data.user` — the actual profile payload from `/v1/instagram/profile`.
+ * Confirmed against a real payload (/tmp/sc-profile-response.json); there
+ * is no flat `follower_count`/`following_count`/`pk` fallback shape, only
+ * the nested `edge_followed_by`/`edge_follow` count objects — the same
+ * convention the post owner block uses.
+ */
+export interface ScrapeCreatorsProfileUser {
   id?: string;
-  pk?: string;
   username?: string;
   full_name?: string;
   biography?: string;
@@ -139,8 +154,15 @@ export interface ScrapeCreatorsProfileResponse {
   is_private?: boolean;
   is_business_account?: boolean;
   edge_followed_by?: { count?: number };
-  follower_count?: number;
   edge_follow?: { count?: number };
-  following_count?: number;
+  [key: string]: unknown;
+}
+
+/** Envelope returned by `/v1/instagram/profile`. */
+export interface ScrapeCreatorsProfileEnvelope {
+  success?: boolean;
+  credits_remaining?: number;
+  data?: { user?: ScrapeCreatorsProfileUser };
+  status?: string;
   [key: string]: unknown;
 }
