@@ -1,32 +1,26 @@
 /**
  * Raw ScrapeCreators response types.
  *
- * These are intentionally permissive — the live `/v1/instagram/post` shape
- * is confirmed to be the Instagram GraphQL `xdt_shortcode_media` shape, NOT
- * the media-info shape the original PRD assumed (see TDD §1.1.4). Both are
- * modelled here as optional fields on the same loose interface so a future
- * ScrapeCreators change (or a `trim=true` variant) doesn't throw at the type
- * level. Field-level resolution/fallback logic lives in the fetcher adapter,
- * not here — this module only owns transport.
+ * Confirmed against live payloads (a reel and a 12-slide carousel):
+ * `/v1/instagram/post` returns an envelope —
+ * `{ success, credits_remaining, data: { xdt_shortcode_media: {...} }, status }`
+ * — wrapping the Instagram GraphQL `xdt_shortcode_media` shape. There is no
+ * "media-info" variant; that was a PRD assumption that never matched the
+ * live API and has been removed. This module models only the confirmed
+ * envelope + media shape. Unwrapping `data.xdt_shortcode_media` happens at
+ * the fetcher call site (lib/server/analysis/fetcher/instagram.ts), not
+ * here — this module only owns transport types.
  */
 
-export interface ScrapeCreatorsImageCandidate {
-  url?: string;
-  width?: number;
-  height?: number;
-  [key: string]: unknown;
-}
-
-export interface ScrapeCreatorsVideoVersion {
-  url?: string;
-  width?: number;
-  height?: number;
+export interface ScrapeCreatorsImageResource {
+  src?: string;
+  config_width?: number;
+  config_height?: number;
   [key: string]: unknown;
 }
 
 export interface ScrapeCreatorsOwner {
   id?: string;
-  pk?: string;
   username?: string;
   full_name?: string;
   profile_pic_url?: string;
@@ -35,77 +29,84 @@ export interface ScrapeCreatorsOwner {
   is_business_account?: boolean;
   biography?: string;
   edge_followed_by?: { count?: number };
-  follower_count?: number;
   edge_follow?: { count?: number };
-  following_count?: number;
   [key: string]: unknown;
 }
 
+/** `__typename` discriminator shared by top-level media and carousel children. */
+export type ScrapeCreatorsMediaTypename = "XDTGraphVideo" | "XDTGraphImage" | "XDTGraphSidecar";
+
+/**
+ * A single slide of a carousel (`edge_sidecar_to_children.edges[].node`).
+ * Only video-typed slides (`__typename: "XDTGraphVideo"`) carry
+ * `video_url`/`video_view_count`/`has_audio` — image slides do not.
+ */
 export interface ScrapeCreatorsCarouselChildNode {
+  __typename?: ScrapeCreatorsMediaTypename | string;
   id?: string;
+  shortcode?: string;
   is_video?: boolean;
   video_url?: string;
+  video_view_count?: number;
+  video_duration?: number;
+  has_audio?: boolean;
   display_url?: string;
-  video_versions?: ScrapeCreatorsVideoVersion[];
-  image_versions2?: { candidates?: ScrapeCreatorsImageCandidate[] };
+  thumbnail_src?: string;
+  display_resources?: ScrapeCreatorsImageResource[];
   dimensions?: { width?: number; height?: number };
   [key: string]: unknown;
 }
 
 /**
- * Raw post/reel/carousel payload from `/v1/instagram/post`.
- * Tolerates both the "media-info" and "GraphQL xdt_shortcode_media" shapes.
+ * `data.xdt_shortcode_media` — the actual post/reel/carousel payload.
+ * Carousels (`__typename: "XDTGraphSidecar"`) have no top-level
+ * `video_view_count`/`has_audio`/`video_url` — those only exist on
+ * video-typed children in `edge_sidecar_to_children`.
  */
-export interface ScrapeCreatorsPostResponse {
-  // media-info-shape fields (PRD-assumed)
-  play_count?: number;
-  like_count?: number;
-  comment_count?: number;
-  caption?: { text?: string } | string;
-  taken_at?: number;
-  video_versions?: ScrapeCreatorsVideoVersion[];
-  image_versions2?: { candidates?: ScrapeCreatorsImageCandidate[] };
-  original_width?: number;
-  original_height?: number;
-  music_metadata?: {
-    music_info?: {
-      music_asset_info?: {
-        song_name?: string;
-        display_artist?: string;
-        audio_cluster_id?: string;
-      };
-    };
-  };
-  carousel_media?: ScrapeCreatorsCarouselChildNode[];
-  media_type?: number | string;
-  has_audio?: boolean;
-  should_mute_audio?: boolean;
-  original_sound_info?: unknown;
+export interface ScrapeCreatorsMedia {
+  __typename?: ScrapeCreatorsMediaTypename | string;
+  id?: string;
+  shortcode?: string;
+  is_video?: boolean;
+  product_type?: string;
 
-  // GraphQL xdt_shortcode_media-shape fields (documented/live shape)
-  video_play_count?: number;
+  taken_at_timestamp?: number;
+
+  video_url?: string;
   video_view_count?: number;
+  video_duration?: number;
+  has_audio?: boolean;
+
+  thumbnail_src?: string;
+  display_url?: string;
+  display_resources?: ScrapeCreatorsImageResource[];
+  dimensions?: { width?: number; height?: number };
+
   edge_media_preview_like?: { count?: number };
   edge_media_to_parent_comment?: { count?: number };
   edge_media_to_caption?: { edges?: { node?: { text?: string } }[] };
-  taken_at_timestamp?: number;
-  video_url?: string;
-  display_url?: string;
-  display_resources?: ScrapeCreatorsImageCandidate[];
-  dimensions?: { width?: number; height?: number };
+
   clips_music_attribution_info?: {
     song_name?: string;
     artist_name?: string;
     audio_id?: string;
+    uses_original_audio?: boolean;
+    should_mute_audio?: boolean;
   };
+
   edge_sidecar_to_children?: { edges?: { node?: ScrapeCreatorsCarouselChildNode }[] };
-  is_video?: boolean;
-  product_type?: string;
-  shortcode?: string;
-  thumbnail_url?: string;
 
   owner?: ScrapeCreatorsOwner;
 
+  [key: string]: unknown;
+}
+
+/** Envelope returned by `/v1/instagram/post`. */
+export interface ScrapeCreatorsPostEnvelope {
+  success?: boolean;
+  credits_remaining?: number;
+  data?: { xdt_shortcode_media?: ScrapeCreatorsMedia };
+  status?: string;
   [key: string]: unknown;
 }
 

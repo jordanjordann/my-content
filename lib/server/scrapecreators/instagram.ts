@@ -1,17 +1,19 @@
 import { SC_PATHS } from "@/lib/server/scrapecreators/constants";
 import { scRequest } from "@/lib/server/scrapecreators/client";
 import type {
-  ScrapeCreatorsPostResponse,
+  ScrapeCreatorsPostEnvelope,
   ScrapeCreatorsProfileResponse,
 } from "@/lib/server/scrapecreators/types";
 
 /**
- * Fetch a raw Instagram post/reel/carousel payload. No mapping happens here
- * — the fetcher adapter (lib/server/analysis/fetcher/adapter.ts) owns
- * translating this into MediaMetadata.
+ * Fetch the raw Instagram post/reel/carousel envelope. No mapping happens
+ * here — the fetcher (lib/server/analysis/fetcher/instagram.ts) unwraps
+ * `data.xdt_shortcode_media` and the adapter
+ * (lib/server/analysis/fetcher/adapter.ts) owns translating that into
+ * MediaMetadata.
  */
-export async function getInstagramPost(url: string): Promise<ScrapeCreatorsPostResponse> {
-  return scRequest<ScrapeCreatorsPostResponse>(SC_PATHS.post, { url, trim: true });
+export async function getInstagramPost(url: string): Promise<ScrapeCreatorsPostEnvelope> {
+  return scRequest<ScrapeCreatorsPostEnvelope>(SC_PATHS.post, { url, trim: true });
 }
 
 /**

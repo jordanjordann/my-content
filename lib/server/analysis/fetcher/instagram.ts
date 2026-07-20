@@ -22,7 +22,13 @@ export interface FetchedInstagramMetadata {
  * learn the follower count when the post payload already carried it.
  */
 export async function fetchInstagramMetadata(url: string): Promise<FetchedInstagramMetadata> {
-  const raw = await getInstagramPost(url);
+  const envelope = await getInstagramPost(url);
+  const raw = envelope.data?.xdt_shortcode_media;
+
+  if (!raw) {
+    throw new Error(`ScrapeCreators returned no xdt_shortcode_media for ${url}`);
+  }
+
   return {
     metadata: adaptPostResponse(raw, url),
     ownerHint: extractOwnerProfile(raw),

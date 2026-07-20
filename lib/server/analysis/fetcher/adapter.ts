@@ -1,17 +1,19 @@
 import type { MediaMetadata, OwnerProfileHint } from "@/lib/server/analysis/types";
 import type {
   ScrapeCreatorsCarouselChildNode,
-  ScrapeCreatorsPostResponse,
+  ScrapeCreatorsMedia,
 } from "@/lib/server/scrapecreators";
 
 /**
- * Dual-shape adapter: maps a raw ScrapeCreators `/v1/instagram/post`
- * payload to MediaMetadata. Written defensively because the documented
- * response is the GraphQL `xdt_shortcode_media` shape, not the media-info
- * shape the PRD assumed — see TDD §1.1.4 / §5.3. Field-level resolvers try
- * the media-info name first, then the GraphQL name, and fall back to null.
- * Every field is nullable; the adapter throws only when it cannot
- * determine a username at all, meaning the payload isn't a post.
+ * Maps an unwrapped ScrapeCreators `xdt_shortcode_media` object (the caller
+ * is responsible for unwrapping `data.xdt_shortcode_media` from the
+ * `/v1/instagram/post` envelope — see fetcher/instagram.ts) to
+ * MediaMetadata. Single-shape: this is the live GraphQL shape, confirmed
+ * against real reel and carousel payloads. There is no media-info
+ * fallback — that shape never matched the live API.
+ *
+ * Every field is nullable; the adapter throws only when it cannot determine
+ * a username at all, meaning the payload isn't a post.
  */
 
 function num(value: unknown): number | null {
@@ -45,21 +47,14 @@ function toIso(value: unknown): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-function getCarouselChildren(
-  raw: ScrapeCreatorsPostResponse,
-): ScrapeCreatorsCarouselChildNode[] {
-  if (Array.isArray(raw.carousel_media) && raw.carousel_media.length > 0) {
-    return raw.carousel_media;
-  }
-
+function getCarouselChildren(raw: ScrapeCreatorsMedia): ScrapeCreatorsCarouselChildNode[] {
   const edges = raw.edge_sidecar_to_children?.edges;
-  if (Array.isArray(edges) && edges.length > 0) {
-    return edges
-      .map((edge) => edge.node)
-      .filter((node): node is ScrapeCreatorsCarouselChildNode => !!node);
+  if (!Array.isArray(edges)) {
+    return [];
   }
-
-  return [];
+  return edges
+    .map((edge) => edge.node)
+    .filter((node): node is ScrapeCreatorsCarouselChildNode => !!node);
 }
 
 function extractShortcodeFromUrl(url: string): string {
@@ -78,13 +73,13 @@ interface ResolvedMediaType {
 }
 
 /**
- * 1. carousel if carousel_media / edge_sidecar_to_children is non-empty.
- * 2. else reel if product_type === "clips" or the URL path is /reel/.
+ * 1. carousel if `__typename === "XDTGraphSidecar"`.
+ * 2. else reel if `product_type === "clips"` or the URL path is `/reel/`.
  * 3. else post.
  */
-function resolveMediaType(raw: ScrapeCreatorsPostResponse, url: string): ResolvedMediaType {
-  const children = getCarouselChildren(raw);
-  if (children.length > 0) {
+function resolveMediaType(raw: ScrapeCreatorsMedia, url: string): ResolvedMediaType {
+  if (raw.__typename === "XDTGraphSidecar") {
+    const children = getCarouselChildren(raw);
     return { mediaType: "carousel", carouselItemCount: children.length };
   }
 
@@ -96,52 +91,35 @@ function resolveMediaType(raw: ScrapeCreatorsPostResponse, url: string): Resolve
   return { mediaType: "post", carouselItemCount: null };
 }
 
-function videoUrlFromNode(
-  node: ScrapeCreatorsPostResponse | ScrapeCreatorsCarouselChildNode,
-): string | null {
-  return str(node.video_url) ?? str(node.video_versions?.[0]?.url) ?? null;
-}
-
 /**
- * For reels: video_url or video_versions[0].url.
- * For carousels: the first child slide that is a video.
+ * For reels/posts: top-level `video_url`.
+ * For carousels: the first child slide whose `__typename` is
+ * `"XDTGraphVideo"` (carousels have no top-level `video_url`).
  * Returns null for image-only posts, correctly routing to metadata-only.
  */
-function resolveVideoUrl(
-  raw: ScrapeCreatorsPostResponse,
-  resolved: ResolvedMediaType,
-): string | null {
+function resolveVideoUrl(raw: ScrapeCreatorsMedia, resolved: ResolvedMediaType): string | null {
   if (resolved.mediaType === "carousel") {
-    const children = getCarouselChildren(raw);
-    const videoChild = children.find(
-      (child) => child.is_video === true || videoUrlFromNode(child) !== null,
+    const videoChild = getCarouselChildren(raw).find(
+      (child) => child.__typename === "XDTGraphVideo" || child.is_video === true,
     );
-    return videoChild ? videoUrlFromNode(videoChild) : null;
+    return videoChild ? (str(videoChild.video_url) ?? null) : null;
   }
 
-  return videoUrlFromNode(raw);
+  return str(raw.video_url);
 }
 
-function imageUrlFromNode(
-  node: ScrapeCreatorsPostResponse | ScrapeCreatorsCarouselChildNode,
-): string | null {
-  return str(node.display_url) ?? str(node.image_versions2?.candidates?.[0]?.url) ?? null;
-}
-
-/** display_url -> image_versions2.candidates[0].url -> thumbnail_url -> first carousel child's display url. */
-function resolveThumbnailUrl(raw: ScrapeCreatorsPostResponse): string | null {
-  const direct = imageUrlFromNode(raw);
+/** thumbnail_src -> display_url -> first carousel child's thumbnail_src/display_url. */
+function resolveThumbnailUrl(raw: ScrapeCreatorsMedia): string | null {
+  const direct = str(raw.thumbnail_src) ?? str(raw.display_url);
   if (direct) {
     return direct;
   }
 
-  const thumbnailUrl = str(raw.thumbnail_url);
-  if (thumbnailUrl) {
-    return thumbnailUrl;
-  }
-
   const firstChild = getCarouselChildren(raw)[0];
-  return firstChild ? imageUrlFromNode(firstChild) : null;
+  if (!firstChild) {
+    return null;
+  }
+  return str(firstChild.thumbnail_src) ?? str(firstChild.display_url);
 }
 
 interface ResolvedAudio {
@@ -152,27 +130,19 @@ interface ResolvedAudio {
   audioIsOriginal: boolean | null;
 }
 
-function resolveAudio(raw: ScrapeCreatorsPostResponse): ResolvedAudio {
-  const hasAudio = bool(raw.has_audio);
+function resolveAudio(raw: ScrapeCreatorsMedia): ResolvedAudio {
+  const music = raw.clips_music_attribution_info;
 
-  const clipsMusic = raw.clips_music_attribution_info;
-  const musicAsset = raw.music_metadata?.music_info?.music_asset_info;
-
-  const audioTitle = str(clipsMusic?.song_name) ?? str(musicAsset?.song_name) ?? null;
-  const audioArtist = str(clipsMusic?.artist_name) ?? str(musicAsset?.display_artist) ?? null;
-  const audioId = str(clipsMusic?.audio_id) ?? str(musicAsset?.audio_cluster_id) ?? null;
-
-  let audioIsOriginal: boolean | null = null;
-  if (raw.original_sound_info != null) {
-    audioIsOriginal = true;
-  } else if (typeof raw.should_mute_audio === "boolean") {
-    audioIsOriginal = raw.should_mute_audio === false;
-  }
-
-  return { hasAudio, audioTitle, audioArtist, audioId, audioIsOriginal };
+  return {
+    hasAudio: bool(raw.has_audio),
+    audioTitle: str(music?.song_name),
+    audioArtist: str(music?.artist_name),
+    audioId: str(music?.audio_id),
+    audioIsOriginal: bool(music?.uses_original_audio),
+  };
 }
 
-export function adaptPostResponse(raw: ScrapeCreatorsPostResponse, url: string): MediaMetadata {
+export function adaptPostResponse(raw: ScrapeCreatorsMedia, url: string): MediaMetadata {
   const shortcode = str(raw.shortcode) ?? extractShortcodeFromUrl(url);
 
   const username = str(raw.owner?.username) ?? extractUsernameFromUrl(url);
@@ -184,29 +154,18 @@ export function adaptPostResponse(raw: ScrapeCreatorsPostResponse, url: string):
 
   const resolvedMediaType = resolveMediaType(raw, url);
 
-  const viewCount =
-    num(raw.play_count) ?? num(raw.video_play_count) ?? num(raw.video_view_count) ?? null;
-
-  const likeCount = num(raw.like_count) ?? num(raw.edge_media_preview_like?.count) ?? null;
-
-  const commentCount =
-    num(raw.comment_count) ?? num(raw.edge_media_to_parent_comment?.count) ?? null;
-
-  const caption =
-    (typeof raw.caption === "object" ? str(raw.caption?.text) : str(raw.caption)) ??
-    str(raw.edge_media_to_caption?.edges?.[0]?.node?.text) ??
-    null;
-
-  const postDate = toIso(raw.taken_at ?? raw.taken_at_timestamp);
-
-  const durationSec = num(raw.video_duration) ?? null;
-
-  const originalWidth = num(raw.original_width) ?? num(raw.dimensions?.width) ?? null;
-  const originalHeight = num(raw.original_height) ?? num(raw.dimensions?.height) ?? null;
+  const viewCount = num(raw.video_view_count);
+  const likeCount = num(raw.edge_media_preview_like?.count);
+  const commentCount = num(raw.edge_media_to_parent_comment?.count);
+  const caption = str(raw.edge_media_to_caption?.edges?.[0]?.node?.text);
+  const postDate = toIso(raw.taken_at_timestamp);
+  const durationSec = num(raw.video_duration);
+  const originalWidth = num(raw.dimensions?.width);
+  const originalHeight = num(raw.dimensions?.height);
 
   const audio = resolveAudio(raw);
 
-  const externalId = str(raw.owner?.id) ?? str(raw.owner?.pk) ?? null;
+  const externalId = str(raw.owner?.id);
 
   return {
     url,
@@ -238,7 +197,7 @@ export function adaptPostResponse(raw: ScrapeCreatorsPostResponse, url: string):
  * opportunistically hydrate from (TDD §1.1.5) — the adapter does not
  * persist anything itself.
  */
-export function extractOwnerProfile(raw: ScrapeCreatorsPostResponse): OwnerProfileHint | null {
+export function extractOwnerProfile(raw: ScrapeCreatorsMedia): OwnerProfileHint | null {
   const owner = raw.owner;
   if (!owner) {
     return null;
@@ -251,12 +210,12 @@ export function extractOwnerProfile(raw: ScrapeCreatorsPostResponse): OwnerProfi
 
   return {
     username,
-    externalId: str(owner.id) ?? str(owner.pk) ?? null,
-    followerCount: num(owner.edge_followed_by?.count) ?? num(owner.follower_count) ?? null,
-    followingCount: num(owner.edge_follow?.count) ?? num(owner.following_count) ?? null,
-    fullName: str(owner.full_name) ?? null,
-    profilePicUrl: str(owner.profile_pic_url) ?? null,
-    biography: str(owner.biography) ?? null,
+    externalId: str(owner.id),
+    followerCount: num(owner.edge_followed_by?.count),
+    followingCount: num(owner.edge_follow?.count),
+    fullName: str(owner.full_name),
+    profilePicUrl: str(owner.profile_pic_url),
+    biography: str(owner.biography),
     isVerified: bool(owner.is_verified),
     isBusinessAccount: bool(owner.is_business_account),
     isPrivate: bool(owner.is_private),
