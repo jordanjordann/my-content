@@ -1,38 +1,25 @@
-import type { BrowserContext } from "playwright";
-import type { MediaMetadata } from "@/lib/server/analysis/types";
+import type { MediaMetadata, OwnerProfileHint } from "@/lib/server/analysis/types";
 import type { ClassifiedUrl } from "@/lib/server/analysis/classifier";
-import { extractMetadata, loadOrCreateContext } from "./instagram";
+import { fetchInstagramMetadata } from "./instagram";
 import { fetchShortMetadata, extractVideoUrl } from "./youtube";
 
-export async function fetchMetadata(
-  classified: ClassifiedUrl,
-  context?: BrowserContext,
-): Promise<MediaMetadata> {
-  if (classified.platform === "youtube") {
-    return fetchYoutubeMetadata(classified.url);
-  }
-
-  return fetchInstagramMetadata(classified.url, context);
+export interface FetchedMetadata {
+  metadata: MediaMetadata;
+  /** Always null for YouTube — only Instagram post payloads carry an owner block. */
+  ownerHint: OwnerProfileHint | null;
 }
 
-async function fetchInstagramMetadata(
-  url: string,
-  context?: BrowserContext,
-): Promise<MediaMetadata> {
-  const { chromium } = await import("playwright");
-  const browser = await chromium.launch({ headless: true });
-
-  try {
-    const ctx = context ?? (await loadOrCreateContext(browser));
-    const page = await ctx.newPage();
-    const metadata = await extractMetadata(page, url);
-    await page.close();
-    return metadata;
-  } finally {
-    if (!context) {
-      await browser.close();
-    }
+/**
+ * Fetches metadata for a classified URL. No BrowserContext param —
+ * Playwright's browser lifecycle has been removed entirely; Instagram now
+ * goes through the ScrapeCreators API (single request, no browser needed).
+ */
+export async function fetchMetadata(classified: ClassifiedUrl): Promise<FetchedMetadata> {
+  if (classified.platform === "youtube") {
+    return { metadata: await fetchYoutubeMetadata(classified.url), ownerHint: null };
   }
+
+  return fetchInstagramMetadata(classified.url);
 }
 
 async function fetchYoutubeMetadata(url: string): Promise<MediaMetadata> {

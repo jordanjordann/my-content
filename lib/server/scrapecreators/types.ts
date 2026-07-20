@@ -36,6 +36,8 @@ export interface ScrapeCreatorsOwner {
   biography?: string;
   edge_followed_by?: { count?: number };
   follower_count?: number;
+  edge_follow?: { count?: number };
+  following_count?: number;
   [key: string]: unknown;
 }
 

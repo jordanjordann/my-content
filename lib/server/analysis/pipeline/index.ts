@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { BrowserContext } from "playwright";
 import { db } from "@/lib/server/db";
 import { classifyUrl } from "@/lib/server/analysis/classifier";
-import { fetchMetadata, initBrowser, loadOrCreateContext, closeBrowser } from "@/lib/server/analysis/fetcher";
+import { fetchMetadata } from "@/lib/server/analysis/fetcher";
 import { downloadVideo, deleteTempFile } from "@/lib/server/analysis/downloader";
 import { uploadToGemini, analyzeContent } from "@/lib/server/analysis/gemini";
 import { buildSystemInstruction, buildUserPrompt } from "@/lib/server/analysis/prompts";
@@ -42,9 +41,6 @@ export async function runAnalysis({
 
   let videoPath: string | null = null;
 
-  const browser = await initBrowser();
-  let context: BrowserContext | undefined;
-
   try {
     if (isReAnalyze) {
       await db.execute({
@@ -66,12 +62,14 @@ export async function runAnalysis({
       });
     }
 
-    context = await loadOrCreateContext(browser);
-
     report("classifying", 1, "URL classified");
     report("fetching", 1, "Fetching content metadata...");
 
-    const metadata = await fetchMetadata(classified, context);
+    // NOTE: profile resolution, media_type reconciliation and carousel video
+    // selection land in #35 (pipeline wiring). This is a minimal, build-
+    // green adjustment to the new fetchMetadata() return shape and removal
+    // of the now-deleted Playwright browser lifecycle.
+    const { metadata } = await fetchMetadata(classified);
 
     console.log("[PIPELINE] Metadata fetched:");
     console.log(JSON.stringify(metadata, null, 2));
@@ -170,9 +168,6 @@ export async function runAnalysis({
   } finally {
     if (videoPath) {
       await deleteTempFile(videoPath);
-    }
-    if (browser) {
-      await closeBrowser(browser);
     }
   }
 }
