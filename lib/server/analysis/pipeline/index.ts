@@ -79,7 +79,7 @@ export async function runAnalysis({
         sql: `
           UPDATE analyses
           SET prompt = ?, status = 'pending', raw_gemini = NULL, result_content = NULL,
-              result_created_at = NULL, updated_at = datetime('now')
+              result_created_at = NULL, analysis_mode = NULL, updated_at = datetime('now')
           WHERE id = ?
         `,
         args: [prompt, analysisId],
@@ -126,6 +126,13 @@ export async function runAnalysis({
       commentCount: metadata.commentCount,
       followerCount,
     });
+
+    // MediaMetadata.followerCount/.engagementRate are documented as "filled
+    // by pipeline after profile resolve" — buildUserPrompt() (and its
+    // engagement-context block) reads them straight off `metadata`, so they
+    // must be assigned here, not just passed separately to the DB write.
+    metadata.followerCount = followerCount;
+    metadata.engagementRate = engagementRate;
 
     report("summarizing", 1, "Generating title from caption...");
     const generatedTitle = await summarizeCaptionToTitle(metadata.caption ?? "");
