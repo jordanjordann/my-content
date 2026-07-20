@@ -7,6 +7,23 @@ export const DOWNLOAD_TIMEOUT_MS = 120_000;
 
 export const MAX_REDIRECTS = 3;
 
-export const MAX_VIDEO_BYTES = process.env.MAX_VIDEO_BYTES
-  ? Number(process.env.MAX_VIDEO_BYTES)
-  : 524_288_000; // 500MB
+const DEFAULT_MAX_VIDEO_BYTES = 524_288_000; // 500MB
+
+function resolveMaxVideoBytes(): number {
+  const raw = process.env.MAX_VIDEO_BYTES;
+  if (raw === undefined || raw === "") {
+    return DEFAULT_MAX_VIDEO_BYTES;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(
+      `Invalid MAX_VIDEO_BYTES env var: "${raw}" is not a positive finite number. ` +
+        `Unset it to use the default (${DEFAULT_MAX_VIDEO_BYTES} bytes) or provide a valid positive integer.`,
+    );
+  }
+
+  return parsed;
+}
+
+export const MAX_VIDEO_BYTES = resolveMaxVideoBytes();

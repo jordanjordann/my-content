@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import dns from "node:dns";
 import https from "node:https";
+import type { LookupFunction as NetLookupFunction } from "node:net";
 import { randomUUID } from "node:crypto";
 import {
   DOWNLOAD_USER_AGENT,
@@ -69,17 +70,31 @@ function isPrivateOrLoopbackIp(ip: string): boolean {
 }
 
 /**
- * Rejects non-https URLs and hosts that resolve to a private/loopback/
- * link-local address. Must be called before connecting AND again on every
- * redirect hop, since the redirect target is just as attacker-influenceable
- * as the original URL.
+ * The outcome of validating a URL's hostname: the specific IP address that
+ * was checked against the private/loopback/link-local blocklist. This must
+ * be pinned to the actual connection (see `pinnedLookup` below) — resolving
+ * the hostname a second time at connect-time would reopen a DNS-rebinding
+ * hole, since nothing guarantees the second lookup returns the same address
+ * as the first.
  */
-async function assertSafeUrl(url: URL): Promise<void> {
+interface SafeAddress {
+  address: string;
+  family: 4 | 6;
+}
+
+/**
+ * Rejects non-https URLs and hosts that resolve to a private/loopback/
+ * link-local address, and returns the validated address to pin to the real
+ * connection. Must be called before connecting AND again on every redirect
+ * hop, since the redirect target is just as attacker-influenceable as the
+ * original URL.
+ */
+async function assertSafeUrl(url: URL): Promise<SafeAddress> {
   if (url.protocol !== "https:") {
     throw new Error(`Refusing to download non-https URL (protocol: ${url.protocol})`);
   }
 
-  let addresses: { address: string }[];
+  let addresses: { address: string; family: number }[];
   try {
     addresses = await dns.promises.lookup(url.hostname, { all: true });
   } catch {
@@ -95,6 +110,38 @@ async function assertSafeUrl(url: URL): Promise<void> {
       throw new Error(`Refusing to download from private/loopback host: ${url.hostname}`);
     }
   }
+
+  // Pin to the first validated address so the connection that actually gets
+  // made is guaranteed to be the one we just checked, not whatever a second,
+  // independent DNS resolution happens to return.
+  const [{ address, family }] = addresses;
+  return { address, family: family === 6 ? 6 : 4 };
+}
+
+/**
+ * Builds a `lookup` function for `https.request` that ignores whatever
+ * hostname it's asked to resolve and always returns the already-validated
+ * address. This is what actually closes the DNS-rebinding TOCTOU: without
+ * it, `https.request` re-resolves the hostname itself at connect time,
+ * which can return a different (attacker-controlled) address than the one
+ * `assertSafeUrl` validated a moment earlier.
+ */
+function pinnedLookup(safeAddress: SafeAddress): NetLookupFunction {
+  return (
+    _hostname: string,
+    options: dns.LookupOptions,
+    callback: (error: NodeJS.ErrnoException | null, address: string | dns.LookupAddress[], family?: number) => void,
+  ): void => {
+    // Node's `autoSelectFamily` (Happy Eyeballs, on by default) calls the
+    // lookup function with `{ all: true }` and expects an address array
+    // back, rather than the single-address form. Handle both shapes so the
+    // pin holds regardless of which calling convention net.js uses.
+    if (options && options.all) {
+      callback(null, [{ address: safeAddress.address, family: safeAddress.family }]);
+      return;
+    }
+    callback(null, safeAddress.address, safeAddress.family);
+  };
 }
 
 // --- download -----------------------------------------------------------
@@ -110,7 +157,12 @@ async function deletePartialFile(filePath: string): Promise<void> {
  * status, size-cap overflow, timeout, or stream errors — always cleaning
  * up any partial file on the reject path.
  */
-function fetchOnce(url: URL, filePath: string, deadlineAt: number): Promise<string | null> {
+function fetchOnce(
+  url: URL,
+  safeAddress: SafeAddress,
+  filePath: string,
+  deadlineAt: number,
+): Promise<string | null> {
   return new Promise((resolve, reject) => {
     const remainingMs = deadlineAt - Date.now();
     if (remainingMs <= 0) {
@@ -128,6 +180,12 @@ function fetchOnce(url: URL, filePath: string, deadlineAt: number): Promise<stri
           Accept: "*/*",
         },
         signal: AbortSignal.timeout(remainingMs),
+        // Pin the connection to the already-validated IP instead of letting
+        // https.request re-resolve (and potentially rebind to) the
+        // hostname. `servername` keeps SNI/cert verification and the Host
+        // header on the original hostname so TLS and the CDN still work.
+        lookup: pinnedLookup(safeAddress),
+        servername: url.hostname,
       },
       (response) => {
         const status = response.statusCode ?? 0;
@@ -210,7 +268,7 @@ export async function downloadVideo(videoUrl: string): Promise<string> {
     throw new Error(`Invalid video URL: ${videoUrl}`);
   }
 
-  await assertSafeUrl(currentUrl);
+  let safeAddress = await assertSafeUrl(currentUrl);
 
   const ext = path.extname(currentUrl.pathname) || ".mp4";
   const filePath = path.join("/tmp", `${randomUUID()}${ext}`);
@@ -219,7 +277,7 @@ export async function downloadVideo(videoUrl: string): Promise<string> {
   let redirectCount = 0;
 
   while (true) {
-    const location = await fetchOnce(currentUrl, filePath, deadlineAt);
+    const location = await fetchOnce(currentUrl, safeAddress, filePath, deadlineAt);
 
     if (location === null) {
       return filePath;
@@ -239,7 +297,10 @@ export async function downloadVideo(videoUrl: string): Promise<string> {
       throw new Error(`Redirect target is not a valid URL: ${location}`);
     }
 
-    await assertSafeUrl(nextUrl);
+    // Re-validate AND re-pin on every hop — the redirect target is just as
+    // attacker-influenceable as the original URL, and its DNS is an
+    // independent rebinding opportunity.
+    safeAddress = await assertSafeUrl(nextUrl);
     currentUrl = nextUrl;
   }
 }
