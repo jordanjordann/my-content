@@ -40,3 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 my-content.db
+
+# claude agent settings (local machine config, not shared)
+.claude/settings.json
+.claude/settings.local.json
