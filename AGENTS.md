@@ -4,6 +4,18 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+<!-- BEGIN:file-editing-rules -->
+# Never write files with shell redirection
+
+Create and modify repository files with the dedicated file write/edit tools only.
+
+- **Never** use heredocs (`cat > file << 'EOF'`), `echo >`, `printf >`, `>>`, `tee`, or in-place editors (`sed -i`, `perl -i`) on files tracked in this repo.
+- Shell redirection clobbers a file blind. The edit tools fail loudly when a file isn't in the expected state, which catches conflicts early — especially with multiple agents working in parallel worktrees.
+- Each shell write also triggers its own permission prompt, which is noisy for the user.
+
+Exception: redirection is fine for throwaway scratch files outside the repo (e.g. `/tmp`), and for genuine shell pipelines whose output isn't a source file.
+<!-- END:file-editing-rules -->
+
 <!-- BEGIN:module-conventions -->
 # Module conventions
 
