@@ -10,10 +10,12 @@ export {
   SC_RETRYABLE_STATUSES,
 } from "@/lib/server/scrapecreators/constants";
 export type {
-  ScrapeCreatorsPostResponse,
-  ScrapeCreatorsProfileResponse,
+  ScrapeCreatorsPostEnvelope,
+  ScrapeCreatorsProfileEnvelope,
+  ScrapeCreatorsProfileUser,
   ScrapeCreatorsOwner,
+  ScrapeCreatorsMedia,
   ScrapeCreatorsCarouselChildNode,
-  ScrapeCreatorsImageCandidate,
-  ScrapeCreatorsVideoVersion,
+  ScrapeCreatorsImageResource,
+  ScrapeCreatorsMediaTypename,
 } from "@/lib/server/scrapecreators/types";
