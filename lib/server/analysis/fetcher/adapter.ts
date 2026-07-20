@@ -92,16 +92,47 @@ function resolveMediaType(raw: ScrapeCreatorsMedia, url: string): ResolvedMediaT
 }
 
 /**
- * For reels/posts: top-level `video_url`.
- * For carousels: the first child slide whose `__typename` is
- * `"XDTGraphVideo"` (carousels have no top-level `video_url`).
- * Returns null for image-only posts, correctly routing to metadata-only.
+ * The video-typed carousel slide that the pipeline actually downloads.
+ *
+ * Semantics for a multi-video carousel: **first video slide only** (by
+ * document order in `edge_sidecar_to_children`). This is the same slide
+ * `resolveVideoUrl()` already selected, and every derived field that
+ * describes "the video" for a carousel (URL, duration, audio) is sourced
+ * from this exact node — so the `MAX_VIDEO_SECONDS` guard in the pipeline
+ * always evaluates the duration of the video that is actually downloaded,
+ * never a different slide. We deliberately do NOT take the max duration
+ * across all video slides: only one slide is ever downloaded, and gating
+ * on a slide that isn't downloaded would either wrongly block a safe
+ * download (if a later, undownloaded slide is long) or contribute nothing
+ * (if it's short) — neither serves the guard's purpose of bounding the
+ * bytes/seconds actually sent to Gemini.
  */
-function resolveVideoUrl(raw: ScrapeCreatorsMedia, resolved: ResolvedMediaType): string | null {
-  if (resolved.mediaType === "carousel") {
-    const videoChild = getCarouselChildren(raw).find(
+function resolveVideoChild(
+  raw: ScrapeCreatorsMedia,
+  resolved: ResolvedMediaType,
+): ScrapeCreatorsCarouselChildNode | null {
+  if (resolved.mediaType !== "carousel") {
+    return null;
+  }
+  return (
+    getCarouselChildren(raw).find(
       (child) => child.__typename === "XDTGraphVideo" || child.is_video === true,
-    );
+    ) ?? null
+  );
+}
+
+/**
+ * For reels/posts: top-level `video_url`.
+ * For carousels: the resolved video child's `video_url` (carousels have no
+ * top-level `video_url`). Returns null for image-only posts, correctly
+ * routing to metadata-only.
+ */
+function resolveVideoUrl(
+  raw: ScrapeCreatorsMedia,
+  resolved: ResolvedMediaType,
+  videoChild: ScrapeCreatorsCarouselChildNode | null,
+): string | null {
+  if (resolved.mediaType === "carousel") {
     return videoChild ? (str(videoChild.video_url) ?? null) : null;
   }
 
@@ -130,11 +161,33 @@ interface ResolvedAudio {
   audioIsOriginal: boolean | null;
 }
 
-function resolveAudio(raw: ScrapeCreatorsMedia): ResolvedAudio {
-  const music = raw.clips_music_attribution_info;
+/**
+ * Sources audio fields from the top-level media object for reels/posts, or
+ * from the resolved video carousel child for carousels — a sidecar's top
+ * level never carries `has_audio`/`clips_music_attribution_info` (confirmed
+ * against the real carousel payload), those only exist on video-typed
+ * children. Logs loudly (does not throw) when a carousel resolved a video
+ * child but that child is missing both fields, since the child-level shape
+ * hasn't been confirmed against a real video-carousel-slide payload yet.
+ */
+function resolveAudio(
+  raw: ScrapeCreatorsMedia,
+  videoChild: ScrapeCreatorsCarouselChildNode | null,
+): ResolvedAudio {
+  const source = videoChild ?? raw;
+  const music = source.clips_music_attribution_info;
+  const hasAudio = bool(source.has_audio);
+
+  if (videoChild && hasAudio === null && !music) {
+    console.warn(
+      "[ADAPTER] Carousel video child resolved but has no has_audio/clips_music_attribution_info — " +
+        "unconfirmed child shape, see ScrapeCreatorsCarouselChildNode",
+      { shortcode: raw.shortcode, childId: videoChild.id },
+    );
+  }
 
   return {
-    hasAudio: bool(raw.has_audio),
+    hasAudio,
     audioTitle: str(music?.song_name),
     audioArtist: str(music?.artist_name),
     audioId: str(music?.audio_id),
@@ -153,17 +206,21 @@ export function adaptPostResponse(raw: ScrapeCreatorsMedia, url: string): MediaM
   }
 
   const resolvedMediaType = resolveMediaType(raw, url);
+  const videoChild = resolveVideoChild(raw, resolvedMediaType);
 
   const viewCount = num(raw.video_view_count);
   const likeCount = num(raw.edge_media_preview_like?.count);
   const commentCount = num(raw.edge_media_to_parent_comment?.count);
   const caption = str(raw.edge_media_to_caption?.edges?.[0]?.node?.text);
   const postDate = toIso(raw.taken_at_timestamp);
-  const durationSec = num(raw.video_duration);
+  // Carousels have no top-level `video_duration` — source it from the same
+  // video child resolveVideoUrl() downloads (see resolveVideoChild() for
+  // the "first video slide" semantics and why the guard relies on it).
+  const durationSec = videoChild ? num(videoChild.video_duration) : num(raw.video_duration);
   const originalWidth = num(raw.dimensions?.width);
   const originalHeight = num(raw.dimensions?.height);
 
-  const audio = resolveAudio(raw);
+  const audio = resolveAudio(raw, videoChild);
 
   const externalId = str(raw.owner?.id);
 
@@ -177,7 +234,7 @@ export function adaptPostResponse(raw: ScrapeCreatorsMedia, url: string): MediaM
     postDate,
     durationSec,
     thumbnailUrl: resolveThumbnailUrl(raw),
-    videoUrl: resolveVideoUrl(raw, resolvedMediaType),
+    videoUrl: resolveVideoUrl(raw, resolvedMediaType, videoChild),
     likeCount,
     commentCount,
     hasAudio: audio.hasAudio,

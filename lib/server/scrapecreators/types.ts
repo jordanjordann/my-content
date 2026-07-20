@@ -54,6 +54,23 @@ export interface ScrapeCreatorsCarouselChildNode {
   thumbnail_src?: string;
   display_resources?: ScrapeCreatorsImageResource[];
   dimensions?: { width?: number; height?: number };
+  /**
+   * Not confirmed against a real video-carousel-slide payload — the only
+   * captured carousel sample (/tmp/sc-carousel-response.json) is all-image.
+   * Modeled after the top-level `XDTGraphVideo` shape since carousel video
+   * children share the same GraphQL `__typename`/field conventions as the
+   * top-level media object. Flagged in the #42 review; get a real sample
+   * with a video slide to confirm before relying on this further in
+   * production — adapter.ts logs loudly when a resolved video child is
+   * missing these fields.
+   */
+  clips_music_attribution_info?: {
+    song_name?: string;
+    artist_name?: string;
+    audio_id?: string;
+    uses_original_audio?: boolean;
+    should_mute_audio?: boolean;
+  };
   [key: string]: unknown;
 }
 
