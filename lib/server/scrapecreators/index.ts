@@ -11,7 +11,8 @@ export {
 } from "@/lib/server/scrapecreators/constants";
 export type {
   ScrapeCreatorsPostEnvelope,
-  ScrapeCreatorsProfileResponse,
+  ScrapeCreatorsProfileEnvelope,
+  ScrapeCreatorsProfileUser,
   ScrapeCreatorsOwner,
   ScrapeCreatorsMedia,
   ScrapeCreatorsCarouselChildNode,
