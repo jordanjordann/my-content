@@ -15,18 +15,21 @@ export function FilterChip({
   valueLabel,
   onRemove,
   isMono,
+  isQuoted,
 }: FilterChipProps) {
+  const displayLabel = isQuoted ? `"${valueLabel}"` : valueLabel;
+
   return (
     <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-muted py-1 pr-1.5 pl-2.5 text-xs">
       <span className="shrink-0 text-muted-foreground">{dimensionLabel}</span>
       <span
-        title={valueLabel}
+        title={displayLabel}
         className={cn(
-          "max-w-[140px] truncate text-foreground",
+          "max-w-[200px] truncate text-foreground",
           isMono && "font-mono"
         )}
       >
-        {valueLabel}
+        {displayLabel}
       </span>
       <button
         type="button"

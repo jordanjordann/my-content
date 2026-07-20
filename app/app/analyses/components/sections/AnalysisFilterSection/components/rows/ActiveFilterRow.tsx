@@ -66,7 +66,8 @@ export function ActiveFilterRow({
       {filters.q !== "" && (
         <FilterChip
           dimensionLabel={DIMENSION_CHIP_LABELS.keyword}
-          valueLabel={`"${filters.q}"`}
+          valueLabel={filters.q}
+          isQuoted
           onRemove={onClearKeyword}
         />
       )}

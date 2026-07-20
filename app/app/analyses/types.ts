@@ -18,12 +18,6 @@ export type AnalysisGridProps = {
   isDeleting?: boolean;
 };
 
-export type AnalysisFilterProps = {
-  accounts: string[];
-  selectedAccount: string | null;
-  onSelect: (account: string | null) => void;
-};
-
 export type AnalysisEmptyProps = {
   onNewAnalysis: () => void;
 };

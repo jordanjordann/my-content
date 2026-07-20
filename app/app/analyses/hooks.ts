@@ -96,6 +96,15 @@ export function useAnalysisFilters() {
     [router, pathname],
   );
 
+  // Explicit clear (the input's ✕, and the keyword chip's remove button) bypasses the debounce
+  // entirely (design §6) — it cancels any pending timer and writes `q: ""` immediately, same as
+  // every other immediate write. Distinct from `clearAll`, which also resets Account/Platform/
+  // Status; this only touches the keyword, leaving other active dimensions untouched.
+  const clearKeyword = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    writeFilters({ ...filters, q: "" });
+  }, [filters, writeFilters]);
+
   const clearAll = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     writeFilters({ account: [], platform: [], status: [], q: "" });
@@ -107,6 +116,7 @@ export function useAnalysisFilters() {
     toggleValue,
     removeValue,
     setKeyword,
+    clearKeyword,
     clearAll,
     anyActive: anyActive(filters),
   };
