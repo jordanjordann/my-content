@@ -3,7 +3,7 @@ import { db } from "@/lib/server/db";
 import { classifyUrl } from "@/lib/server/analysis/classifier";
 import { fetchMetadata } from "@/lib/server/analysis/fetcher";
 import { downloadVideo, deleteTempFile } from "@/lib/server/analysis/downloader";
-import { uploadToGemini, analyzeContent } from "@/lib/server/analysis/gemini";
+import { uploadToGemini, pollUntilReady, analyzeContent } from "@/lib/server/analysis/gemini";
 import { buildSystemInstruction, buildUserPrompt } from "@/lib/server/analysis/prompts";
 import { parseContentAnalysis } from "@/lib/server/analysis/parser";
 import type { AnalyzeResult } from "@/lib/server/analysis/types";
@@ -11,6 +11,38 @@ import { MAX_VIDEO_SECONDS } from "@/lib/server/analysis/constants";
 import type { ProgressState } from "./progress";
 import { createProgress, updateProgress } from "./progress";
 import { summarizeCaptionToTitle } from "@/lib/server/ollama";
+import { resolveProfile, computeEngagementRate } from "@/lib/server/profiles";
+import type { Profile, ProfileInput } from "@/lib/server/profiles";
+import type { OwnerProfileHint } from "@/lib/server/analysis/types";
+
+/**
+ * OwnerProfileHint.username is `string | null` (extracted from a payload
+ * that may not carry an owner block); ProfileInput.username is a required
+ * `string` used as the cache key elsewhere. resolveProfile() never reads
+ * ownerHint.username — it uses the already-resolved `metadata.username` —
+ * so this strips it rather than fighting the type.
+ */
+function toProfileInputHint(hint: OwnerProfileHint | null): Partial<ProfileInput> | null {
+  if (!hint) {
+    return null;
+  }
+  return {
+    externalId: hint.externalId,
+    followerCount: hint.followerCount,
+    followingCount: hint.followingCount,
+    fullName: hint.fullName,
+    profilePicUrl: hint.profilePicUrl,
+    biography: hint.biography,
+    isVerified: hint.isVerified,
+    isBusinessAccount: hint.isBusinessAccount,
+    isPrivate: hint.isPrivate,
+  };
+}
+
+/** Boolean -> SQLite 0/1, preserving NULL for "unknown" (never coerced to 0). */
+function toDbBool(value: boolean | null | undefined): number | null {
+  return value == null ? null : value ? 1 : 0;
+}
 
 export interface RunAnalysisOptions {
   url: string;
@@ -47,7 +79,7 @@ export async function runAnalysis({
         sql: `
           UPDATE analyses
           SET prompt = ?, status = 'pending', raw_gemini = NULL, result_content = NULL,
-              result_created_at = NULL, updated_at = datetime('now')
+              result_created_at = NULL, analysis_mode = NULL, updated_at = datetime('now')
           WHERE id = ?
         `,
         args: [prompt, analysisId],
@@ -65,14 +97,42 @@ export async function runAnalysis({
     report("classifying", 1, "URL classified");
     report("fetching", 1, "Fetching content metadata...");
 
-    // NOTE: profile resolution, media_type reconciliation and carousel video
-    // selection land in #35 (pipeline wiring). This is a minimal, build-
-    // green adjustment to the new fetchMetadata() return shape and removal
-    // of the now-deleted Playwright browser lifecycle.
-    const { metadata } = await fetchMetadata(classified);
+    const { metadata, ownerHint } = await fetchMetadata(classified);
 
     console.log("[PIPELINE] Metadata fetched:");
     console.log(JSON.stringify(metadata, null, 2));
+
+    report("profiling", 1, "Resolving creator profile...");
+
+    let profile: Profile | null = null;
+    if (classified.platform === "instagram") {
+      try {
+        profile = await resolveProfile({
+          platform: "instagram",
+          username: metadata.username,
+          ownerHint: toProfileInputHint(ownerHint),
+        });
+      } catch (error) {
+        // A profile failure must never fail an analysis — engagement rate
+        // simply comes out NULL.
+        console.error("[PIPELINE] Profile resolve failed:", error);
+        profile = null;
+      }
+    }
+
+    const followerCount = profile?.followerCount ?? null;
+    const engagementRate = computeEngagementRate({
+      likeCount: metadata.likeCount,
+      commentCount: metadata.commentCount,
+      followerCount,
+    });
+
+    // MediaMetadata.followerCount/.engagementRate are documented as "filled
+    // by pipeline after profile resolve" — buildUserPrompt() (and its
+    // engagement-context block) reads them straight off `metadata`, so they
+    // must be assigned here, not just passed separately to the DB write.
+    metadata.followerCount = followerCount;
+    metadata.engagementRate = engagementRate;
 
     report("summarizing", 1, "Generating title from caption...");
     const generatedTitle = await summarizeCaptionToTitle(metadata.caption ?? "");
@@ -86,15 +146,52 @@ export async function runAnalysis({
 
     let fileUri: string | null = null;
     let fileExpiresAt: string | null = null;
+    // A video was expected iff metadata.videoUrl resolved non-null (video
+    // post/reel, or a carousel with a video child). NULL videoUrl is not
+    // an error — that's a legitimate image post/carousel and must still
+    // succeed as 'metadata_only'. If a video WAS expected but we cannot
+    // get it in front of Gemini (download or upload failure), the
+    // analysis must fail loudly rather than silently persist a
+    // caption-only result that looks identical to a real video analysis.
+    // No retry: first failure errors out (see catch block below, which
+    // follows the same delete/preserve-for-re-analysis convention as the
+    // existing "content not found" failure path).
+    let analysisMode: "full_video" | "metadata_only" = "metadata_only";
 
-    if (metadata.videoUrl && (metadata.mediaType === "reel" || metadata.mediaType === "short")) {
+    if (metadata.videoUrl) {
       report("downloading", 1, "Downloading video...");
-      videoPath = await downloadVideo(metadata.videoUrl);
+      let downloadedPath: string;
+      try {
+        downloadedPath = await downloadVideo(metadata.videoUrl);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        const statusMatch = reason.match(/status (\d+)/);
+        const status = statusMatch ? Number(statusMatch[1]) : null;
+        const expiredHint =
+          status === 403 || status === 404
+            ? " The video URL has likely expired — re-running the analysis will fetch a fresh one."
+            : "";
+        throw new Error(`Video download failed: ${reason}.${expiredHint}`);
+      }
+      videoPath = downloadedPath;
 
       report("uploading", 1, "Uploading video...");
-      const uploadedFile = await uploadToGemini(videoPath);
-      fileUri = uploadedFile.uri;
-      fileExpiresAt = uploadedFile.expiresAt;
+      try {
+        const uploadedFile = await uploadToGemini(videoPath);
+        // Gemini processes uploads asynchronously — the file isn't
+        // guaranteed usable the instant uploadFile() resolves. Without
+        // this wait, analyzeContent() can race Gemini and fail with
+        // "File is not in an ACTIVE state", which — if left uncaught
+        // here — would be indistinguishable from a genuine analysis
+        // failure downstream instead of a delivery failure.
+        await pollUntilReady(uploadedFile.uri);
+        fileUri = uploadedFile.uri;
+        fileExpiresAt = uploadedFile.expiresAt;
+        analysisMode = "full_video";
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(`Video upload to Gemini failed: ${reason}`);
+      }
     }
 
     await db.execute({
@@ -102,7 +199,13 @@ export async function runAnalysis({
         UPDATE analyses
         SET username = ?, thumbnail_url = ?, video_url = ?, duration_sec = ?,
             view_count = ?, post_date = ?, caption = ?, gemini_file_uri = ?,
-            gemini_file_expires_at = ?, title = ?, updated_at = datetime('now')
+            gemini_file_expires_at = ?, title = ?, media_type = ?,
+            like_count = ?, comment_count = ?, has_audio = ?, audio_title = ?,
+            audio_artist = ?, audio_id = ?, audio_is_original = ?,
+            original_width = ?, original_height = ?, carousel_item_count = ?,
+            profile_id = ?, follower_count = ?, engagement_rate = ?,
+            analysis_mode = ?,
+            updated_at = datetime('now')
         WHERE id = ?
       `,
       args: [
@@ -116,6 +219,21 @@ export async function runAnalysis({
         fileUri,
         fileExpiresAt,
         finalTitle,
+        metadata.mediaType,
+        metadata.likeCount ?? null,
+        metadata.commentCount ?? null,
+        toDbBool(metadata.hasAudio),
+        metadata.audioTitle ?? null,
+        metadata.audioArtist ?? null,
+        metadata.audioId ?? null,
+        toDbBool(metadata.audioIsOriginal),
+        metadata.originalWidth ?? null,
+        metadata.originalHeight ?? null,
+        metadata.carouselItemCount ?? null,
+        profile?.id ?? null,
+        followerCount,
+        engagementRate,
+        analysisMode,
         analysisId,
       ],
     });
