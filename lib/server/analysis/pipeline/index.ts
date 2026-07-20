@@ -3,7 +3,7 @@ import { db } from "@/lib/server/db";
 import { classifyUrl } from "@/lib/server/analysis/classifier";
 import { fetchMetadata } from "@/lib/server/analysis/fetcher";
 import { downloadVideo, deleteTempFile } from "@/lib/server/analysis/downloader";
-import { uploadToGemini, analyzeContent } from "@/lib/server/analysis/gemini";
+import { uploadToGemini, pollUntilReady, analyzeContent } from "@/lib/server/analysis/gemini";
 import { buildSystemInstruction, buildUserPrompt } from "@/lib/server/analysis/prompts";
 import { parseContentAnalysis } from "@/lib/server/analysis/parser";
 import type { AnalyzeResult } from "@/lib/server/analysis/types";
@@ -139,37 +139,51 @@ export async function runAnalysis({
 
     let fileUri: string | null = null;
     let fileExpiresAt: string | null = null;
-    // Persisted so a degraded analysis (video expected, download/upload
-    // failed) can be told apart from an intentional metadata-only one
-    // (never had a video) and from a genuine full video analysis — all
-    // three would otherwise share status = 'completed' with a NULL
-    // gemini_file_uri. Defaults to the "never had a video" case; flipped
-    // to 'video_degraded' in the catch below if a video was expected.
-    let analysisMode: "full_video" | "metadata_only" | "video_degraded" = "metadata_only";
+    // A video was expected iff metadata.videoUrl resolved non-null (video
+    // post/reel, or a carousel with a video child). NULL videoUrl is not
+    // an error — that's a legitimate image post/carousel and must still
+    // succeed as 'metadata_only'. If a video WAS expected but we cannot
+    // get it in front of Gemini (download or upload failure), the
+    // analysis must fail loudly rather than silently persist a
+    // caption-only result that looks identical to a real video analysis.
+    // No retry: first failure errors out (see catch block below, which
+    // follows the same delete/preserve-for-re-analysis convention as the
+    // existing "content not found" failure path).
+    let analysisMode: "full_video" | "metadata_only" = "metadata_only";
 
     if (metadata.videoUrl) {
+      report("downloading", 1, "Downloading video...");
+      let downloadedPath: string;
       try {
-        report("downloading", 1, "Downloading video...");
-        videoPath = await downloadVideo(metadata.videoUrl);
+        downloadedPath = await downloadVideo(metadata.videoUrl);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        const statusMatch = reason.match(/status (\d+)/);
+        const status = statusMatch ? Number(statusMatch[1]) : null;
+        const expiredHint =
+          status === 403 || status === 404
+            ? " The video URL has likely expired — re-running the analysis will fetch a fresh one."
+            : "";
+        throw new Error(`Video download failed: ${reason}.${expiredHint}`);
+      }
+      videoPath = downloadedPath;
 
-        report("uploading", 1, "Uploading video...");
+      report("uploading", 1, "Uploading video...");
+      try {
         const uploadedFile = await uploadToGemini(videoPath);
+        // Gemini processes uploads asynchronously — the file isn't
+        // guaranteed usable the instant uploadFile() resolves. Without
+        // this wait, analyzeContent() can race Gemini and fail with
+        // "File is not in an ACTIVE state", which — if left uncaught
+        // here — would be indistinguishable from a genuine analysis
+        // failure downstream instead of a delivery failure.
+        await pollUntilReady(uploadedFile.uri);
         fileUri = uploadedFile.uri;
         fileExpiresAt = uploadedFile.expiresAt;
         analysisMode = "full_video";
       } catch (error) {
-        // Video download/upload must never fail the whole analysis — fall
-        // back to metadata-only. analyzeContent(null, prompt) already
-        // handles a null fileUri. Marked 'video_degraded' (not
-        // 'metadata_only') so this is distinguishable downstream from a
-        // post that never had a video.
-        console.error(
-          "[PIPELINE] Video download/upload failed, falling back to metadata-only:",
-          error,
-        );
-        fileUri = null;
-        fileExpiresAt = null;
-        analysisMode = "video_degraded";
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(`Video upload to Gemini failed: ${reason}`);
       }
     }
 
