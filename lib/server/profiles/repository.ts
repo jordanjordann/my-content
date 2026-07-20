@@ -2,7 +2,15 @@ import { randomUUID } from "node:crypto";
 import { db } from "@/lib/server/db";
 import type { Profile, ProfileInput } from "@/lib/server/profiles/types";
 
-function toBoolean(value: unknown): boolean {
+/**
+ * Preserves "unknown" end to end: a NULL column stays `null`, never
+ * silently coerced to `false`. Only a stored `1` is `true`; anything else
+ * that isn't NULL (i.e. `0`) is `false`.
+ */
+function toNullableBoolean(value: unknown): boolean | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
   return Number(value) === 1;
 }
 
@@ -24,9 +32,9 @@ function mapRow(row: Record<string, unknown>): Profile {
     fullName: (row.full_name as string) ?? null,
     profilePicUrl: (row.profile_pic_url as string) ?? null,
     biography: (row.biography as string) ?? null,
-    isVerified: toBoolean(row.is_verified),
-    isBusinessAccount: toBoolean(row.is_business_account),
-    isPrivate: toBoolean(row.is_private),
+    isVerified: toNullableBoolean(row.is_verified),
+    isBusinessAccount: toNullableBoolean(row.is_business_account),
+    isPrivate: toNullableBoolean(row.is_private),
     rawPayload: (row.raw_payload as string) ?? null,
     lastFetchedAt: row.last_fetched_at as string,
     createdAt: row.created_at as string,
@@ -63,7 +71,7 @@ export async function upsertProfile(input: ProfileInput): Promise<Profile> {
         full_name, profile_pic_url, biography, is_verified, is_business_account,
         is_private, raw_payload, last_fetched_at, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 0), COALESCE(?, 0), COALESCE(?, 0), ?, datetime('now'), datetime('now'), datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), datetime('now'))
       ON CONFLICT(platform, username) DO UPDATE SET
         external_id          = COALESCE(excluded.external_id, profiles.external_id),
         follower_count       = COALESCE(excluded.follower_count, profiles.follower_count),

@@ -10,9 +10,9 @@ export interface Profile {
   fullName: string | null;
   profilePicUrl: string | null;
   biography: string | null;
-  isVerified: boolean;
-  isBusinessAccount: boolean;
-  isPrivate: boolean;
+  isVerified: boolean | null;
+  isBusinessAccount: boolean | null;
+  isPrivate: boolean | null;
   rawPayload: string | null;
   lastFetchedAt: string;
   createdAt: string;
