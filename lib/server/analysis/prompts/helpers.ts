@@ -74,7 +74,11 @@ export function formatAudioLine(metadata: MediaMetadata): string | null {
   }
 
   if (parts.length === 0) {
-    return "Has audio";
+    // Only assert "Has audio" when hasAudio is a confirmed `true` — never
+    // when it's unknown (`null`). Reaching this branch with `hasAudio ===
+    // null` would otherwise render an unconfirmed value as a positive
+    // assertion; return null (omit the line) instead.
+    return metadata.hasAudio === true ? "Has audio" : null;
   }
 
   return parts.join(", ");
