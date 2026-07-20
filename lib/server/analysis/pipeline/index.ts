@@ -139,6 +139,13 @@ export async function runAnalysis({
 
     let fileUri: string | null = null;
     let fileExpiresAt: string | null = null;
+    // Persisted so a degraded analysis (video expected, download/upload
+    // failed) can be told apart from an intentional metadata-only one
+    // (never had a video) and from a genuine full video analysis — all
+    // three would otherwise share status = 'completed' with a NULL
+    // gemini_file_uri. Defaults to the "never had a video" case; flipped
+    // to 'video_degraded' in the catch below if a video was expected.
+    let analysisMode: "full_video" | "metadata_only" | "video_degraded" = "metadata_only";
 
     if (metadata.videoUrl) {
       try {
@@ -149,16 +156,20 @@ export async function runAnalysis({
         const uploadedFile = await uploadToGemini(videoPath);
         fileUri = uploadedFile.uri;
         fileExpiresAt = uploadedFile.expiresAt;
+        analysisMode = "full_video";
       } catch (error) {
         // Video download/upload must never fail the whole analysis — fall
         // back to metadata-only. analyzeContent(null, prompt) already
-        // handles a null fileUri.
+        // handles a null fileUri. Marked 'video_degraded' (not
+        // 'metadata_only') so this is distinguishable downstream from a
+        // post that never had a video.
         console.error(
           "[PIPELINE] Video download/upload failed, falling back to metadata-only:",
           error,
         );
         fileUri = null;
         fileExpiresAt = null;
+        analysisMode = "video_degraded";
       }
     }
 
@@ -172,6 +183,7 @@ export async function runAnalysis({
             audio_artist = ?, audio_id = ?, audio_is_original = ?,
             original_width = ?, original_height = ?, carousel_item_count = ?,
             profile_id = ?, follower_count = ?, engagement_rate = ?,
+            analysis_mode = ?,
             updated_at = datetime('now')
         WHERE id = ?
       `,
@@ -200,6 +212,7 @@ export async function runAnalysis({
         profile?.id ?? null,
         followerCount,
         engagementRate,
+        analysisMode,
         analysisId,
       ],
     });

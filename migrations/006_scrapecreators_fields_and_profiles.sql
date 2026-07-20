@@ -40,6 +40,19 @@ ALTER TABLE analyses ADD COLUMN profile_id          TEXT REFERENCES profiles(id)
 ALTER TABLE analyses ADD COLUMN follower_count      INTEGER;
 ALTER TABLE analyses ADD COLUMN engagement_rate     REAL;
 
+-- Distinguishes a genuine full video analysis from an intentional
+-- metadata-only analysis (image post / carousel with no video slide) and
+-- from a degraded one (a video was expected but download/upload to
+-- Gemini failed, so the analysis fell back to metadata-only). All three
+-- would otherwise persist identically as status = 'completed' with a
+-- NULL gemini_file_uri, making a degraded result indistinguishable from
+-- a real one -- the exact silent-degradation failure mode this migration
+-- round is meant to eliminate. NULL is allowed only for rows that
+-- predate this column (pre-existing analyses); the pipeline always sets
+-- one of the three values going forward.
+ALTER TABLE analyses ADD COLUMN analysis_mode TEXT
+  CHECK(analysis_mode IN ('full_video', 'metadata_only', 'video_degraded'));
+
 CREATE INDEX IF NOT EXISTS idx_analyses_profile_id ON analyses(profile_id);
 
 COMMIT;
