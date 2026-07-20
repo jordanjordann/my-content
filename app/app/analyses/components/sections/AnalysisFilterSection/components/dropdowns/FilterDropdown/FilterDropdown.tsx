@@ -77,8 +77,6 @@ export function FilterDropdown({
       </PopoverTrigger>
 
       <PopoverContent
-        role="listbox"
-        aria-multiselectable="true"
         align="start"
         sideOffset={6}
         className={cn(
@@ -96,7 +94,11 @@ export function FilterDropdown({
           />
         )}
 
-        <div className={cn("overflow-y-auto", FILTER_DROPDOWN_OPTION_LIST_MAX_HEIGHT)}>
+        <div
+          role="listbox"
+          aria-multiselectable="true"
+          className={cn("overflow-y-auto", FILTER_DROPDOWN_OPTION_LIST_MAX_HEIGHT)}
+        >
           {visibleOptions.length === 0 ? (
             <p className="px-2 py-6 text-center text-xs text-muted-foreground">
               {hasSearch
