@@ -67,6 +67,7 @@ The core mechanism (owner, Q1.7): **"help me understand what makes MY good posts
 | `structureBeatMap` | ordered array of `{ timestampSec, beatType, description }` | `beatType` from a small enum (hook, setup, body/proof, twist, resolution, CTA); `description` is short Indonesian prose |
 | `pacing` | enum (slow / medium / fast / mixed) + numeric `estimatedCutsPerMinute` if derivable | Machine-comparable pacing signal |
 | `ctaType` | **array** of enum values (**CONFIRMED** taxonomy, 11 values + `NONE` + `OTHER`, see §4.3.6) | Videos routinely stack CTAs, so this is a set, not a single value. `NONE` must be the **sole** element when present. Empty array is **invalid** — absence of a CTA is represented as `["NONE"]` |
+| `ctaTiming` | enum (**CONFIRMED**), `EARLY` / `MID` / `END` / `NONE`, see §4.3.6 | **Where** in the video the ask lands, as distinct from `ctaType` (**what** the ask is). Single value, not an array. Must be `NONE` if and only if `ctaType` is `["NONE"]` — see the consistency rule in §4.3.6 |
 | `onScreenText` | array of Indonesian strings | Verbatim on-screen text captured, in order of appearance |
 | `captionStyleNotes` | Indonesian prose | Tone/voice of the caption text specifically — separate from video style |
 | `verbalTonePatterns` | array of short Indonesian tags/phrases | Recurring verbal tics, phrasing style, register (casual/formal/etc.) |
@@ -90,7 +91,7 @@ Human-facing text (hook text, on-screen text, prose fields, captions, `topicSubt
 
 ### 4.3 Taxonomies
 
-All four taxonomies — `topicNiche`, `hookType`, `formatArchetype`, `ctaType` — are now **CONFIRMED** by the owner. There is no unapproved taxonomy left in this PRD. Build against them.
+All Tier 1 taxonomies — `topicNiche`, `hookType`, `formatArchetype`, `ctaType` and `ctaTiming` — are now **CONFIRMED** by the owner. There is no unapproved taxonomy or field left in this PRD. Build against them.
 
 #### 4.3.1 `topicNiche` — hybrid enum + free text [CONFIRMED]
 
@@ -168,7 +169,7 @@ These are requirements on the prompt in `system.ts`, not optional polish.
 - **Instrument `OTHER`.** Target **under 10%** of classifications. If it exceeds **~15%** in production, the taxonomy is missing something Indonesian-specific and must be revisited.
 - **Indonesian cultural caveat — record it so it isn't misread as a data bug.** `CONTRARIAN_OPINION` and authority-style openings are expected to **UNDER-fire** in Indonesian. Direct self-elevation and public disagreement read as rude in a higher-context, humility-normed register; Indonesian creators achieve the same effect obliquely (*"dulu aku juga gitu…"*), which will land in `RESULT_PROOF` or `PERSONAL_STORY_OPENER` instead. **A low count must NOT be read as "no Indonesian creator claims authority."**
 
-#### 4.3.6 `formatArchetype` and `ctaType` — confirmed taxonomies [CONFIRMED]
+#### 4.3.6 `formatArchetype`, `ctaType` and `ctaTiming` — confirmed taxonomies [CONFIRMED]
 
 Both were reviewed by the owner and **confirmed**. In both cases the earlier draft value lists were **REJECTED outright, not amended** — the confirmed lists below replace them entirely. The rejection reasoning is recorded because it is exactly the kind of thing that gets relitigated.
 
@@ -242,7 +243,29 @@ Validity rules — these are **hard constraints**, to be enforced in the respons
 
 **Indonesian relevance to record.** `SHOP_PURCHASE` and `JOIN_COMMUNITY` matter especially here. Yellow-basket checkout (Shopee / TikTok Shop) and WhatsApp-group funnels are pervasive in the Indonesian market and are the two commercial asks most likely to be under-modelled by a taxonomy built from Western examples.
 
-##### Prompt-engineering requirements for these two taxonomies [RECOMMENDATION]
+##### `ctaTiming` [CONFIRMED]
+
+**Definition.** `ctaTiming` records **where in the video the call-to-action lands**. It is a single enum value and is orthogonal to `ctaType`: `ctaType` is *what the ask is*, `ctaTiming` is *when it is made*.
+
+| Identifier | Meaning |
+|---|---|
+| `EARLY` | The ask lands in the opening portion, before the main payoff |
+| `MID` | The ask lands in the body, typically right after the payoff/reveal |
+| `END` | The ask lands in the closing portion, after the content has been delivered |
+| `NONE` | No call to action in the video — see the consistency rule below |
+
+**Why it is in the schema.** CTA placement is a deliberate, imitable creator technique with materially different outcomes. An early CTA catches viewers before they scroll but risks reading as pushy; an end CTA reaches a smaller but much higher-intent audience; a mid-video CTA placed right after the payoff catches peak goodwill. The style fingerprint exists to capture imitable patterns, and *"this creator characteristically asks for the save at the end, after the reveal"* is a concrete instruction the generator can act on. Without it the generator knows **that** a creator uses `SAVE_PROMPT` but not **where to put it**, so placement would be arbitrary and the output subtly off-brand.
+
+**Cost.** One enum field. Gemini already watches the full video and reports `keyMoments`, so the timing information is already observed — it simply isn't being requested today. Adding it now is effectively free (the `analyses` table holds 2 rows); retrofitting it later would require re-running the entire corpus to backfill, consistent with the rollout reasoning in §9.
+
+**Consistency rule with `ctaType` — specified here, not left to the implementer.** `NONE` now appears in both fields and the two must never contradict each other:
+
+- If `ctaType` is `["NONE"]`, then `ctaTiming` **must** be `NONE`.
+- If `ctaTiming` is `NONE`, then `ctaType` **must** be `["NONE"]`.
+- The two `NONE`s are therefore **biconditional**. Any other combination — a real `ctaType` paired with `ctaTiming: NONE`, or `ctaType: ["NONE"]` paired with `EARLY`/`MID`/`END` — is **invalid** and must fail validation loudly (§5.4), not be silently coerced or repaired.
+- When `ctaType` carries multiple stacked CTAs landing at different points, `ctaTiming` records the placement of the **primary/most prominent** ask. This is a deliberate simplification: per-CTA timing is not modelled.
+
+##### Prompt-engineering requirements for these taxonomies [RECOMMENDATION]
 
 The owner confirmed the **value lists**; the following is the tech lead's recommendation on how to prompt against them, by analogy with the confirmed `hookType` requirements in §4.3.5. **Not owner-approved — flagged as a recommendation.**
 
@@ -357,15 +380,11 @@ Most of the original open questions have been closed by owner decision. What rem
 
 ### Still open — do not invent answers
 
-1. **`ctaTiming` — proposed, NOT approved.** A `ctaTiming` field (`EARLY` / `MID` / `END` / `NONE`) was proposed alongside the confirmed `ctaType` taxonomy. **The owner confirmed the two taxonomies and did not address this proposal.** It is unanswered — do not treat it as approved and do not build against it.
-
-   **Why it was proposed:** *where* in the video the ask lands is an actionable, imitable pattern for the generator — "this creator asks for the follow at 3 seconds, not at the end" is a concrete instruction, whereas "this creator uses `FOLLOW`" is not. `structureBeatMap` already carries a `CTA` beat with a timestamp, so some of this is recoverable, but only as a raw second-count that has to be re-bucketed at aggregation time rather than as a directly aggregatable enum.
-
-   **Cost:** one additional field on every analysis, plus its share of prompt surface and `OTHER`/mis-classification risk. **Needs an explicit yes or no from the owner.**
+**Nothing.** Every genuinely open question in this PRD has now been closed by owner decision. The only outstanding item is the deferred scorecard-dimension review below, which is a known future decision rather than a blocker.
 
 ### Known future decision — not a blocker
 
-2. **Scorecard dimension review.** Whether the 7 existing scorecard dimension names/definitions should be revisited (beyond adding rubric anchors), given they're described in the owner's audit as "aesthetic-quality judgements" that may not map well to planning primitives. **DEFERRED by the owner — he explicitly said he does not yet know what he needs here.** The 7 dimensions carry forward unchanged for this phase (rubric anchoring still applies, §5.3). Listed as a known future decision, **not** a blocker on Phase 2.
+1. **Scorecard dimension review.** Whether the 7 existing scorecard dimension names/definitions should be revisited (beyond adding rubric anchors), given they're described in the owner's audit as "aesthetic-quality judgements" that may not map well to planning primitives. **DEFERRED by the owner — he explicitly said he does not yet know what he needs here.** The 7 dimensions carry forward unchanged for this phase (rubric anchoring still applies, §5.3). Listed as a known future decision, **not** a blocker on Phase 2.
 
 ### Resolved by owner decision (formerly open)
 
@@ -376,6 +395,7 @@ Most of the original open questions have been closed by owner decision. What rem
 - ~~**Creator-vs-competitor UX.**~~ **Moot.** The distinction itself was removed (§8) — there is no flag to set, so there is no UX for setting it.
 - ~~**`topicNiche` / `hookType` taxonomies.**~~ **CONFIRMED** — see §4.3.1 and §4.3.2.
 - ~~**`formatArchetype` / `ctaType` taxonomies.**~~ **CONFIRMED** — see §4.3.6. Both draft value lists were **rejected and replaced**, not amended: `formatArchetype` is a 14-value + `OTHER` production-form enum, `ctaType` is an 11-value + `NONE` + `OTHER` enum **carried as an array**. Rejection rationale is recorded in §4.3.6 so it isn't relitigated. **All four taxonomies are now settled** — nothing in §4.3 is awaiting sign-off.
+- ~~**`ctaTiming`.**~~ **CONFIRMED** — see §4.3.6. Previously carried here as a proposal awaiting a yes/no; the owner has since confirmed it. It is a Tier 1 field (`EARLY` / `MID` / `END` / `NONE`) capturing CTA placement, with a hard biconditional `NONE` consistency rule against `ctaType`.
 
 ---
 
@@ -395,13 +415,14 @@ Most of the original open questions have been closed by owner decision. What rem
 - `hookType` is a confirmed 17-value + `OTHER` taxonomy with an optional secondary label, plus a separate `hasAudienceCallout` boolean (§4.3.2–§4.3.4).
 - `formatArchetype` is a confirmed 14-value + `OTHER` **production-form** taxonomy, orthogonal to `hookType` and `topicNiche` (§4.3.6).
 - `ctaType` is a confirmed 11-value + `NONE` + `OTHER` taxonomy, and is an **array** — `NONE` must be the sole element, empty arrays are invalid, "no CTA" is `["NONE"]` (§4.3.6).
-- **All four Tier 1 taxonomies (`topicNiche`, `hookType`, `formatArchetype`, `ctaType`) are confirmed.** No taxonomy in this PRD is awaiting sign-off.
+- `ctaTiming` is a confirmed Tier 1 enum (`EARLY` / `MID` / `END` / `NONE`) capturing **where** the CTA lands, distinct from `ctaType` (**what** the ask is). The two `NONE`s are **biconditional** — `ctaType: ["NONE"]` if and only if `ctaTiming: NONE`; any other pairing is invalid and must fail validation (§4.3.6).
+- **All Tier 1 taxonomies (`topicNiche`, `hookType`, `formatArchetype`, `ctaType`, `ctaTiming`) are confirmed.** Nothing in this PRD is awaiting sign-off.
 - Prompt requirements: Indonesian-localized few-shot examples, explicit discriminator rules for the two collision pairs, `OTHER`-rate instrumentation (§4.3.5).
 - No real migration burden; schema can be replaced outright; avoid running new analyses under the old schema during the transition.
 - Auth, job queue, bulk ingestion, generator UI, longitudinal snapshots, monetization, and full profile module are explicitly out of scope for this PRD.
 
-**Still awaiting sign-off** (do not build against these as if confirmed):
-- **`ctaTiming`** (`EARLY` / `MID` / `END` / `NONE`) — **proposed, not answered by the owner** (§12 item 1). Not part of the schema unless and until it is approved.
+**Still awaiting sign-off:**
+- **Nothing.** There is no unapproved field or taxonomy left in this PRD.
 
 **Proposed by the tech lead, not owner-approved** [RECOMMENDATION]:
 - Extending the §4.3.5 prompt-engineering requirements (Indonesian-localized few-shot examples, explicit discriminator rules, `OTHER`-rate instrumentation) to `formatArchetype` and `ctaType`, with the specific discriminator rules drafted in §4.3.6.
@@ -409,4 +430,4 @@ Most of the original open questions have been closed by owner decision. What rem
 **Known future decision, not blocking:**
 - Review of the 7 scorecard dimension names/definitions (§12) — deferred by the owner; dimensions carry forward unchanged for this phase.
 
-The only remaining PRD-level open items are **`ctaTiming`** and the **deferred scorecard-dimension review**.
+The only remaining PRD-level open item is the **deferred scorecard-dimension review**.
