@@ -202,7 +202,7 @@ Order below follows the owner's explicitly stated priorities. Deviations and add
 
 — all three in **one PR by the backend developer**; and separately,
 
-- **(d)** the YouTube work. **Feasibility verification is COMPLETE.** The full YouTube → ScrapeCreators migration was investigated and found **NOT VIABLE** (see 1.1). The owner's decision: **KEEP YouTube**, on a **hybrid** — `yt-dlp` retained for download, ScrapeCreators for metadata. Tickets **#55** and **#56**.
+- **(d)** the YouTube work. **Feasibility verification is COMPLETE.** The full YouTube → ScrapeCreators migration was investigated and found **NOT VIABLE** (see 1.1). The owner's decision: **KEEP YouTube**, on a **hybrid** — `yt-dlp` retained for download, ScrapeCreators for metadata. Tickets **#53 → #54 → #57**, strictly serial, sequenced after the security fix.
 
 #### 1.1 YouTube: hybrid `yt-dlp` (download) + ScrapeCreators (metadata) [CONFIRMED]
 
@@ -219,12 +219,26 @@ Owner, originally: *"we can make youtube similar flow like instagram using Scrap
 
 **Security — separate from the above, and confirmed exploitable.** The command injection in `lib/server/analysis/fetcher/youtube.ts` is **not theoretical: it was proven end-to-end**, with `$(hostname)` executed via a crafted URL. Because `yt-dlp` is being retained, this fix is **mandatory, not optional**. The fix in flight: **`execFile` / argv arrays at both call sites**, plus **end-anchoring the classifier regexes**.
 
-**Tickets:**
+**Tickets — the chain is `#53 → #54 → #57`, strictly serial, after the security fix.**
 
-- **#55** — ScrapeCreators YouTube **metadata** fetcher, **Shorts-only**.
-- **#56** — extend `profiles` to YouTube **channels**, and remove the Instagram-only pipeline guard (`if (classified.platform === "instagram")` in `lib/server/analysis/pipeline/index.ts`).
+- **#53** — ScrapeCreators **YouTube client** (`/v1/youtube/video` + `/v1/youtube/channel`). Its **mandatory first step** is capturing **live payloads** into `.claude/context/verified-facts.md` **before any field mapping** — no field names are to be guessed (see 2.2; the file still does not exist).
+- **#54** — rewrite the YouTube fetcher's **metadata path** to ScrapeCreators, **keeping `yt-dlp` for video URL extraction**. Carries the **Shorts-only settled policy** statement and the classifier acceptance criteria.
+- **#57** — YouTube **profile resolution**: subscriber count → follower count → engagement rate, and removal of the Instagram-only pipeline guard (`if (classified.platform === "instagram")` in `lib/server/analysis/pipeline/index.ts`).
 
-**Both are blocked on a ScrapeCreators credit top-up. #55 must land before #56.**
+**All three are blocked on a ScrapeCreators credit top-up, and each blocks the next.**
+
+**Risk carried by #53 that #57 depends on — record it.** The `/v1/youtube/channel` **response shape has never been captured.** Subscriber-count *availability* was established; the **actual payload was not**. If the live call in #53 comes back **without a subscriber count**, **#57's premise collapses** — no subscriber count means no follower count means **no engagement rate for YouTube**, and the Q2.5 parity fix above is only partial. #53 instructs the developer to **stop and raise it rather than improvise**. Do not treat #57 as safe until #53's captured payload confirms the field exists.
+
+**Previously cited as #55 / #56** — both closed as duplicates in a reconciliation pass. Superseded by the chain above; the split is now three tickets, not two.
+
+**Also closed: #58**, the `[DECISION]` ticket asking whether to widen the classifier to `/watch?v=`. Closed as **decided and rejected** — the owner settled on **Shorts-only**. It is **not an open question anywhere in this plan**.
+
+**Deliberately rejected in the same reconciliation, recorded so they are not reintroduced:**
+
+- **Setting `hasAudio: true` for Shorts** — rejected. It would be **inferred, not observed**: there is **no audio flag in the ScrapeCreators payload**.
+- **`originalWidth` / `originalHeight`** — rejected. **Absent from the payload entirely**, so the **#46 resolution context block stays empty for YouTube**.
+
+Neither is a regression against today's behaviour, but together they are a **real ceiling**: YouTube analyses will carry less prompt context than Instagram ones until a source for those fields exists.
 
 **Touches:** `lib/server/analysis/fetcher/youtube.ts` (metadata path replaced, download path retained + hardened), `lib/server/analysis/fetcher/router.ts`, `lib/server/analysis/fetcher/adapter.ts`, `lib/server/analysis/classifier/` (end-anchored regexes), `lib/server/analysis/pipeline/index.ts` (profile-resolution guard), `lib/server/profiles/`.
 
@@ -460,7 +474,9 @@ Recorded with reasons so nobody relitigates them.
 | **Rewriting the app** | **No** | Plumbing is good, contract is wrong. See §2. |
 | **Cutting YouTube** | **REJECTED — not doing** | Considered as the cheap fix for the command-injection vector, and as the fallback if the SC migration failed. The migration did fail, and the owner **still chose to keep YouTube**. Do not relitigate. The injection is fixed directly (`execFile` + argv arrays, end-anchored classifier regexes) and metadata parity comes from SC (§3, 1.1). |
 | **Full YouTube → ScrapeCreators migration (download included)** | **Not viable — abandoned** | SC's YouTube video URLs are IP-locked to their scraper IPs; 403 from our server. 13 videos tested, 0 usable. `yt-dlp` deciphers signatures locally so its URLs bind to our IP. Hybrid adopted instead. |
-| **Widening YouTube support to `/watch?v=` / long-form** | **Not doing** | Shorts-only. Short-form product focus, and a 15-min video at `MAX_VIDEO_SECONDS = 900` is ~100× the Gemini input tokens of a 30s Short. |
+| **Widening YouTube support to `/watch?v=` / long-form** | **Not doing — DECIDED AND REJECTED** | Shorts-only. Short-form product focus, and a 15-min video at `MAX_VIDEO_SECONDS = 900` is ~100× the Gemini input tokens of a 30s Short. The `[DECISION]` ticket that raised it (**#58**) is **closed as decided and rejected** — this is settled policy, not an open question. |
+| **`hasAudio: true` for YouTube Shorts** | **Rejected** | Would be **inferred, not observed** — the ScrapeCreators payload carries **no audio flag**. Not a regression, but a real ceiling on YouTube prompt context (§3, 1.1). |
+| **`originalWidth` / `originalHeight` for YouTube** | **Rejected** | **Absent from the ScrapeCreators payload entirely**, so the **#46 resolution context block stays empty for YouTube** (§3, 1.1). |
 | **Auth / multi-tenancy (`user_id` on every table)** | **Deferred** | At 2 rows, retrofitting `user_id` is an afternoon, not a project. **Condition:** do it **before a second organization touches the app** — not merely when it becomes annoying. (The creator-vs-competitor distinction previously noted here has been **removed entirely** — see §3, 2.1a.) |
 | **Scheduled metric re-fetch / longitudinal polling** | **Not doing** | Not load-bearing for on-demand per-topic generation. Costs a scheduler plus recurring SC credits per account per interval. Only the cheap snapshot-recording half survives (§4.4). |
 | **Calendar / posting schedule / cadence** | **Not doing** | Not the product. See §1. |
@@ -479,10 +495,18 @@ Recorded with reasons so nobody relitigates them.
 ## 7. Critical-path summary
 
 ```
-Phase 1  YouTube hybrid (#55 → #56)      [CONFIRMED]  moderate        ─┐
+Phase 1  YouTube hybrid (#53 → #54 → #57) [CONFIRMED] moderate        ─┐
          ├─ yt-dlp KEPT for download; SC for metadata; Shorts-only    │
          ├─ injection fix: execFile + anchored regex  [MANDATORY]     │
-         └─ #55 and #56 blocked on SC credit top-up; #55 before #56   │
+         ├─ #53 SC client — MUST capture live payloads to             │
+         │     verified-facts.md BEFORE any field mapping             │
+         ├─ #54 fetcher metadata path → SC (yt-dlp kept for URL)      │
+         ├─ #57 profile resolution + drop Instagram-only guard        │
+         ├─ RISK: /v1/youtube/channel shape never captured. No        │
+         │     subscriber count ⇒ #57's premise collapses (no         │
+         │     follower count ⇒ no engagement rate). #53 stops        │
+         │     and raises rather than improvises.                     │
+         └─ all blocked on SC credit top-up; strictly serial          │
          Auth middleware + rate limit    [CONFIRMED]  cheap           ─┤ independent
          existingId fix                  [RECOMMEND]  trivial         ─┘
 
