@@ -100,6 +100,29 @@ export type PinRateLimitStatus =
   | { limited: true; retryAfterMs: number };
 
 /**
+ * Non-mutating mirror of `makeRoomFor()`'s eviction decision: returns
+ * whether `key`, if it failed right now, would actually collapse into the
+ * shared overflow bucket (map full AND no evictable — i.e. non-locked —
+ * entry to make room for it). Used so the read path only attributes the
+ * overflow bucket's lockout to keys that would truly land there, instead of
+ * to every never-before-seen key.
+ */
+function wouldOverflow(key: string, now: number): boolean {
+  if (attempts.has(key) || attempts.size < PIN_RATE_LIMIT_MAX_TRACKED_KEYS) {
+    return false;
+  }
+
+  for (const [candidateKey, record] of attempts) {
+    if (candidateKey === OVERFLOW_KEY || isLocked(record, now)) {
+      continue;
+    }
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Checks whether `key` is currently locked out. Does not mutate state
  * beyond opportunistic stale-entry cleanup.
  */
@@ -107,7 +130,17 @@ export function checkPinRateLimit(key: string): PinRateLimitStatus {
   const now = Date.now();
   sweepStale(now);
 
-  const record = attempts.get(key) ?? attempts.get(OVERFLOW_KEY);
+  // Only fall back to the shared overflow bucket for keys that would
+  // actually overflow into it (map full, no evictable slot available).
+  // Otherwise an unrelated never-before-seen key would inherit an overflow
+  // lockout it never contributed to — and since `recordPinSuccess()` can
+  // never be reached while the check short-circuits with a 429, that key
+  // could never clear itself, starving a legitimate user out indefinitely.
+  const record = attempts.has(key)
+    ? attempts.get(key)
+    : wouldOverflow(key, now)
+      ? attempts.get(OVERFLOW_KEY)
+      : undefined;
   if (!record) {
     return { limited: false };
   }
@@ -193,11 +226,36 @@ export function checkGlobalPinRateLimit(): PinRateLimitStatus {
 export function recordGlobalPinFailure(): void {
   const now = Date.now();
 
+  // Decay: forgive accumulated strikes once a full window has passed with
+  // no failures since the previous lockout expired. Without this,
+  // `lockoutStrikes` only ever climbs, so a single ~20-request burst from
+  // an anonymous, unauthenticated caller permanently escalates the global
+  // lockout to its max (production defaults: 15m -> 30m -> 60m, forever) —
+  // a worse outcome for the legitimate owner than the brute-force this
+  // limiter defends against, since `recordGlobalPinSuccess()` (the only
+  // thing that resets strikes) is unreachable while locked out (the global
+  // check in the route runs before PIN verification).
+  //
+  // This function is only ever called after `checkGlobalPinRateLimit()` has
+  // already confirmed we're not currently locked out, so by the time we get
+  // here `globalRecord.lockedUntil` (if set) is always in the past — if
+  // `now` is more than one window past it, that gap must have been silent
+  // (a real failure during it would have been recorded and moved
+  // `lockedUntil`/`windowStart` forward). A sustained attacker who keeps
+  // failing right as each lockout expires never triggers this and keeps
+  // escalating as intended; only a genuinely idle gap resets the strikes.
+  if (
+    globalRecord.lockoutStrikes > 0 &&
+    now - globalRecord.lockedUntil > PIN_GLOBAL_RATE_LIMIT_WINDOW_MS
+  ) {
+    globalRecord = { count: 0, windowStart: 0, lockedUntil: 0, lockoutStrikes: 0 };
+  }
+
   if (now - globalRecord.windowStart > PIN_GLOBAL_RATE_LIMIT_WINDOW_MS) {
     globalRecord = {
       count: 1,
       windowStart: now,
-      lockedUntil: 0,
+      lockedUntil: globalRecord.lockedUntil,
       lockoutStrikes: globalRecord.lockoutStrikes,
     };
     return;

@@ -102,7 +102,7 @@ export const PIN_RATE_LIMIT_MAX_TRACKED_KEYS = resolvePositiveIntEnv(
   1000,
 );
 
-const DEFAULT_PIN_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS = 20;
+const DEFAULT_PIN_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS = 100;
 const DEFAULT_PIN_GLOBAL_RATE_LIMIT_WINDOW_MS = 10 * 60_000; // 10 minutes
 const DEFAULT_PIN_GLOBAL_RATE_LIMIT_LOCKOUT_MS = 15 * 60_000; // initial lockout: 15 minutes
 const DEFAULT_PIN_GLOBAL_RATE_LIMIT_MAX_LOCKOUT_MS = 60 * 60_000; // cap: 1 hour
@@ -118,6 +118,17 @@ const DEFAULT_PIN_GLOBAL_RATE_LIMIT_MAX_LOCKOUT_MS = 60 * 60_000; // cap: 1 hour
 // brute-forcing the full 10,000-PIN keyspace prohibitively slow even if
 // per-client tracking is bypassed. The threshold is set well above what one
 // person fat-fingering their own PIN a few times would ever hit.
+//
+// This is a DoS lever, not just a brute-force lever: because the global
+// check runs before PIN verification (see app/api/auth/verify/route.ts),
+// ANY unauthenticated caller who trips it locks the real owner out too —
+// there's no way to distinguish "attacker" from "owner" before the cap
+// fires. 20 was too cheap a trigger for that blast radius (a sub-second
+// burst locks the owner out for 15+ minutes). 100 keeps the same
+// far-above-any-legitimate-typo margin while raising the cost of tripping
+// it 5x; combined with the strike-decay fix in rateLimiter.ts (an idle gap
+// forgives escalation), a single burst now costs an attacker more effort
+// and no longer compounds into a permanent lockout.
 export const PIN_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS = resolvePositiveIntEnv(
   "PIN_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS",
   DEFAULT_PIN_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS,
