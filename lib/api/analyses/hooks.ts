@@ -4,8 +4,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getAnalyses, getAnalysis, analyzeContent, deleteAnalysis } from "@/lib/api/analyses/api";
 import { ANALYSIS_KEYS } from "@/lib/api/analyses/constants";
-import type { AnalysesListResponse, AnalysisListItemIndexed } from "@/lib/api/analyses/types";
-import { normalize } from "@/lib/api/analyses/helpers";
+import type {
+  AnalysesListResponse,
+  AnalysisDetail,
+  AnalysisListItemIndexed,
+} from "@/lib/api/analyses/types";
+import { normalize, toProxiedThumbnail } from "@/lib/api/analyses/helpers";
 
 /**
  * Precomputes the keyword search index (`searchText`) for each analysis. Only title/caption/
@@ -19,11 +23,20 @@ function selectIndexedAnalyses(
   return {
     analyses: data.analyses.map((analysis) => ({
       ...analysis,
+      thumbnailUrl: toProxiedThumbnail(analysis.thumbnailUrl, analysis.platform),
       searchText: normalize(
         [analysis.title, analysis.caption, analysis.prompt].filter(Boolean).join(" "),
       ),
     })),
     accounts: data.accounts,
+  };
+}
+
+/** Routes `thumbnailUrl` through the image proxy for Instagram content. */
+function selectProxiedAnalysisDetail(data: AnalysisDetail): AnalysisDetail {
+  return {
+    ...data,
+    thumbnailUrl: toProxiedThumbnail(data.thumbnailUrl, data.platform),
   };
 }
 
@@ -45,7 +58,7 @@ export function useAnalysisQuery(id: string) {
     staleTime: 30_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
-    select: (data) => data,
+    select: selectProxiedAnalysisDetail,
   });
 }
 
