@@ -171,8 +171,11 @@ links: string[]
 keywords: string[]
 isFamilySafe: boolean
 facebookProfileId: string | null
-avatar: string
-banner: string
+avatar: { image: { sources: Array<{url, width, height}> }, avatarImageSize: string }
+                                     // object, NOT a string — one 68x68
+                                     // source observed in every capture
+banner: Array<{url, width, height}> // array, NOT a string — 6 resolution
+                                     // variants observed, widest last
 ```
 
 **Ticket #57 (engagement rate) can proceed: `subscriberCount` (number) is

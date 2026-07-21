@@ -281,6 +281,24 @@ export interface ScrapeCreatorsYoutubeVideo {
  * `reddit`, arbitrary custom-link keys, etc.) vary per channel and are not
  * enumerated individually — they fall through the index signature.
  */
+/** A single resolution source shared by `avatar.image.sources` and `banner` entries. */
+export interface ScrapeCreatorsYoutubeImageSource {
+  url?: string;
+  width?: number;
+  height?: number;
+  [key: string]: unknown;
+}
+
+/**
+ * `avatar` on `/v1/youtube/channel` — NOT a string. A single source (68x68)
+ * was observed in every capture.
+ */
+export interface ScrapeCreatorsYoutubeChannelAvatar {
+  image?: { sources?: ScrapeCreatorsYoutubeImageSource[] };
+  avatarImageSize?: string;
+  [key: string]: unknown;
+}
+
 export interface ScrapeCreatorsYoutubeChannel {
   success?: boolean;
   credits_remaining?: number;
@@ -302,8 +320,16 @@ export interface ScrapeCreatorsYoutubeChannel {
   keywords?: string[];
   isFamilySafe?: boolean;
   facebookProfileId?: string | null;
-  avatar?: string;
-  banner?: string;
+  /**
+   * NOT a string — an object wrapping a single 68x68 image source. See
+   * `ScrapeCreatorsYoutubeChannelAvatar`.
+   */
+  avatar?: ScrapeCreatorsYoutubeChannelAvatar;
+  /**
+   * NOT a string — an array of resolution variants (6 entries observed,
+   * widest last). See `ScrapeCreatorsYoutubeImageSource`.
+   */
+  banner?: ScrapeCreatorsYoutubeImageSource[];
   /**
    * A "not found" handle/channel-id resolves with a real HTTP 404 (not a
    * `success: true` 200), so this field is only ever populated in an
