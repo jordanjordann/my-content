@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Analysis Tier 1 Style Section — Mockup (Direction A vs B)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          primary: '#4338ca',
+          accent: '#ea7e2e',
+          muted: '#f1f2f6',
+          mutedfg: '#6b7280',
+          card: '#ffffff',
+          border: '#e2e4ea',
+          destructive: '#dc2626',
+        }
+      }
+    }
+  }
+</script>
+<style>
+  body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .pip { width: 14px; height: 14px; border-radius: 3px; }
+</style>
+</head>
+<body class="bg-slate-100 text-slate-900">
+
+  <!-- Meta controls: NOT part of the app, just for reviewing this mockup -->
+  <div class="sticky top-0 z-50 border-b bg-white/95 backdrop-blur px-6 py-3 flex items-center gap-4 shadow-sm">
+    <span class="text-sm font-semibold">Design review:</span>
+    <button onclick="showDir('a')" id="btn-a" class="px-3 py-1.5 rounded-md text-sm font-medium bg-primary text-white">Direction A — Tabbed Modal</button>
+    <button onclick="showDir('b')" id="btn-b" class="px-3 py-1.5 rounded-md text-sm font-medium bg-slate-200 text-slate-700">Direction B — Single Scroll, Style-First</button>
+    <span class="text-xs text-mutedfg ml-2">Sample data: @rasa.dapur.id — "Nasi Goreng Kampung 5 Menit"</span>
+  </div>
+
+<!-- ============================================================ -->
+<!-- DIRECTION A — TABBED MODAL -->
+<!-- ============================================================ -->
+<div id="dir-a" class="p-6">
+  <div class="mx-auto max-w-6xl rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between border-b px-6 py-4">
+      <h2 class="font-semibold text-lg">Nasi Goreng Kampung, 5 Menit Jadi!</h2>
+      <span class="text-slate-400">&times;</span>
+    </div>
+
+    <div class="flex min-h-0">
+      <!-- Sidebar -->
+      <div class="w-72 shrink-0 border-r p-6">
+        <div class="relative aspect-[9/16] overflow-hidden rounded-xl border bg-slate-100 flex items-center justify-center text-4xl">🎬</div>
+        <div class="mt-3 flex flex-col gap-2 text-sm text-mutedfg">
+          <div class="flex items-center gap-2"><span>👁</span><span>482K views</span></div>
+          <div class="flex items-center gap-2"><span>📅</span><span>3 Jul 2026</span></div>
+          <p class="text-xs leading-relaxed mt-1">Nasi goreng kampung ala rumahan, siap dalam 5 menit tanpa ribet. Simpan resepnya!</p>
+        </div>
+        <div class="mt-4 rounded-lg bg-muted p-3 text-xs text-mutedfg leading-relaxed">
+          📊 Bagian dari gaya <span class="font-medium text-slate-700">@rasa.dapur.id</span>. Fingerprint gaya creator ini akan tersedia setelah 5+ video dianalisis.
+        </div>
+      </div>
+
+      <!-- Content -->
+      <div class="flex-1 min-w-0">
+        <!-- Tabs -->
+        <div class="flex items-center gap-1 border-b px-6 pt-4">
+          <button onclick="showTab('a','style')" id="a-tab-style" class="tabbtn-a px-4 py-2 text-sm font-medium border-b-2 border-primary text-primary">Gaya</button>
+          <button onclick="showTab('a','score')" id="a-tab-score" class="tabbtn-a px-4 py-2 text-sm font-medium border-b-2 border-transparent text-mutedfg hover:text-slate-700">Skor AI</button>
+          <button onclick="showTab('a','notes')" id="a-tab-notes" class="tabbtn-a px-4 py-2 text-sm font-medium border-b-2 border-transparent text-mutedfg hover:text-slate-700">Catatan</button>
+        </div>
+
+        <div class="p-6 max-h-[70vh] overflow-y-auto">
+
+          <!-- TAB: STYLE -->
+          <div id="a-panel-style" class="flex flex-col gap-5">
+
+            <div class="grid grid-cols-2 gap-4">
+              <div class="rounded-xl border p-4">
+                <div class="text-xs font-medium text-mutedfg uppercase tracking-wide mb-2">Topik</div>
+                <div class="font-semibold">Kuliner</div>
+                <div class="mono text-[10px] text-mutedfg mb-1">FOOD_CULINARY</div>
+                <div class="text-sm text-slate-600">Resep rumahan cepat</div>
+              </div>
+              <div class="rounded-xl border p-4">
+                <div class="text-xs font-medium text-mutedfg uppercase tracking-wide mb-2">Format Produksi</div>
+                <div class="font-semibold">Tutorial/Demo</div>
+                <div class="mono text-[10px] text-mutedfg">TUTORIAL_DEMO</div>
+              </div>
+            </div>
+
+            <div class="rounded-xl border p-4">
+              <div class="flex items-center justify-between mb-2">
+                <div class="text-xs font-medium text-mutedfg uppercase tracking-wide">Hook</div>
+                <span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 text-xs px-2 py-0.5 font-medium">✓ Menyasar audiens spesifik</span>
+              </div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="rounded-lg bg-primary/10 text-primary px-3 py-1.5 text-sm font-semibold">Janji Manfaat Langsung</span>
+                <span class="mono text-[10px] text-mutedfg">DIRECT_VALUE_PROMISE</span>
+                <span class="text-mutedfg text-xs mx-1">+ juga:</span>
+                <span class="rounded-lg bg-slate-100 text-slate-600 px-2.5 py-1 text-xs font-medium">Daftar Bernomor</span>
+                <span class="mono text-[10px] text-mutedfg">NUMBERED_LIST</span>
+              </div>
+              <p class="mt-3 text-sm italic text-slate-600 border-l-2 border-slate-200 pl-3">"Nasi goreng kampung, 5 menit jadi, ga pake ribet!"</p>
+            </div>
+
+            <div class="rounded-xl border p-4">
+              <div class="text-xs font-medium text-mutedfg uppercase tracking-wide mb-2">Ajakan Bertindak (CTA)</div>
+              <div class="flex items-center gap-2 flex-wrap mb-3">
+                <span class="rounded-full bg-accent/10 text-accent px-2.5 py-1 text-xs font-medium">Simpan Video</span>
+                <span class="rounded-full bg-accent/10 text-accent px-2.5 py-1 text-xs font-medium">Follow</span>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="text-xs text-mutedfg w-20">Waktu ajakan</span>
+                <div class="flex-1 flex h-6 rounded-md overflow-hidden border">
+                  <div class="flex-1 flex items-center justify-center text-[10px] text-mutedfg bg-slate-50">Awal</div>
+                  <div class="flex-1 flex items-center justify-center text-[10px] text-mutedfg bg-slate-50 border-x">Tengah</div>
+                  <div class="flex-1 flex items-center justify-center text-[10px] font-semibold text-white bg-accent">Akhir</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="rounded-xl border p-4">
+              <div class="flex items-center justify-between mb-3">
+                <div class="text-xs font-medium text-mutedfg uppercase tracking-wide">Alur Struktur</div>
+                <span class="text-xs text-mutedfg">Tempo: <span class="font-medium text-slate-700">Cepat</span> · ~22 potongan/menit</span>
+              </div>
+              <div class="relative pt-2">
+                <div class="h-1 bg-slate-200 rounded-full"></div>
+                <div class="flex justify-between -mt-1">
+                  <div class="flex flex-col items-center" title="0:00 — Hook: janji hasil cepat disampaikan langsung">
+                    <div class="w-3 h-3 rounded-full bg-primary border-2 border-white ring-1 ring-primary"></div>
+                    <span class="text-[10px] mt-1 text-mutedfg">0:00</span>
+                    <span class="text-[10px] font-medium">Hook</span>
+                  </div>
+                  <div class="flex flex-col items-center" title="0:04 — Setup: bahan-bahan ditampilkan cepat">
+                    <div class="w-3 h-3 rounded-full bg-primary border-2 border-white ring-1 ring-primary"></div>
+                    <span class="text-[10px] mt-1 text-mutedfg">0:04</span>
+                    <span class="text-[10px] font-medium">Setup</span>
+                  </div>
+                  <div class="flex flex-col items-center" title="0:10 — Body/Proof: proses memasak didemonstrasikan">
+                    <div class="w-3 h-3 rounded-full bg-primary border-2 border-white ring-1 ring-primary"></div>
+                    <span class="text-[10px] mt-1 text-mutedfg">0:10</span>
+                    <span class="text-[10px] font-medium">Body</span>
+                  </div>
+                  <div class="flex flex-col items-center" title="0:40 — Resolution: hasil akhir ditampilkan close-up">
+                    <div class="w-3 h-3 rounded-full bg-primary border-2 border-white ring-1 ring-primary"></div>
+                    <span class="text-[10px] mt-1 text-mutedfg">0:40</span>
+                    <span class="text-[10px] font-medium">Resolution</span>
+                  </div>
+                  <div class="flex flex-col items-center" title="0:55 — CTA: ajakan simpan & follow">
+                    <div class="w-3 h-3 rounded-full bg-accent border-2 border-white ring-1 ring-accent"></div>
+                    <span class="text-[10px] mt-1 text-mutedfg">0:55</span>
+                    <span class="text-[10px] font-medium">CTA</span>
+                  </div>
+                </div>
+              </div>
+              <p class="text-[11px] text-mutedfg mt-2">Arahkan kursor ke titik untuk detail beat.</p>
+            </div>
+
+            <details class="rounded-xl border p-4">
+              <summary class="text-xs font-medium text-mutedfg uppercase tracking-wide cursor-pointer select-none">Detail teks &amp; nada bicara ▾</summary>
+              <div class="mt-3 flex flex-col gap-3 text-sm">
+                <div>
+                  <div class="text-xs text-mutedfg mb-1">Teks di layar</div>
+                  <div class="flex flex-wrap gap-1.5">
+                    <span class="rounded bg-slate-100 px-2 py-0.5 text-xs">"5 MENIT AJA!"</span>
+                    <span class="rounded bg-slate-100 px-2 py-0.5 text-xs">"Bahan:"</span>
+                    <span class="rounded bg-slate-100 px-2 py-0.5 text-xs">"Simpan biar gak lupa!"</span>
+                  </div>
+                </div>
+                <div>
+                  <div class="text-xs text-mutedfg mb-1">Pola nada verbal</div>
+                  <div class="flex flex-wrap gap-1.5">
+                    <span class="rounded-full border px-2 py-0.5 text-xs">santai</span>
+                    <span class="rounded-full border px-2 py-0.5 text-xs">pakai "guys"</span>
+                    <span class="rounded-full border px-2 py-0.5 text-xs">logat Jakarta</span>
+                  </div>
+                </div>
+                <div>
+                  <div class="text-xs text-mutedfg mb-1">Gaya caption</div>
+                  <p class="text-slate-600">Santai, banyak emoji, ajakan aksi eksplisit di baris pertama caption.</p>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <!-- TAB: SCORE -->
+          <div id="a-panel-score" class="hidden flex-col gap-5">
+            <div class="rounded-lg bg-primary/5 border border-primary/20 px-4 py-2.5 text-xs text-primary/90 flex items-center gap-2">
+              <span>✨</span>
+              <span><strong>Penilaian AI</strong> — bacaan model atas video ini, bukan pengukuran presisi. Gunakan sebagai satu sinyal, bukan fakta mutlak.</span>
+            </div>
+
+            <div class="flex items-center gap-4 rounded-xl border p-4">
+              <div class="flex flex-col items-center">
+                <div class="flex gap-1">
+                  <div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-slate-200"></div>
+                </div>
+                <span class="text-xs font-medium text-slate-700 mt-1.5">4 / 5 · Strong</span>
+              </div>
+              <p class="text-sm text-slate-600 flex-1">Overall — hook kuat dan pesan sangat jelas menahan sebagian besar kekuatan skor; polish visual dan orisinalitas jadi area terbesar untuk perbaikan.</p>
+            </div>
+
+            <div class="rounded-xl border divide-y">
+              <!-- dimension row template x7 -->
+              <div class="flex items-center gap-4 px-4 py-3">
+                <span class="w-40 text-sm font-medium">Hook Strength</span>
+                <div class="flex gap-1">
+                  <div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-slate-200"></div>
+                </div>
+                <span class="text-xs text-mutedfg w-20">4/5 Strong</span>
+                <span class="ml-auto text-mutedfg cursor-help text-xs" title="Hook menyebutkan manfaat konkret dalam 2 detik pertama dan memicu rasa penasaran ringan.">ⓘ why?</span>
+              </div>
+              <div class="flex items-center gap-4 px-4 py-3">
+                <span class="w-40 text-sm font-medium">Retention Flow</span>
+                <div class="flex gap-1">
+                  <div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-slate-200"></div><div class="pip bg-slate-200"></div>
+                </div>
+                <span class="text-xs text-mutedfg w-20">3/5 Adequate</span>
+                <span class="ml-auto text-mutedfg cursor-help text-xs" title="Pertengahan video melambat sedikit sebelum reveal hasil akhir, namun tidak kehilangan penonton.">ⓘ why?</span>
+              </div>
+              <div class="flex items-center gap-4 px-4 py-3">
+                <span class="w-40 text-sm font-medium">Visual Polish</span>
+                <div class="flex gap-1">
+                  <div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-slate-200"></div><div class="pip bg-slate-200"></div>
+                </div>
+                <span class="text-xs text-mutedfg w-20">3/5 Adequate</span>
+                <span class="ml-auto text-mutedfg cursor-help text-xs" title="Pencahayaan konsisten dan potongan cukup rapi, namun beberapa transisi tidak sinkron dengan beat audio.">ⓘ why?</span>
+              </div>
+              <div class="flex items-center gap-4 px-4 py-3">
+                <span class="w-40 text-sm font-medium">CTA Effectiveness</span>
+                <div class="flex gap-1">
+                  <div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-slate-200"></div>
+                </div>
+                <span class="text-xs text-mutedfg w-20">4/5 Strong</span>
+                <span class="ml-auto text-mutedfg cursor-help text-xs" title="Ajakan simpan terasa wajar karena muncul tepat setelah hasil akhir ditampilkan.">ⓘ why?</span>
+              </div>
+              <div class="flex items-center gap-4 px-4 py-3">
+                <span class="w-40 text-sm font-medium">Message Clarity</span>
+                <div class="flex gap-1">
+                  <div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div>
+                </div>
+                <span class="text-xs text-mutedfg w-20">5/5 Excellent</span>
+                <span class="ml-auto text-mutedfg cursor-help text-xs" title="Satu ide tunggal — resep cepat 5 menit — disampaikan tanpa penyimpangan topik.">ⓘ why?</span>
+              </div>
+              <div class="flex items-center gap-4 px-4 py-3">
+                <span class="w-40 text-sm font-medium">Originality</span>
+                <div class="flex gap-1">
+                  <div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-slate-200"></div><div class="pip bg-slate-200"></div><div class="pip bg-slate-200"></div>
+                </div>
+                <span class="text-xs text-mutedfg w-20">2/5 Weak</span>
+                <span class="ml-auto text-mutedfg cursor-help text-xs" title="Format resep-cepat sangat umum di niche ini; eksekusi jujur tapi tidak menonjol.">ⓘ why?</span>
+              </div>
+              <div class="flex items-center gap-4 px-4 py-3">
+                <span class="w-40 text-sm font-medium">Emotional Resonance</span>
+                <div class="flex gap-1">
+                  <div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-slate-200"></div><div class="pip bg-slate-200"></div>
+                </div>
+                <span class="text-xs text-mutedfg w-20">3/5 Adequate</span>
+                <span class="ml-auto text-mutedfg cursor-help text-xs" title="Memicu rasa lapar dan nostalgia rumahan, namun tidak ada momen emosional yang kuat.">ⓘ why?</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: NOTES -->
+          <div id="a-panel-notes" class="hidden flex-col gap-5">
+            <p class="text-xs text-mutedfg -mt-1">Komentar pendukung dari AI. Sinyal perencanaan utama ada di tab Gaya dan Skor AI.</p>
+            <div class="grid grid-cols-2 gap-4">
+              <div class="rounded-xl border p-4">
+                <div class="text-xs font-medium text-emerald-700 uppercase tracking-wide mb-2">Kekuatan</div>
+                <ul class="text-sm text-slate-600 list-disc list-inside space-y-1">
+                  <li>Hook langsung menyebutkan waktu &amp; hasil</li>
+                  <li>Caption mendorong simpan di baris pertama</li>
+                </ul>
+              </div>
+              <div class="rounded-xl border p-4">
+                <div class="text-xs font-medium text-amber-700 uppercase tracking-wide mb-2">Kelemahan</div>
+                <ul class="text-sm text-slate-600 list-disc list-inside space-y-1">
+                  <li>Transisi tengah video kurang mulus</li>
+                  <li>Tidak ada elemen visual yang membedakan dari kreator sejenis</li>
+                </ul>
+              </div>
+            </div>
+            <div class="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
+              <div class="text-xs font-medium text-destructive uppercase tracking-wide mb-2">🚩 Red Flags <span class="font-normal normal-case text-mutedfg">(temuan video ini saja, bukan pola berulang)</span></div>
+              <ul class="text-sm text-slate-600 list-disc list-inside space-y-1">
+                <li>Takaran bumbu tidak disebutkan secara spesifik, berisiko membingungkan penonton pemula</li>
+              </ul>
+            </div>
+            <div class="rounded-xl border p-4">
+              <div class="text-xs font-medium text-mutedfg uppercase tracking-wide mb-2">Saran</div>
+              <ul class="text-sm text-slate-600 list-disc list-inside space-y-1">
+                <li>Tambahkan overlay takaran bahan untuk kejelasan</li>
+                <li>Selipkan CTA kedua di pertengahan setelah reveal awal</li>
+              </ul>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between border-t px-6 py-3 text-sm">
+      <span class="text-mutedfg">Re-analyze · Delete</span>
+      <span class="mono text-[10px] text-mutedfg">schema v2</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- DIRECTION B — SINGLE SCROLL, STYLE-FIRST -->
+<!-- ============================================================ -->
+<div id="dir-b" class="p-6 hidden">
+  <div class="mx-auto max-w-6xl rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
+
+    <div class="flex items-center justify-between border-b px-6 py-4">
+      <h2 class="font-semibold text-lg">Nasi Goreng Kampung, 5 Menit Jadi!</h2>
+      <span class="text-slate-400">&times;</span>
+    </div>
+
+    <div class="flex min-h-0">
+      <div class="w-72 shrink-0 border-r p-6">
+        <div class="relative aspect-[9/16] overflow-hidden rounded-xl border bg-slate-100 flex items-center justify-center text-4xl">🎬</div>
+        <div class="mt-3 flex flex-col gap-2 text-sm text-mutedfg">
+          <div class="flex items-center gap-2"><span>👁</span><span>482K views</span></div>
+          <div class="flex items-center gap-2"><span>📅</span><span>3 Jul 2026</span></div>
+        </div>
+      </div>
+
+      <div class="flex-1 min-w-0 max-h-[75vh] overflow-y-auto p-6 flex flex-col gap-6">
+
+        <!-- STYLE SECTION — hero treatment -->
+        <section class="rounded-2xl border border-primary/15 bg-primary/[0.03] p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-semibold text-primary flex items-center gap-2"><span>🎯</span> Gaya Konten</h3>
+            <span class="text-[11px] text-mutedfg">📊 Turut membentuk gaya <span class="font-medium text-slate-600">@rasa.dapur.id</span> (butuh 5+ analisis)</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 mb-3">
+            <div class="rounded-lg bg-white border p-3">
+              <div class="text-[10px] font-medium text-mutedfg uppercase mb-1">Topik</div>
+              <div class="font-semibold text-sm">Kuliner <span class="mono text-[9px] text-mutedfg font-normal">FOOD_CULINARY</span></div>
+              <div class="text-xs text-slate-500">Resep rumahan cepat</div>
+            </div>
+            <div class="rounded-lg bg-white border p-3">
+              <div class="text-[10px] font-medium text-mutedfg uppercase mb-1">Format</div>
+              <div class="font-semibold text-sm">Tutorial/Demo <span class="mono text-[9px] text-mutedfg font-normal">TUTORIAL_DEMO</span></div>
+            </div>
+          </div>
+
+          <div class="rounded-lg bg-white border p-3 mb-3">
+            <div class="flex items-center justify-between mb-1.5">
+              <div class="text-[10px] font-medium text-mutedfg uppercase">Hook</div>
+              <span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] px-2 py-0.5 font-medium">✓ Menyasar audiens spesifik</span>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap text-sm">
+              <span class="rounded-md bg-primary/10 text-primary px-2 py-1 font-semibold">Janji Manfaat Langsung</span>
+              <span class="text-mutedfg text-xs">+ juga: Daftar Bernomor</span>
+            </div>
+            <p class="mt-2 text-sm italic text-slate-600 border-l-2 border-slate-200 pl-3">"Nasi goreng kampung, 5 menit jadi, ga pake ribet!"</p>
+          </div>
+
+          <div class="rounded-lg bg-white border p-3 mb-3">
+            <div class="text-[10px] font-medium text-mutedfg uppercase mb-1.5">CTA</div>
+            <div class="flex items-center gap-2 flex-wrap mb-2">
+              <span class="rounded-full bg-accent/10 text-accent px-2 py-0.5 text-xs font-medium">Simpan Video</span>
+              <span class="rounded-full bg-accent/10 text-accent px-2 py-0.5 text-xs font-medium">Follow</span>
+              <span class="text-xs text-mutedfg">· ajakan di <strong class="text-slate-700">akhir</strong> video</span>
+            </div>
+          </div>
+
+          <div class="rounded-lg bg-white border p-3 mb-3">
+            <div class="flex items-center justify-between mb-2">
+              <div class="text-[10px] font-medium text-mutedfg uppercase">Alur Struktur</div>
+              <span class="text-[11px] text-mutedfg">Tempo: <strong class="text-slate-700">Cepat</strong> · ~22 potongan/menit</span>
+            </div>
+            <div class="flex justify-between">
+              <div class="flex flex-col items-center" title="0:00 Hook"><div class="w-2.5 h-2.5 rounded-full bg-primary"></div><span class="text-[9px] text-mutedfg mt-1">Hook</span></div>
+              <div class="flex flex-col items-center" title="0:04 Setup"><div class="w-2.5 h-2.5 rounded-full bg-primary"></div><span class="text-[9px] text-mutedfg mt-1">Setup</span></div>
+              <div class="flex flex-col items-center" title="0:10 Body"><div class="w-2.5 h-2.5 rounded-full bg-primary"></div><span class="text-[9px] text-mutedfg mt-1">Body</span></div>
+              <div class="flex flex-col items-center" title="0:40 Resolution"><div class="w-2.5 h-2.5 rounded-full bg-primary"></div><span class="text-[9px] text-mutedfg mt-1">Resolution</span></div>
+              <div class="flex flex-col items-center" title="0:55 CTA"><div class="w-2.5 h-2.5 rounded-full bg-accent"></div><span class="text-[9px] text-mutedfg mt-1">CTA</span></div>
+            </div>
+          </div>
+
+          <details class="text-xs">
+            <summary class="cursor-pointer text-mutedfg font-medium select-none">Detail teks &amp; nada bicara ▾</summary>
+            <div class="mt-2 flex flex-col gap-2">
+              <div class="flex flex-wrap gap-1">
+                <span class="rounded bg-white border px-1.5 py-0.5">"5 MENIT AJA!"</span>
+                <span class="rounded bg-white border px-1.5 py-0.5">"Bahan:"</span>
+              </div>
+              <div class="flex flex-wrap gap-1">
+                <span class="rounded-full border px-1.5 py-0.5">santai</span>
+                <span class="rounded-full border px-1.5 py-0.5">pakai "guys"</span>
+              </div>
+              <p class="text-slate-600">Caption: santai, banyak emoji, ajakan aksi eksplisit.</p>
+            </div>
+          </details>
+        </section>
+
+        <!-- SCORECARD SECTION -->
+        <section>
+          <div class="rounded-lg bg-primary/5 border border-primary/20 px-3 py-2 text-[11px] text-primary/90 flex items-center gap-2 mb-3">
+            <span>✨</span><span><strong>Penilaian AI</strong> — bacaan model, bukan pengukuran presisi.</span>
+          </div>
+          <div class="flex items-center gap-4 mb-3">
+            <div class="flex gap-1">
+              <div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-slate-200"></div>
+            </div>
+            <span class="text-sm font-medium">4 / 5 Overall · Strong</span>
+          </div>
+          <div class="rounded-xl border divide-y text-sm">
+            <div class="flex items-center gap-4 px-3 py-2"><span class="w-36 font-medium">Hook Strength</span><div class="flex gap-1"><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-slate-200"></div></div><span class="ml-auto text-mutedfg cursor-help text-xs" title="Hook menyebutkan manfaat konkret dalam 2 detik pertama.">ⓘ</span></div>
+            <div class="flex items-center gap-4 px-3 py-2"><span class="w-36 font-medium">Retention Flow</span><div class="flex gap-1"><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-slate-200"></div><div class="pip bg-slate-200"></div></div><span class="ml-auto text-mutedfg cursor-help text-xs" title="Melambat sedikit di tengah sebelum reveal.">ⓘ</span></div>
+            <div class="flex items-center gap-4 px-3 py-2"><span class="w-36 font-medium">Visual Polish</span><div class="flex gap-1"><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-slate-200"></div><div class="pip bg-slate-200"></div></div><span class="ml-auto text-mutedfg cursor-help text-xs" title="Transisi tak selalu sinkron dengan beat audio.">ⓘ</span></div>
+            <div class="flex items-center gap-4 px-3 py-2"><span class="w-36 font-medium">CTA Effectiveness</span><div class="flex gap-1"><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-slate-200"></div></div><span class="ml-auto text-mutedfg cursor-help text-xs" title="Ajakan simpan terasa wajar setelah reveal.">ⓘ</span></div>
+            <div class="flex items-center gap-4 px-3 py-2"><span class="w-36 font-medium">Message Clarity</span><div class="flex gap-1"><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div></div><span class="ml-auto text-mutedfg cursor-help text-xs" title="Satu ide tunggal disampaikan konsisten.">ⓘ</span></div>
+            <div class="flex items-center gap-4 px-3 py-2"><span class="w-36 font-medium">Originality</span><div class="flex gap-1"><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-slate-200"></div><div class="pip bg-slate-200"></div><div class="pip bg-slate-200"></div></div><span class="ml-auto text-mutedfg cursor-help text-xs" title="Format umum di niche ini.">ⓘ</span></div>
+            <div class="flex items-center gap-4 px-3 py-2"><span class="w-36 font-medium">Emotional Resonance</span><div class="flex gap-1"><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-primary"></div><div class="pip bg-slate-200"></div><div class="pip bg-slate-200"></div></div><span class="ml-auto text-mutedfg cursor-help text-xs" title="Memicu nostalgia namun tak ada momen emosional kuat.">ⓘ</span></div>
+          </div>
+        </section>
+
+        <!-- NOTES — collapsed by default, secondary -->
+        <details class="rounded-xl border p-4">
+          <summary class="text-xs font-medium text-mutedfg uppercase tracking-wide cursor-pointer select-none">Catatan pendukung — kekuatan, kelemahan, red flags, saran ▾</summary>
+          <div class="mt-3 flex flex-col gap-3 text-sm text-slate-600">
+            <p><strong class="text-emerald-700">Kekuatan:</strong> Hook langsung menyebutkan waktu &amp; hasil.</p>
+            <p><strong class="text-amber-700">Kelemahan:</strong> Transisi tengah video kurang mulus.</p>
+            <p><strong class="text-destructive">🚩 Red Flags</strong> <span class="text-xs text-mutedfg">(video ini saja)</span>: Takaran bumbu tidak spesifik.</p>
+            <p><strong>Saran:</strong> Tambahkan overlay takaran bahan.</p>
+          </div>
+        </details>
+
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between border-t px-6 py-3 text-sm">
+      <span class="text-mutedfg">Re-analyze · Delete</span>
+      <span class="mono text-[10px] text-mutedfg">schema v2</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  function showDir(which) {
+    document.getElementById('dir-a').classList.toggle('hidden', which !== 'a');
+    document.getElementById('dir-b').classList.toggle('hidden', which !== 'b');
+    document.getElementById('btn-a').className = 'px-3 py-1.5 rounded-md text-sm font-medium ' + (which === 'a' ? 'bg-primary text-white' : 'bg-slate-200 text-slate-700');
+    document.getElementById('btn-b').className = 'px-3 py-1.5 rounded-md text-sm font-medium ' + (which === 'b' ? 'bg-primary text-white' : 'bg-slate-200 text-slate-700');
+  }
+  function showTab(dir, tab) {
+    ['style','score','notes'].forEach(function(t) {
+      var panel = document.getElementById(dir + '-panel-' + t);
+      var btn = document.getElementById(dir + '-tab-' + t);
+      var active = t === tab;
+      panel.classList.toggle('hidden', !active);
+      panel.classList.toggle('flex', active);
+      btn.className = 'tabbtn-a px-4 py-2 text-sm font-medium border-b-2 ' + (active ? 'border-primary text-primary' : 'border-transparent text-mutedfg hover:text-slate-700');
+    });
+  }
+</script>
+
+</body>
+</html>
