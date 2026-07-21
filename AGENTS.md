@@ -1,10 +1,13 @@
 <!-- BEGIN:nextjs-agent-rules -->
+
 # This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
+
 <!-- END:nextjs-agent-rules -->
 
 <!-- BEGIN:file-editing-rules -->
+
 # Never write files with shell redirection
 
 Create and modify repository files with the dedicated file write/edit tools only.
@@ -14,9 +17,11 @@ Create and modify repository files with the dedicated file write/edit tools only
 - Each shell write also triggers its own permission prompt, which is noisy for the user.
 
 Exception: redirection is fine for throwaway scratch files outside the repo (e.g. `/tmp`), and for genuine shell pipelines whose output isn't a source file.
+
 <!-- END:file-editing-rules -->
 
 <!-- BEGIN:module-conventions -->
+
 # Module conventions
 
 Every module follows this structure unless it's a trivial single-file module:
@@ -55,6 +60,7 @@ ModuleName/
 ```
 
 Sub-components can be either:
+
 - **Flat files** (simple sub-components): single `.tsx` file, no barrel, no local types/constants/helpers. Props live in the parent module's `types.ts`.
 - **Module directories** (complex sub-components): full module with `index.tsx`, `types.ts`, `constants.ts`, `helpers.ts`. Props, constants, and helpers specific to this sub-component live locally.
 
@@ -64,9 +70,19 @@ Name components after their type suffix (`*Header`, `*Section`, `*Grid`, `*Card`
 
 - **One component per file** — each `.tsx` file exports exactly one component.
 - **Top-level modules** (at `components/` root or in `app/`) are full module directories with `index.tsx`, `types.ts`, `helpers.ts`, `constants.ts` as needed.
-<!-- END:module-conventions -->
+  <!-- END:module-conventions -->
+  <!-- BEGIN:external-api-verification -->
+
+# External API Verification
+
+Before writing any code that interacts with an external API, read `.claude/context/verified-facts.md` and build against the documented response shape. If the file doesn't exist or the endpoint isn't listed, stop and flag it — do not guess at field names or response structure.
+
+Never write or modify files via shell heredocs, `cat >`, `echo >`, `sed -i`, or `tee` — always use the file-write/edit tools. Shell redirection is for throwaway scratch files in `/tmp` only.
+
+<!-- END:external-api-verification -->
 
 <!-- BEGIN:data-transformation -->
+
 # Data transformation rules
 
 Transform data as early as possible in the data pipeline. Do NOT transform raw data inside UI components.
@@ -76,4 +92,5 @@ Transform data as early as possible in the data pipeline. Do NOT transform raw d
 - **UI components** (`app/**/*.tsx`): Consume already-transformed data. Only do presentation formatting (colors, date formatting, number display) here — never parse or reshape data.
 
 Exception: Only transform in the UI layer if the underlying query is too expensive to re-run on every render (e.g., large datasets where `select` would cause unnecessary computation). In that case, memoize the transformation with `useMemo`.
+
 <!-- END:data-transformation -->
