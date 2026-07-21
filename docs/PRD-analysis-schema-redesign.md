@@ -72,16 +72,16 @@ The core mechanism (owner, Q1.7): **"help me understand what makes MY good posts
 | `captionStyleNotes` | Indonesian prose | Tone/voice of the caption text specifically — separate from video style |
 | `verbalTonePatterns` | array of short Indonesian tags/phrases | Recurring verbal tics, phrasing style, register (casual/formal/etc.) |
 
-**Tier 2 — Performance/quality scorecard (secondary, retained but reworked).** **[CONFIRMED — carried forward unchanged.]** The 7 existing dimensions ship as-is, but each dimension needs an anchored rubric (§5.3) so scores are comparable across videos. The owner has explicitly **deferred** revisiting the dimension names/definitions themselves — he does not yet know what he needs there. That is a known future decision (§12), **not a blocker on this phase**.
+**Tier 2 — Performance/quality scorecard (secondary, REDESIGNED).** **[CONFIRMED — the dimension set is replaced, and the scale changes from 1–10 to 1–5.]** The previously-deferred scorecard-dimension review is now **resolved by owner decision**: three of the seven dimensions were structurally broken and are removed, one is renamed and rescoped, and three new ones are added. See **§4.5** for the confirmed set and the reasoning, and **§4.6** for the scale change. Each dimension still needs an anchored rubric (§5.3), now written for **five bands, not ten**.
 
-- `overallScore` (0–10)
-- `scorecard` (7 dimensions, each with anchored band definitions)
+- `overallScore` (**1–5**)
+- `scorecard` (7 dimensions — the confirmed set in §4.5 — each scored **1–5** with anchored band definitions)
 - `strengths[]`, `weaknesses[]` — kept as Indonesian prose, now explicitly secondary/supporting color, not the primary planning signal
 - `keyMoments[]` — kept, Indonesian prose
 - `redFlags[]` — renamed from `patterns.recurringRedFlags`, explicitly single-video (owner, Q1.8)
 - `suggestions[]` — kept, Indonesian prose
 
-`patterns.viralFormulas` and `patterns.audiencePsychology` as they exist today should fold into Tier 1's structured fields rather than remain free-text — the whole point of this redesign is to stop putting planning-relevant signal into unstructured prose. This now holds fully: with all four Tier 1 taxonomies confirmed (`topicNiche`, `hookType`, `formatArchetype`, `ctaType` — §4.3), there is a concrete structured destination for each. `viralFormulas` decomposes into `formatArchetype` + `hookType`/`hookTypeSecondary` + `structureBeatMap` + `pacing`; `audiencePsychology` decomposes into `hasAudienceCallout` + `hookType` + `ctaType` + `verbalTonePatterns`. Neither free-text field survives into the new contract.
+`patterns.viralFormulas` and `patterns.audiencePsychology` as they exist today should fold into Tier 1's structured fields rather than remain free-text — the whole point of this redesign is to stop putting planning-relevant signal into unstructured prose. This now holds fully: with every Tier 1 taxonomy confirmed (`topicNiche`, `hookType`, `formatArchetype`, `ctaType`, `ctaTiming` — §4.3), there is a concrete structured destination for each. `viralFormulas` decomposes into `formatArchetype` + `hookType`/`hookTypeSecondary` + `structureBeatMap` + `pacing`; `audiencePsychology` decomposes into `hasAudienceCallout` + `hookType` + `ctaType`/`ctaTiming` + `verbalTonePatterns`. Neither free-text field survives into the new contract.
 
 ### 4.2 Language design decision [CONFIRMED]
 
@@ -265,11 +265,13 @@ Validity rules — these are **hard constraints**, to be enforced in the respons
 - The two `NONE`s are therefore **biconditional**. Any other combination — a real `ctaType` paired with `ctaTiming: NONE`, or `ctaType: ["NONE"]` paired with `EARLY`/`MID`/`END` — is **invalid** and must fail validation loudly (§5.4), not be silently coerced or repaired.
 - When `ctaType` carries multiple stacked CTAs landing at different points, `ctaTiming` records the placement of the **primary/most prominent** ask. This is a deliberate simplification: per-CTA timing is not modelled.
 
-##### Prompt-engineering requirements for these taxonomies [RECOMMENDATION]
+##### Prompt-engineering requirements for these taxonomies [CONFIRMED]
 
-The owner confirmed the **value lists**; the following is the tech lead's recommendation on how to prompt against them, by analogy with the confirmed `hookType` requirements in §4.3.5. **Not owner-approved — flagged as a recommendation.**
+These were raised as a tech-lead recommendation and have since been **confirmed by the owner**. They are requirements on the prompt in `system.ts`, not optional polish — the same status as the `hookType` requirements in §4.3.5.
 
-`formatArchetype` has real collision risk and warrants the same treatment §4.3.5 mandates for `hookType`: Indonesian-localized few-shot examples, explicit discriminator rules, and `OTHER`-rate instrumentation (same <10% target, same ~15% revisit trigger). Proposed discriminator rules for the collision-prone pairs:
+**Rationale to record (owner):** this is the same treatment that made `hookType` reliable. Without explicit discriminator rules, the collision-prone pairs below classify inconsistently run-to-run, and that inconsistency does not stay local — it propagates straight into the style fingerprint (§6), quietly polluting it with noise that looks like signal.
+
+`formatArchetype` has real collision risk and gets the same treatment §4.3.5 mandates for `hookType`: Indonesian-localized few-shot examples, explicit discriminator rules, and `OTHER`-rate instrumentation (same <10% target, same ~15% revisit trigger). **Confirmed discriminator rules** for the collision-prone pairs:
 
 - **`VOICEOVER_BROLL` vs `PROCESS_ASMR`** — narration carries the meaning → `VOICEOVER_BROLL`; the footage carries it and narration is absent or incidental → `PROCESS_ASMR`.
 - **`TUTORIAL_DEMO` vs `PRODUCT_REVIEW`** — teaches a repeatable process the viewer could perform → `TUTORIAL_DEMO`; evaluates or showcases a specific product → `PRODUCT_REVIEW`.
@@ -278,11 +280,57 @@ The owner confirmed the **value lists**; the following is the tech lead's recomm
 - **`REACTION_STITCH` vs `GREEN_SCREEN_COMMENTARY`** — both reference third-party content. Reacting to another *video* inline (duet/stitch) → `REACTION_STITCH`; commentating over a *static* artefact (article, screenshot, post) → `GREEN_SCREEN_COMMENTARY`.
 - **`TEXT_SLIDESHOW` vs `CAROUSEL_STATIC`** — `CAROUSEL_STATIC` is reserved for a genuine multi-image carousel post with **no video content at all**; a video composed of text/image cards is `TEXT_SLIDESHOW`.
 
-`ctaType` needs less discrimination work (the values are mostly distinguishable by the literal ask) but does need two things: Indonesian-localized example phrasings — `SHOP_PURCHASE` in particular must anchor on "keranjang kuning" / "checkout di keranjang", and `JOIN_COMMUNITY` on "gabung grup WA" — and instrumentation on both the `OTHER` rate and the `["NONE"]` rate. A `NONE` rate that looks implausibly high is the signal that the model is under-detecting stacked or soft CTAs.
+`ctaType` needs less discrimination work (the values are mostly distinguishable by the literal ask) but does need two things: Indonesian-localized example phrasings — `SHOP_PURCHASE` in particular must anchor on "keranjang kuning" / "checkout di keranjang", and `JOIN_COMMUNITY` on "gabung grup WA" — and **instrumentation on both the `OTHER` rate and the `["NONE"]` rate**.
+
+**The `["NONE"]`-rate instrumentation is confirmed, and the rationale matters:** an implausibly high "no CTA" rate means stacked or soft CTAs are being missed **entirely**, and nothing else in the system would surface that. A missed CTA does not produce a wrong-looking value — it produces a plausible-looking `["NONE"]`. Without this counter the failure is invisible, and it silently biases the fingerprint toward "this creator rarely asks for anything," which is the opposite of an actionable instruction for the generator. Track it alongside the `OTHER` rate.
 
 ### 4.4 Schema versioning
 
 `result_content` gains a `schemaVersion` field (integer or semver string), absent today. Every future schema change increments it, so old and new rows are distinguishable and the UI/generator can branch on it if a hard cutover isn't clean.
+
+### 4.5 Scorecard dimensions — REDESIGNED [CONFIRMED]
+
+The scorecard-dimension review previously deferred in §12 is **resolved by owner decision**. The current seven (`hookStrength`, `retentionFlow`, `visualPolish`, `audioVisualSync`, `trendAlignment`, `callToAction`, `brandConsistency` — see `lib/server/analysis/types/analysis.ts`, `Scorecard`) are **replaced** by a new seven.
+
+**Confirmed final set (7):** `hookStrength`, `retentionFlow`, `visualPolish`, `ctaEffectiveness`, `messageClarity`, `originality`, `emotionalResonance`. All scored **1–5** (§4.6), each with an anchored rubric (§5.3).
+
+##### Removed — three dimensions, with the reasoning recorded because these were structurally broken
+
+- **`brandConsistency` — REMOVED from the scorecard, MOVED to the style fingerprint (§6).** Consistency is by definition a property **across** videos. Gemini sees exactly one video, with no reference to the creator's other work, so it has nothing to be consistent *with* — it was fabricating a plausible-looking number. **This is the same class of error as the "Recurring Red Flags" mislabel (§2, owner Q1.8): single-video output presented as a cross-post finding.** It is not a bad metric; it was at the wrong level. At the fingerprint level it genuinely can be computed across the corpus and is a real signal ("this creator is stylistically scattered"). Added there as a derived metric — see §6.4.
+- **`trendAlignment` — REMOVED outright, not relocated.** Gemini's training data has a cutoff and cannot know what is trending *now*. It would confidently guess from stale knowledge, and nobody downstream could distinguish real signal from hallucination. For an agency making real decisions this is actively misleading, which is worse than absent. There is no level at which a single model call can answer it, so it does not move anywhere.
+- **`audioVisualSync` — REMOVED as a standalone dimension, FOLDED INTO `visualPolish`.** Too narrow to earn a seventh of the scorecard, and in practice largely correlated with overall production quality — it was mostly re-reporting `visualPolish` and implying corroboration that wasn't there.
+
+##### Kept — four dimensions, with definitional changes
+
+| Dimension | Status | Definition |
+|---|---|---|
+| `hookStrength` | **unchanged in intent** | How well the opening arrests attention. The most important short-form metric — observable, actionable, and directly imitable. |
+| `retentionFlow` | **unchanged** | Pacing and structure: does it hold attention through the middle, or sag. |
+| `visualPolish` | **widened** | Overall production craft — framing, lighting, editing, legibility **and audio-visual timing (beat-matching, cut timing)**, absorbing the former `audioVisualSync`. |
+| `ctaEffectiveness` | **renamed from `callToAction`, and RESCOPED** | Scores **execution quality only** — how well the ask was delivered (clarity, naturalness, placement craft, whether it earns the ask). It **must not** score *what* the ask is or *where* it lands: those are now captured structurally by `ctaType` and `ctaTiming` (§4.3.6). Duplicating them here would double-count the same fact in both tiers. |
+
+##### Added — three dimensions
+
+| Dimension | Why |
+|---|---|
+| `messageClarity` | Is there one clear takeaway, or does the video meander? **The most common failure mode in creator content**, and highly actionable — "cut to one point" is advice an agency can act on immediately. |
+| `originality` | Fresh take vs. generic/derivative execution of the format. **This is what an agency is actually paid for.** Judgeable from a single video against Gemini's general knowledge of the format — unlike `trendAlignment`, it does not require current-events knowledge. |
+| `emotionalResonance` | Does it land emotionally? Drives **shares and saves**, which matter more than raw views for reach. |
+
+### 4.6 Score scale — 1–10 becomes 1–5 [CONFIRMED]
+
+**All scorecard dimensions and `overallScore` move from a 1–10 scale to a 1–5 scale.**
+
+**Rationale to record.** Gemini cannot reliably distinguish a 6 from a 7. That precision is fictional, and it is a significant contributor to the non-reproducibility problem §5 exists to fix — the same video re-analyzed drifts within a band that never carried meaning in the first place. A 5-point scale with clearly anchored bands is more honest, more consistent run-to-run, and loses no information that was genuinely being captured. Ten points invites false precision that propagates into the fingerprint as noise.
+
+It also makes the rubric-anchoring work in §5.3 materially more tractable: five bands can each be given a real, distinct definition, where ten cannot.
+
+**Implementation consequences — flagged, not addressed by this PRD (docs-only):**
+
+- `lib/server/analysis/types/analysis.ts` — the `Scorecard` interface still lists the old seven dimension names and must be replaced with the §4.5 set.
+- `lib/server/analysis/prompts/system.ts` — the JSON contract block still specifies `"overallScore": number (1-10)` and seven `number (1-10)` scorecard keys; both the names and the range must change.
+- `lib/api/analyses/types.ts` re-exports `Scorecard` into the client contract and follows.
+- **The UI's score colour thresholds are currently green ≥7 / yellow ≥5 / red <5, which are meaningless on a 1–5 scale** — every score would read red or yellow. Three separate copies exist: `app/app/analyses/components/cards/AnalysisCard/AnalysisCard.tsx`, `app/app/analyses/components/grids/AnalysisDataTable/AnalysisDataTable.tsx`, and `app/app/analyses/components/sections/AnalysisScorecardSection/AnalysisScorecardSection.tsx`. The scorecard section also hard-codes the score ring as `(overallScore / 10) * 327`, and `AnalysisDataTable` renders a per-dimension column for each of the old seven names including the three removed ones.
 
 ---
 
@@ -290,8 +338,8 @@ The owner confirmed the **value lists**; the following is the tech lead's recomm
 
 1. `temperature: 0.2` → `0`.
 2. Replace regex-scraping of JSON out of free text (`parser/analysis.ts`) with Gemini's structured output mode (`responseSchema` / `responseMimeType: "application/json"`), matching the schema in §4.
-3. Add anchored rubric text per scorecard dimension — explicit definitions of what a 2, a 5, and an 8 mean for each dimension, not just a name and a one-line gloss. Without this, scores aren't comparable across videos, which breaks the analysis feature's credibility and any "what works for this creator" reading of the scorecard. (Note: the fingerprint itself does **not** weight by performance — §6.1 — but comparable scores are still required for the scorecard to mean anything.)
-4. **Parse/validation failures become loud errors, not invented data.** Today, a missing scorecard key silently becomes `5`; a missing scorecard object becomes all-5s indistinguishable from a real score. This must fail the analysis (status = `failed`, surfaced to the user) rather than fabricate a result. The owner should expect this to surface failures that are currently invisible — that is the intended effect, not a regression.
+3. Add anchored rubric text per scorecard dimension — **explicit definitions for all five bands (1, 2, 3, 4, 5)** of each dimension in §4.5, not just a name and a one-line gloss. **Updated for the 1–5 scale (§4.6):** anchors must now be written for **5 bands, not 10** — this both reflects the confirmed scale and makes the anchoring work materially more tractable, since five bands can each carry a genuinely distinct definition where ten cannot. Without anchors, scores aren't comparable across videos, which breaks the analysis feature's credibility and any "what works for this creator" reading of the scorecard. (Note: the fingerprint itself does **not** weight by performance — §6.1 — but comparable scores are still required for the scorecard to mean anything.)
+4. **Parse/validation failures become loud errors, not invented data.** Today, a missing scorecard key silently becomes `5`; a missing scorecard object becomes all-5s indistinguishable from a real score. (On the new 1–5 scale a fabricated `5` would be a *top* score rather than a midpoint — another reason this must fail loudly rather than default.) This must fail the analysis (status = `failed`, surfaced to the user) rather than fabricate a result. The owner should expect this to surface failures that are currently invisible — that is the intended effect, not a regression.
 5. Add `schemaVersion` to `result_content` (§4.4).
 
 ---
@@ -317,7 +365,18 @@ Everything previously listed here has been confirmed by the owner and folded int
 
 ### 6.3 What the fingerprint needs to contain (derived from §4.1 Tier 1 fields, aggregated)
 
-Aggregation logic (e.g. "most common hookType," "typical pacing," "representative onScreenText patterns," "typical CTA," "caption tone summary") is a technical design decision for the tech lead, not specified in detail here. Functionally, the fingerprint must be rich enough that a generator prompt can say "write this in @creator's style" and have something concrete to condition on — not just "this creator scores 8/10 on visualPolish."
+Aggregation logic (e.g. "most common hookType," "typical pacing," "representative onScreenText patterns," "typical CTA type and placement," "caption tone summary") is a technical design decision for the tech lead, not specified in detail here. Functionally, the fingerprint must be rich enough that a generator prompt can say "write this in @creator's style" and have something concrete to condition on — not just "this creator scores 4/5 on visualPolish."
+
+### 6.4 `brandConsistency` as a fingerprint-level derived metric [CONFIRMED]
+
+`brandConsistency` is **removed from the per-video scorecard and relocated here** (§4.5). The reasoning, recorded so the move isn't mistaken for a deletion:
+
+Consistency is by definition a property **across** videos. A single-video analysis has nothing to be consistent *with*, so at the scorecard level the number was fabricated. At the fingerprint level the corpus exists, so the metric becomes genuinely computable and genuinely useful: it answers *"is this creator stylistically coherent, or scattered?"* — which is directly relevant to an agency deciding how tightly the generator should stick to the fingerprint.
+
+- **Level:** a derived metric on the style fingerprint record, computed at aggregation time. Not a Gemini output, not a per-analysis field.
+- **Input:** the dispersion of the creator's Tier 1 style attributes across their analyzed videos (e.g. how concentrated `formatArchetype`, `hookType`, `pacing`, `ctaType` and `verbalTonePatterns` are, versus spread thinly across many values).
+- **Exact aggregation formula is a tech-lead decision**, like the rest of §6.3 — this PRD fixes the level and the meaning, not the maths.
+- Subject to the same cold-start rule as the rest of the fingerprint (minimum 5 analyzed videos, §6.1) and to the same confidence indicator, since a "consistency" figure computed over very few videos is exactly the kind of number that misleads.
 
 ---
 
@@ -369,7 +428,7 @@ This PRD does not specify the generator/planner feature itself (out of scope, §
 - The generator/planner feature's own UI, prompt design, and generation flow — this PRD covers the analysis contract that feeds it (see §10 for what it needs).
 - Longitudinal metric snapshots (view/follower history over time). Owner called this "nice to have," not committed (Q1.3).
 - Monetization. Personal tool for now (owner, Q2.2).
-- Redefining the specific names/count of the 7 scorecard dimensions — **explicitly deferred by the owner**, who has stated he does not yet know what he needs here. Carried forward as-is except for rubric anchoring (§5.3). A known future decision (§12), not a blocker on this phase.
+- ~~Redefining the specific names/count of the 7 scorecard dimensions.~~ **No longer out of scope — RESOLVED and now in scope.** The owner has redefined the set (§4.5) and changed the scale to 1–5 (§4.6). Rubric anchoring (§5.3) applies to the new dimensions, over five bands.
 - Full `profiles` module expansion (its own UI, full creator profile page) — owner has stated this is a future, separate module (Q2.7).
 
 ---
@@ -380,13 +439,15 @@ Most of the original open questions have been closed by owner decision. What rem
 
 ### Still open — do not invent answers
 
-**Nothing.** Every genuinely open question in this PRD has now been closed by owner decision. The only outstanding item is the deferred scorecard-dimension review below, which is a known future decision rather than a blocker.
+**Nothing.** Every open question in this PRD has been closed by owner decision. With the scorecard-dimension review resolved (below), **there is no remaining open item and no remaining deferred item** — the PRD is complete and ticketable.
 
 ### Known future decision — not a blocker
 
-1. **Scorecard dimension review.** Whether the 7 existing scorecard dimension names/definitions should be revisited (beyond adding rubric anchors), given they're described in the owner's audit as "aesthetic-quality judgements" that may not map well to planning primitives. **DEFERRED by the owner — he explicitly said he does not yet know what he needs here.** The 7 dimensions carry forward unchanged for this phase (rubric anchoring still applies, §5.3). Listed as a known future decision, **not** a blocker on Phase 2.
+**None remaining.** The scorecard-dimension review was the last entry in this category and has been resolved; see the list below.
 
 ### Resolved by owner decision (formerly open)
+
+- ~~**Scorecard dimension review.**~~ **RESOLVED — this closes the last deferred item.** Formerly deferred by the owner on the grounds that he did not yet know what he needed. Now decided in full (§4.5, §4.6): three dimensions removed (`brandConsistency` → relocated to the fingerprint §6.4; `trendAlignment` → removed outright as unanswerable from a training-cutoff model; `audioVisualSync` → folded into a widened `visualPolish`), `callToAction` renamed to `ctaEffectiveness` and rescoped to execution quality only, and `messageClarity` / `originality` / `emotionalResonance` added. The scale also changes from 1–10 to **1–5**.
 
 - ~~**Enum identifier language.**~~ **CONFIRMED** exactly as §4.2 proposed: English machine-stable identifiers, Indonesian UI labels via lookup.
 - ~~**Style fingerprint weighting.**~~ **CONFIRMED:** all analyzed videos count equally. No performance weighting of any kind (§6.1).
@@ -417,17 +478,21 @@ Most of the original open questions have been closed by owner decision. What rem
 - `ctaType` is a confirmed 11-value + `NONE` + `OTHER` taxonomy, and is an **array** — `NONE` must be the sole element, empty arrays are invalid, "no CTA" is `["NONE"]` (§4.3.6).
 - `ctaTiming` is a confirmed Tier 1 enum (`EARLY` / `MID` / `END` / `NONE`) capturing **where** the CTA lands, distinct from `ctaType` (**what** the ask is). The two `NONE`s are **biconditional** — `ctaType: ["NONE"]` if and only if `ctaTiming: NONE`; any other pairing is invalid and must fail validation (§4.3.6).
 - **All Tier 1 taxonomies (`topicNiche`, `hookType`, `formatArchetype`, `ctaType`, `ctaTiming`) are confirmed.** Nothing in this PRD is awaiting sign-off.
-- Prompt requirements: Indonesian-localized few-shot examples, explicit discriminator rules for the two collision pairs, `OTHER`-rate instrumentation (§4.3.5).
+- **Scorecard redesigned (§4.5).** Confirmed final 7: `hookStrength`, `retentionFlow`, `visualPolish` (widened to absorb audio-visual timing), `ctaEffectiveness` (renamed from `callToAction`, rescoped to execution quality only), `messageClarity`, `originality`, `emotionalResonance`. Removed: `audioVisualSync` (folded into `visualPolish`), `trendAlignment` (removed outright — a training-cutoff model cannot know what is trending), `brandConsistency` (**relocated** to the style fingerprint, §6.4 — it is a cross-video property and was fabricated at single-video level).
+- **Score scale is 1–5, not 1–10 (§4.6)** — for all scorecard dimensions and `overallScore`. Gemini cannot reliably distinguish a 6 from a 7; that precision was fictional and fed the reproducibility problem. Rubric anchors (§5.3) are written for **five bands**.
+- Prompt requirements: Indonesian-localized few-shot examples, explicit discriminator rules for the collision-prone pairs, `OTHER`-rate instrumentation (§4.3.5), extended to `formatArchetype` and `ctaType` with `["NONE"]`-rate instrumentation on `ctaType` (§4.3.6) — **all confirmed**.
 - No real migration burden; schema can be replaced outright; avoid running new analyses under the old schema during the transition.
 - Auth, job queue, bulk ingestion, generator UI, longitudinal snapshots, monetization, and full profile module are explicitly out of scope for this PRD.
 
 **Still awaiting sign-off:**
-- **Nothing.** There is no unapproved field or taxonomy left in this PRD.
+- **Nothing.** There is no unapproved field, taxonomy, dimension, or prompt requirement left in this PRD.
 
 **Proposed by the tech lead, not owner-approved** [RECOMMENDATION]:
-- Extending the §4.3.5 prompt-engineering requirements (Indonesian-localized few-shot examples, explicit discriminator rules, `OTHER`-rate instrumentation) to `formatArchetype` and `ctaType`, with the specific discriminator rules drafted in §4.3.6.
+- **None remaining.** The two standing recommendations — extending the §4.3.5 prompt-engineering requirements to `formatArchetype`/`ctaType` (with the drafted discriminator rules), and instrumenting the `["NONE"]` rate alongside `OTHER` — have both been **approved by the owner and promoted to confirmed requirements** in §4.3.6.
 
 **Known future decision, not blocking:**
-- Review of the 7 scorecard dimension names/definitions (§12) — deferred by the owner; dimensions carry forward unchanged for this phase.
+- **None remaining.** The scorecard-dimension review was the only entry and is now resolved (§4.5, §4.6).
 
-The only remaining PRD-level open item is the **deferred scorecard-dimension review**.
+**§12 contains no open items and no deferred items.** All four Tier 1 taxonomies, `ctaTiming`, the prompt-engineering requirements, the full scorecard redesign, and the 1–5 scale are confirmed. **This PRD is complete and ready to be ticketed.**
+
+The one thing that is *not* decided here, deliberately: the implementation changes the 1–5 scale forces on `lib/server/analysis/types/analysis.ts`, `lib/server/analysis/prompts/system.ts`, `lib/api/analyses/types.ts`, and the UI's score colour thresholds and score-ring maths (§4.6) are **flagged for the tech lead to size at ticketing time**, not specified in this PRD.
