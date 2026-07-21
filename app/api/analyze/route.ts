@@ -36,6 +36,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "All URLs must be strings." }, { status: 400 });
     }
 
+    if (typeof existingId === "string" && existingId.length > 0 && urls.length > 1) {
+      return NextResponse.json(
+        {
+          error:
+            "existingId can only be used with a single URL. Re-analysis targets one existing row and cannot be applied to a batch.",
+        },
+        { status: 400 },
+      );
+    }
+
     const analysisPrompt = typeof prompt === "string" ? prompt : "";
     const analysisIds: string[] = [];
     const failedUrls: { url: string; index: number; error: string }[] = [];

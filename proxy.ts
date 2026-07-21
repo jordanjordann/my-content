@@ -1,15 +1,19 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const AUTH_COOKIE_NAME = "my_content_session";
+import { AUTH_COOKIE_NAME, verifySessionToken } from "@/lib/server/auth";
 
 const protectedPaths = ["/app"];
 const publicPaths = ["/auth/pin"];
 
+// Proxy defaults to the Node.js runtime as of Next.js 16, so `node:crypto`
+// (used inside verifySessionToken) is safe to call here. This reuses the
+// same HMAC-signed, expiry-checked verification as the API routes'
+// isAuthenticated() — cookie presence alone is NOT sufficient proof of auth.
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const token = request.cookies.get(AUTH_COOKIE_NAME)?.value;
-  const isAuthenticated = token !== undefined;
+  const isAuthenticated = verifySessionToken(token);
 
   if (protectedPaths.some((path) => pathname.startsWith(path))) {
     if (!isAuthenticated) {
