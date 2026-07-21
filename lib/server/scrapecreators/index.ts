@@ -1,5 +1,6 @@
 export { scRequest } from "@/lib/server/scrapecreators/client";
 export { getInstagramPost, getInstagramProfile } from "@/lib/server/scrapecreators/instagram";
+export { getYoutubeVideo, getYoutubeChannel } from "@/lib/server/scrapecreators/youtube";
 export { ScrapeCreatorsError, mapStatusToMessage } from "@/lib/server/scrapecreators/errors";
 export {
   SC_BASE_URL,
@@ -18,4 +19,9 @@ export type {
   ScrapeCreatorsCarouselChildNode,
   ScrapeCreatorsImageResource,
   ScrapeCreatorsMediaTypename,
+  ScrapeCreatorsYoutubeChannelRef,
+  ScrapeCreatorsYoutubeCaptionTrack,
+  ScrapeCreatorsYoutubeDownloadOptions,
+  ScrapeCreatorsYoutubeVideo,
+  ScrapeCreatorsYoutubeChannel,
 } from "@/lib/server/scrapecreators/types";

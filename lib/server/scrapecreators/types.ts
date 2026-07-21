@@ -166,3 +166,176 @@ export interface ScrapeCreatorsProfileEnvelope {
   status?: string;
   [key: string]: unknown;
 }
+
+/**
+ * === YouTube ===
+ *
+ * Confirmed live (2026-07-21) against `/v1/youtube/video` (a real Short,
+ * see /tmp/yt_video_fresh.json) and `/v1/youtube/channel` (see
+ * /tmp/yt_channel_handle.json). Full findings, including the `trim` and
+ * error-behaviour investigation, are recorded in
+ * .claude/context/verified-facts.md — read that before changing these
+ * types.
+ *
+ * Both YouTube endpoints are **flat, with no `data` envelope**, unlike the
+ * Instagram endpoints above. Do not "fix" that into a wrapped shape by
+ * analogy — it was verified live, twice, including with `trim=true`.
+ */
+
+/** Inline `channel` block on `/v1/youtube/video` responses. */
+export interface ScrapeCreatorsYoutubeChannelRef {
+  id?: string; // "UC..." channel id
+  url?: string; // channel URL, has a leading "@" in the handle segment
+  handle?: string; // bare handle, NO leading "@" — use this for /v1/youtube/channel?handle=
+  title?: string;
+  [key: string]: unknown;
+}
+
+/** A single caption track entry in `/v1/youtube/video`'s `captionTracks`. */
+export interface ScrapeCreatorsYoutubeCaptionTrack {
+  baseUrl?: string;
+  name?: { simpleText?: string };
+  vssId?: string;
+  languageCode?: string;
+  kind?: string;
+  isTranslatable?: boolean;
+  trackName?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * `downloadOptions` on `/v1/youtube/video`. Modeled from the live capture,
+ * but deliberately UNUSED for download purposes — `formats` came back empty
+ * with null manifest URLs, and the API's own `note` field says links expire
+ * and some videos only expose signature-ciphered formats. `extractVideoUrl`
+ * (yt-dlp, lib/server/analysis/fetcher/youtube.ts) owns video download URL
+ * extraction; this field is not a substitute.
+ */
+export interface ScrapeCreatorsYoutubeDownloadOptions {
+  expiresInSeconds?: string;
+  hlsManifestUrl?: string | null;
+  dashManifestUrl?: string | null;
+  formats?: unknown[];
+  note?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Flat response from `/v1/youtube/video`. No `data` envelope — see the
+ * module-level comment above. Unwrapping/mapping into MediaMetadata is the
+ * fetcher's job (ticket #54, lib/server/analysis/fetcher/youtube.ts), not
+ * this module's.
+ *
+ * Field-level notes (verified live, see verified-facts.md):
+ *   - `durationMs` is MILLISECONDS, not seconds.
+ *   - `publishDate` is ISO-8601 WITH OFFSET (e.g.
+ *     "2011-01-19T09:40:47-08:00"), NOT a unix-seconds timestamp like
+ *     Instagram's `taken_at_timestamp`.
+ *   - `viewCountInt`/`likeCountInt`/`commentCountInt` are the numeric
+ *     fields to read; the `*Text` siblings are human-formatted strings
+ *     (e.g. "58,622,648", "67K") and not parseable as numbers directly.
+ *   - `watchNextVideos` is unrelated recommended-video data, not this
+ *     video's own metadata — typed loosely and not meant to be persisted.
+ */
+export interface ScrapeCreatorsYoutubeVideo {
+  success?: boolean;
+  credits_remaining?: number;
+  type?: string; // "video"
+  id?: string;
+  title?: string;
+  description?: string;
+  descriptionLinks?: string[];
+  commentCountText?: string;
+  commentCountInt?: number;
+  likeCountText?: string;
+  likeCountInt?: number;
+  viewCountText?: string;
+  viewCountInt?: number;
+  publishDateText?: string;
+  publishDate?: string; // ISO-8601 with offset — see field-level notes above
+  collaborators?: unknown[];
+  channel?: ScrapeCreatorsYoutubeChannelRef;
+  chapters?: unknown[];
+  watchNextVideos?: unknown[]; // unrelated recommendation data — do not persist
+  thumbnail?: string;
+  keywords?: string[];
+  genre?: string;
+  durationMs?: number; // MILLISECONDS — see field-level notes above
+  durationFormatted?: string;
+  captionTracks?: ScrapeCreatorsYoutubeCaptionTrack[];
+  downloadOptions?: ScrapeCreatorsYoutubeDownloadOptions;
+  isPaidPromotion?: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * Flat response from `/v1/youtube/channel`. No `data` envelope. Written
+ * from a live capture (/tmp/yt_channel_handle.json), not from docs — see
+ * verified-facts.md.
+ *
+ * `subscriberCount` (number) is the confirmed field ticket #57 (engagement
+ * rate) depends on. `subscriberCountText` is the human-formatted sibling
+ * (e.g. "268K subscribers") and is not reliably parseable as a number.
+ *
+ * The social-link fields (`instagram`, `facebook`, `twitter`, `discord`,
+ * `reddit`, arbitrary custom-link keys, etc.) vary per channel and are not
+ * enumerated individually — they fall through the index signature.
+ */
+/** A single resolution source shared by `avatar.image.sources` and `banner` entries. */
+export interface ScrapeCreatorsYoutubeImageSource {
+  url?: string;
+  width?: number;
+  height?: number;
+  [key: string]: unknown;
+}
+
+/**
+ * `avatar` on `/v1/youtube/channel` — NOT a string. A single source (68x68)
+ * was observed in every capture.
+ */
+export interface ScrapeCreatorsYoutubeChannelAvatar {
+  image?: { sources?: ScrapeCreatorsYoutubeImageSource[] };
+  avatarImageSize?: string;
+  [key: string]: unknown;
+}
+
+export interface ScrapeCreatorsYoutubeChannel {
+  success?: boolean;
+  credits_remaining?: number;
+  channelId?: string; // "UC..." channel id
+  channel?: string; // channel URL
+  handle?: string; // echoes the requested handle, "@"-prefixed
+  isVerified?: boolean;
+  name?: string;
+  description?: string;
+  subscriberCount?: number;
+  subscriberCountText?: string;
+  videoCountText?: string;
+  videoCount?: number;
+  viewCountText?: string;
+  viewCount?: number;
+  joinedDateText?: string;
+  tags?: string; // comma-separated string, not an array
+  links?: string[];
+  keywords?: string[];
+  isFamilySafe?: boolean;
+  facebookProfileId?: string | null;
+  /**
+   * NOT a string — an object wrapping a single 68x68 image source. See
+   * `ScrapeCreatorsYoutubeChannelAvatar`.
+   */
+  avatar?: ScrapeCreatorsYoutubeChannelAvatar;
+  /**
+   * NOT a string — an array of resolution variants (6 entries observed,
+   * widest last). See `ScrapeCreatorsYoutubeImageSource`.
+   */
+  banner?: ScrapeCreatorsYoutubeImageSource[];
+  /**
+   * A "not found" handle/channel-id resolves with a real HTTP 404 (not a
+   * `success: true` 200), so this field is only ever populated in an
+   * already-thrown-error path — kept here for completeness since it was
+   * observed in the raw body ScrapeCreators returns alongside the 404.
+   */
+  accountDoesNotExist?: boolean;
+  [key: string]: unknown;
+}
