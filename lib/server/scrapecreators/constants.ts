@@ -4,6 +4,8 @@ export const SC_BASE_URL =
 export const SC_PATHS = {
   post: "/v1/instagram/post",
   profile: "/v1/instagram/profile",
+  youtubeVideo: "/v1/youtube/video",
+  youtubeChannel: "/v1/youtube/channel",
 } as const;
 
 export const SC_TIMEOUT_MS = 30_000;
