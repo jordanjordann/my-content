@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-import { AUTH_COOKIE_NAME } from "@/lib/server/auth/constants";
-import { verifySessionToken } from "@/lib/server/auth/auth";
+import { AUTH_COOKIE_NAME, verifySessionToken } from "@/lib/server/auth";
 
 const protectedPaths = ["/app"];
 const publicPaths = ["/auth/pin"];
