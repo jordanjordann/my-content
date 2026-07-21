@@ -59,14 +59,14 @@ The core mechanism (owner, Q1.7): **"help me understand what makes MY good posts
 |---|---|---|
 | `topicNiche` | enum (**CONFIRMED** taxonomy, see §4.3) | Broad top-level category the content sits in |
 | `topicSubtopic` | free-text Indonesian string | Gemini-filled specific subtopic under `topicNiche`. Deliberately open — see §4.3 |
-| `formatArchetype` | enum (draft taxonomy — **not yet signed off**, see §4.3) | e.g. talking-head, POV, tutorial, listicle, storytime |
+| `formatArchetype` | enum (**CONFIRMED** taxonomy, 14 values + `OTHER`, see §4.3.6) | The video's **production form** — what it physically looks like / how it's shot. Distinct from `hookType` (how it opens) and `topicNiche` (what it's about) |
 | `hookType` | enum (**CONFIRMED** taxonomy, see §4.3) | Primary rhetorical strategy of the opening |
 | `hookTypeSecondary` | enum (same values), **optional/nullable** | Optional second strategy when a hook genuinely carries two — see §4.3 |
 | `hasAudienceCallout` | boolean | Whether the hook explicitly targets an audience segment ("Buat kamu yang…"). Orthogonal to `hookType` — see §4.3 |
 | `hookText` | Indonesian string | The actual hook line(s), verbatim/near-verbatim |
 | `structureBeatMap` | ordered array of `{ timestampSec, beatType, description }` | `beatType` from a small enum (hook, setup, body/proof, twist, resolution, CTA); `description` is short Indonesian prose |
 | `pacing` | enum (slow / medium / fast / mixed) + numeric `estimatedCutsPerMinute` if derivable | Machine-comparable pacing signal |
-| `ctaType` | enum (draft taxonomy — **not yet signed off**, see §4.3) | e.g. follow, comment-prompt, link-in-bio, none |
+| `ctaType` | **array** of enum values (**CONFIRMED** taxonomy, 11 values + `NONE` + `OTHER`, see §4.3.6) | Videos routinely stack CTAs, so this is a set, not a single value. `NONE` must be the **sole** element when present. Empty array is **invalid** — absence of a CTA is represented as `["NONE"]` |
 | `onScreenText` | array of Indonesian strings | Verbatim on-screen text captured, in order of appearance |
 | `captionStyleNotes` | Indonesian prose | Tone/voice of the caption text specifically — separate from video style |
 | `verbalTonePatterns` | array of short Indonesian tags/phrases | Recurring verbal tics, phrasing style, register (casual/formal/etc.) |
@@ -80,7 +80,7 @@ The core mechanism (owner, Q1.7): **"help me understand what makes MY good posts
 - `redFlags[]` — renamed from `patterns.recurringRedFlags`, explicitly single-video (owner, Q1.8)
 - `suggestions[]` — kept, Indonesian prose
 
-`patterns.viralFormulas` and `patterns.audiencePsychology` as they exist today should fold into Tier 1's structured fields (`formatArchetype`, `hookType`, etc.) rather than remain free-text — the whole point of this redesign is to stop putting planning-relevant signal into unstructured prose.
+`patterns.viralFormulas` and `patterns.audiencePsychology` as they exist today should fold into Tier 1's structured fields rather than remain free-text — the whole point of this redesign is to stop putting planning-relevant signal into unstructured prose. This now holds fully: with all four Tier 1 taxonomies confirmed (`topicNiche`, `hookType`, `formatArchetype`, `ctaType` — §4.3), there is a concrete structured destination for each. `viralFormulas` decomposes into `formatArchetype` + `hookType`/`hookTypeSecondary` + `structureBeatMap` + `pacing`; `audiencePsychology` decomposes into `hasAudienceCallout` + `hookType` + `ctaType` + `verbalTonePatterns`. Neither free-text field survives into the new contract.
 
 ### 4.2 Language design decision [CONFIRMED]
 
@@ -90,7 +90,7 @@ Human-facing text (hook text, on-screen text, prose fields, captions, `topicSubt
 
 ### 4.3 Taxonomies
 
-`topicNiche` and `hookType` are **CONFIRMED**. `formatArchetype` and `ctaType` remain **drafts awaiting owner sign-off** — see §12.
+All four taxonomies — `topicNiche`, `hookType`, `formatArchetype`, `ctaType` — are now **CONFIRMED** by the owner. There is no unapproved taxonomy left in this PRD. Build against them.
 
 #### 4.3.1 `topicNiche` — hybrid enum + free text [CONFIRMED]
 
@@ -168,12 +168,94 @@ These are requirements on the prompt in `system.ts`, not optional polish.
 - **Instrument `OTHER`.** Target **under 10%** of classifications. If it exceeds **~15%** in production, the taxonomy is missing something Indonesian-specific and must be revisited.
 - **Indonesian cultural caveat — record it so it isn't misread as a data bug.** `CONTRARIAN_OPINION` and authority-style openings are expected to **UNDER-fire** in Indonesian. Direct self-elevation and public disagreement read as rude in a higher-context, humility-normed register; Indonesian creators achieve the same effect obliquely (*"dulu aku juga gitu…"*), which will land in `RESULT_PROOF` or `PERSONAL_STORY_OPENER` instead. **A low count must NOT be read as "no Indonesian creator claims authority."**
 
-#### 4.3.6 Still draft — `formatArchetype` and `ctaType` [OPEN]
+#### 4.3.6 `formatArchetype` and `ctaType` — confirmed taxonomies [CONFIRMED]
 
-These value lists have **not** been reviewed by the owner. They are illustrative starting points only and need sign-off before the tech lead builds against them (§12).
+Both were reviewed by the owner and **confirmed**. In both cases the earlier draft value lists were **REJECTED outright, not amended** — the confirmed lists below replace them entirely. The rejection reasoning is recorded because it is exactly the kind of thing that gets relitigated.
 
-- **`formatArchetype` (DRAFT):** `talking_head`, `pov`, `tutorial_howto`, `listicle`, `storytime`, `voiceover_montage`, `interview_duet`, `other`
-- **`ctaType` (DRAFT):** `follow`, `comment_prompt`, `link_in_bio`, `share_prompt`, `save_prompt`, `none`
+##### `formatArchetype` [CONFIRMED]
+
+**Definition.** `formatArchetype` describes the video's **production form** — what it physically looks like and how it is shot. It is deliberately orthogonal to the other two content dimensions:
+
+- `formatArchetype` — **how it's made** (production form)
+- `hookType` — **how it opens** (rhetorical strategy)
+- `topicNiche` — **what it's about** (subject matter)
+
+**Why the earlier draft was rejected.** The draft list (`talking_head`, `pov`, `tutorial_howto`, `listicle`, `storytime`, `voiceover_montage`, `interview_duet`, `other`) failed on two counts:
+
+- **It duplicated `hookType`.** `listicle` and `storytime` are the same signal as the `NUMBERED_LIST` and `PERSONAL_STORY_OPENER` hook values (§4.3.2). Two dimensions measuring the same thing produce a correlated, redundant fingerprint with no added signal — the aggregate would just report the same fact twice and imply corroboration that isn't there.
+- **`interview_duet` conflated two genuinely different production formats** — interviewing a person on camera, and duetting/stitching someone else's video. These are split below into `INTERVIEW_STREET` and `REACTION_STITCH`.
+
+**Confirmed `formatArchetype` enum — 14 values + `OTHER`:**
+
+| Identifier | Definition |
+|---|---|
+| `TALKING_HEAD` | Person speaking direct to camera; their face is the primary visual |
+| `VOICEOVER_BROLL` | Narration over footage that is not the speaker |
+| `POV_SKIT` | Acted scenario or character; "POV:" framing, sketch comedy |
+| `TUTORIAL_DEMO` | Step-by-step instruction showing a process being performed |
+| `PRODUCT_REVIEW` | Evaluating or showcasing a specific product |
+| `TRANSFORMATION_REVEAL` | Before→after structure — makeover, build, glow-up |
+| `GREEN_SCREEN_COMMENTARY` | Creator overlaid on referenced media (article, post, another video) |
+| `REACTION_STITCH` | Responding to someone else's content |
+| `INTERVIEW_STREET` | Q&A with another person; vox pop |
+| `TEXT_SLIDESHOW` | Sequence of text cards or images, minimal or no speaking |
+| `VLOG_DAILY` | Documentary-style, following an activity |
+| `PROCESS_ASMR` | Satisfying process footage, minimal narration |
+| `PERFORMANCE` | Dance, lip-sync, music, trending-audio format |
+| `CAROUSEL_STATIC` | Multi-image carousel with no video content |
+| `OTHER` | Escape hatch |
+
+**Two notes to carry into implementation:**
+
+- **`INTERVIEW_STREET`, `PERFORMANCE` and `GREEN_SCREEN_COMMENTARY` were included deliberately for the Indonesian market.** All three are disproportionately common in Indonesian short-form and are the kind of value that gets dropped when a Western format list is ported over unexamined.
+- **`CAROUSEL_STATIC` exists because carousels are analyzed as a single content unit (§7).** An all-image carousel still has to receive a valid archetype, and there is no video production form to describe. It also pairs naturally with `analysis_mode: metadata_only`.
+
+##### `ctaType` [CONFIRMED] — and it becomes an ARRAY
+
+**Why the earlier draft was rejected.** The draft list (`follow`, `comment_prompt`, `link_in_bio`, `share_prompt`, `save_prompt`, `none`) contained **no commercial CTAs whatsoever**. The target user is a marketing agency; "buy this," "DM to order," "use this code" is the core of a large share of the content they handle. As drafted, the taxonomy could not distinguish a paid brand campaign from an ordinary personal post — a serious gap for the generator, which needs to know a creator's **characteristic commercial ask**.
+
+**Confirmed `ctaType` enum — 11 values + `NONE` + `OTHER`:**
+
+| Identifier | Ask |
+|---|---|
+| `FOLLOW` | Follow / subscribe |
+| `COMMENT_PROMPT` | Ask a question, "comment X below" |
+| `SAVE_PROMPT` | "Save this for later" |
+| `SHARE_PROMPT` | "Send this to someone who…" |
+| `LINK_IN_BIO` | Directs to the profile bio link |
+| `SHOP_PURCHASE` | Buy — checkout, "keranjang kuning," TikTok Shop / Shopee |
+| `DM_INQUIRY` | "DM me," "chat admin" |
+| `JOIN_COMMUNITY` | WhatsApp/Telegram group, class, waitlist |
+| `SIGN_UP_REGISTER` | Form, webinar, event registration |
+| `WATCH_NEXT` | Part 2 / series continuation |
+| `DISCOUNT_CODE` | "Use code X" |
+| `NONE` | No explicit call to action |
+| `OTHER` | Escape hatch |
+
+**Structural change — `ctaType` is an ARRAY, not a single enum value.** Videos routinely stack CTAs ("follow for more, save this, link's in bio"), and forcing a single label discards real signal. This is the same reasoning that produced the confirmed primary + optional secondary `hookType` (§4.3.4), applied to a field where the stacking is even more common.
+
+Validity rules — these are **hard constraints**, to be enforced in the response schema and in validation, not left to the model:
+
+- The value is an **array of enum identifiers**, order-insignificant, no duplicates.
+- **`NONE` must be the sole element when present.** An array containing `NONE` alongside any other value is **invalid** and must fail validation (§5.4 — loud errors, not invented data).
+- **An empty array is invalid.** "No CTA" has exactly one representation: `["NONE"]`. This is chosen deliberately over an empty array so that "the model found no CTA" and "the model failed to populate the field" are not the same value on the wire.
+
+**Indonesian relevance to record.** `SHOP_PURCHASE` and `JOIN_COMMUNITY` matter especially here. Yellow-basket checkout (Shopee / TikTok Shop) and WhatsApp-group funnels are pervasive in the Indonesian market and are the two commercial asks most likely to be under-modelled by a taxonomy built from Western examples.
+
+##### Prompt-engineering requirements for these two taxonomies [RECOMMENDATION]
+
+The owner confirmed the **value lists**; the following is the tech lead's recommendation on how to prompt against them, by analogy with the confirmed `hookType` requirements in §4.3.5. **Not owner-approved — flagged as a recommendation.**
+
+`formatArchetype` has real collision risk and warrants the same treatment §4.3.5 mandates for `hookType`: Indonesian-localized few-shot examples, explicit discriminator rules, and `OTHER`-rate instrumentation (same <10% target, same ~15% revisit trigger). Proposed discriminator rules for the collision-prone pairs:
+
+- **`VOICEOVER_BROLL` vs `PROCESS_ASMR`** — narration carries the meaning → `VOICEOVER_BROLL`; the footage carries it and narration is absent or incidental → `PROCESS_ASMR`.
+- **`TUTORIAL_DEMO` vs `PRODUCT_REVIEW`** — teaches a repeatable process the viewer could perform → `TUTORIAL_DEMO`; evaluates or showcases a specific product → `PRODUCT_REVIEW`.
+- **`POV_SKIT` vs `PERFORMANCE`** — acted scenario with a character and a narrative beat → `POV_SKIT`; dance/lip-sync/trending-audio execution with no scenario → `PERFORMANCE`.
+- **`TALKING_HEAD` vs `GREEN_SCREEN_COMMENTARY`** — creator alone on frame → `TALKING_HEAD`; creator overlaid on referenced media → `GREEN_SCREEN_COMMENTARY`.
+- **`REACTION_STITCH` vs `GREEN_SCREEN_COMMENTARY`** — both reference third-party content. Reacting to another *video* inline (duet/stitch) → `REACTION_STITCH`; commentating over a *static* artefact (article, screenshot, post) → `GREEN_SCREEN_COMMENTARY`.
+- **`TEXT_SLIDESHOW` vs `CAROUSEL_STATIC`** — `CAROUSEL_STATIC` is reserved for a genuine multi-image carousel post with **no video content at all**; a video composed of text/image cards is `TEXT_SLIDESHOW`.
+
+`ctaType` needs less discrimination work (the values are mostly distinguishable by the literal ask) but does need two things: Indonesian-localized example phrasings — `SHOP_PURCHASE` in particular must anchor on "keranjang kuning" / "checkout di keranjang", and `JOIN_COMMUNITY` on "gabung grup WA" — and instrumentation on both the `OTHER` rate and the `["NONE"]` rate. A `NONE` rate that looks implausibly high is the signal that the model is under-detecting stacked or soft CTAs.
 
 ### 4.4 Schema versioning
 
@@ -275,7 +357,11 @@ Most of the original open questions have been closed by owner decision. What rem
 
 ### Still open — do not invent answers
 
-1. **`formatArchetype` and `ctaType` value lists (§4.3.6).** Drafts only. **Not reviewed by the owner.** Need explicit sign-off before the tech lead builds against them. `topicNiche` and `hookType` are settled (§4.3.1, §4.3.2); these two are not.
+1. **`ctaTiming` — proposed, NOT approved.** A `ctaTiming` field (`EARLY` / `MID` / `END` / `NONE`) was proposed alongside the confirmed `ctaType` taxonomy. **The owner confirmed the two taxonomies and did not address this proposal.** It is unanswered — do not treat it as approved and do not build against it.
+
+   **Why it was proposed:** *where* in the video the ask lands is an actionable, imitable pattern for the generator — "this creator asks for the follow at 3 seconds, not at the end" is a concrete instruction, whereas "this creator uses `FOLLOW`" is not. `structureBeatMap` already carries a `CTA` beat with a timestamp, so some of this is recoverable, but only as a raw second-count that has to be re-bucketed at aggregation time rather than as a directly aggregatable enum.
+
+   **Cost:** one additional field on every analysis, plus its share of prompt surface and `OTHER`/mis-classification risk. **Needs an explicit yes or no from the owner.**
 
 ### Known future decision — not a blocker
 
@@ -289,6 +375,7 @@ Most of the original open questions have been closed by owner decision. What rem
 - ~~**Cold-start threshold governance.**~~ **CONFIRMED:** stays at 5. No formal governance process and no defined metric — revisit informally once real output quality is observed. Deliberately not over-specified.
 - ~~**Creator-vs-competitor UX.**~~ **Moot.** The distinction itself was removed (§8) — there is no flag to set, so there is no UX for setting it.
 - ~~**`topicNiche` / `hookType` taxonomies.**~~ **CONFIRMED** — see §4.3.1 and §4.3.2.
+- ~~**`formatArchetype` / `ctaType` taxonomies.**~~ **CONFIRMED** — see §4.3.6. Both draft value lists were **rejected and replaced**, not amended: `formatArchetype` is a 14-value + `OTHER` production-form enum, `ctaType` is an 11-value + `NONE` + `OTHER` enum **carried as an array**. Rejection rationale is recorded in §4.3.6 so it isn't relitigated. **All four taxonomies are now settled** — nothing in §4.3 is awaiting sign-off.
 
 ---
 
@@ -306,12 +393,20 @@ Most of the original open questions have been closed by owner decision. What rem
 - Enum identifiers are English and machine-stable; UI labels are Indonesian (§4.2).
 - `topicNiche` is a hybrid: broad top-level enum + free-text `topicSubtopic` (§4.3.1).
 - `hookType` is a confirmed 17-value + `OTHER` taxonomy with an optional secondary label, plus a separate `hasAudienceCallout` boolean (§4.3.2–§4.3.4).
+- `formatArchetype` is a confirmed 14-value + `OTHER` **production-form** taxonomy, orthogonal to `hookType` and `topicNiche` (§4.3.6).
+- `ctaType` is a confirmed 11-value + `NONE` + `OTHER` taxonomy, and is an **array** — `NONE` must be the sole element, empty arrays are invalid, "no CTA" is `["NONE"]` (§4.3.6).
+- **All four Tier 1 taxonomies (`topicNiche`, `hookType`, `formatArchetype`, `ctaType`) are confirmed.** No taxonomy in this PRD is awaiting sign-off.
 - Prompt requirements: Indonesian-localized few-shot examples, explicit discriminator rules for the two collision pairs, `OTHER`-rate instrumentation (§4.3.5).
 - No real migration burden; schema can be replaced outright; avoid running new analyses under the old schema during the transition.
 - Auth, job queue, bulk ingestion, generator UI, longitudinal snapshots, monetization, and full profile module are explicitly out of scope for this PRD.
 
 **Still awaiting sign-off** (do not build against these as if confirmed):
-- The `formatArchetype` and `ctaType` draft value lists (§4.3.6). These are the **only** taxonomies still unapproved.
+- **`ctaTiming`** (`EARLY` / `MID` / `END` / `NONE`) — **proposed, not answered by the owner** (§12 item 1). Not part of the schema unless and until it is approved.
+
+**Proposed by the tech lead, not owner-approved** [RECOMMENDATION]:
+- Extending the §4.3.5 prompt-engineering requirements (Indonesian-localized few-shot examples, explicit discriminator rules, `OTHER`-rate instrumentation) to `formatArchetype` and `ctaType`, with the specific discriminator rules drafted in §4.3.6.
 
 **Known future decision, not blocking:**
 - Review of the 7 scorecard dimension names/definitions (§12) — deferred by the owner; dimensions carry forward unchanged for this phase.
+
+The only remaining PRD-level open items are **`ctaTiming`** and the **deferred scorecard-dimension review**.
