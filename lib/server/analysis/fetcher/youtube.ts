@@ -1,8 +1,8 @@
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { MediaMetadata } from "@/lib/server/analysis/types";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
@@ -20,9 +20,18 @@ function cleanYouTubeUrl(url: string): string {
 export async function fetchShortMetadata(url: string): Promise<MediaMetadata> {
   const cleanUrl = cleanYouTubeUrl(url);
 
-  const { stdout } = await execAsync(
-    `yt-dlp --dump-json --skip-download --no-warnings --ignore-no-formats-error --user-agent "${USER_AGENT}" --extractor-args "youtube:player_client=web" --no-playlist "${cleanUrl}"`,
-  );
+  const { stdout } = await execFileAsync("yt-dlp", [
+    "--dump-json",
+    "--skip-download",
+    "--no-warnings",
+    "--ignore-no-formats-error",
+    "--user-agent",
+    USER_AGENT,
+    "--extractor-args",
+    "youtube:player_client=web",
+    "--no-playlist",
+    cleanUrl,
+  ]);
 
   const data = JSON.parse(stdout) as Record<string, unknown>;
 
@@ -45,9 +54,19 @@ export async function fetchShortMetadata(url: string): Promise<MediaMetadata> {
 export async function extractVideoUrl(url: string): Promise<string | null> {
   try {
     const cleanUrl = cleanYouTubeUrl(url);
-    const { stdout } = await execAsync(
-      `yt-dlp -g --skip-download --no-warnings --user-agent "${USER_AGENT}" --extractor-args "youtube:player_client=web" --no-playlist -f "best[height<=1080]" "${cleanUrl}"`,
-    );
+    const { stdout } = await execFileAsync("yt-dlp", [
+      "-g",
+      "--skip-download",
+      "--no-warnings",
+      "--user-agent",
+      USER_AGENT,
+      "--extractor-args",
+      "youtube:player_client=web",
+      "--no-playlist",
+      "-f",
+      "best[height<=1080]",
+      cleanUrl,
+    ]);
     const trimmed = stdout.trim();
     return trimmed.length > 0 ? trimmed : null;
   } catch (error) {
