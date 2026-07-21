@@ -10,9 +10,7 @@ export interface FetchedMetadata {
 }
 
 /**
- * Fetches metadata for a classified URL. No BrowserContext param —
- * Playwright's browser lifecycle has been removed entirely; Instagram now
- * goes through the ScrapeCreators API (single request, no browser needed).
+ * Fetches metadata for a classified URL.
  */
 export async function fetchMetadata(classified: ClassifiedUrl): Promise<FetchedMetadata> {
   if (classified.platform === "youtube") {

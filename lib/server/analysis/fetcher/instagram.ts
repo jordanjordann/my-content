@@ -13,9 +13,7 @@ export interface FetchedInstagramMetadata {
 
 /**
  * Fetches Instagram post/reel/carousel metadata via ScrapeCreators and maps
- * it to MediaMetadata. Playwright-based scraping (browser lifecycle, IG
- * login, cookie persistence, DOM/script scraping) has been fully removed —
- * see TDD §1.1.1-2 for why plain HTTP via a paid API replaces it.
+ * it to MediaMetadata.
  *
  * A single request serves both the metadata and the owner hint so the
  * profiles service (ticket #33) never has to spend a second credit just to
