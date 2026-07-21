@@ -66,6 +66,41 @@ Consequences:
 
 Three ingestion paths, not one. This affects the generation surface's input design and needs to be in the Q1.4/generation PRD.
 
+### Where generation lives [CONFIRMED]
+
+**Content generation lives under the creator's profile page.** Not a new top-level "Generate" surface.
+
+This **resolves the previously-deferred Q2.8 (sidebar / app-shell IA) question** explicitly. `Sidebar.tsx` today has one section and one link; the answer to "how does the planner coexist with the app shell" is that it does not get its own shell entry — it hangs off the creator you are generating for, because generation is meaningless without a creator whose style you are generating in.
+
+**This promotes the profiles module significantly, and it is the largest sequencing change in this revision.** Profiles was previously placed "down the long line" (the owner's Q2.7 answer, and the last revision of this plan had it in the final phase). It is now the **home of the core feature**.
+
+The creator profile page is **no longer a detail page**. It becomes a real destination holding:
+
+- scraped **facts** (`profiles` — follower count, bio, account type),
+- the **editable style fingerprint** (the separate derived record from above),
+- **that creator's analyses**,
+- the **Generate** action.
+
+Sequencing consequence: the profiles-module work moves out of the long line and into the mainline plan — see §3 Phase 4. Nothing about generation can ship without it.
+
+### Bulk ingestion by profile [CONFIRMED] — NEW
+
+The owner asked whether building a style fingerprint from analyzed videos means pasting content links **one at a time**. The answer given, and not disputed: **no.** One-at-a-time pasting is unworkable for an agency onboarding a creator — at the 5-video minimum that is 5 manual pastes per creator, and agencies onboard creators in batches.
+
+Intended flow:
+
+**Add creator `@username` → system fetches their recent N posts via ScrapeCreators → queues N analyses → the style fingerprint builds itself.**
+
+One action instead of N manual pastes. **The same flow applies to competitor profiles** — the creator-vs-competitor distinction (§3, 2.1a) rides along unchanged.
+
+Three technical notes that constrain when and how this can be built:
+
+**(a) The profile endpoint exists; post listing is NOT verified.** A ScrapeCreators profile endpoint is **already integrated** — `lib/server/profiles/`, used today for follower count. **Whether ScrapeCreators can list a profile's recent posts is unverified.** Treat it as requiring verification before any ticket is written, and **do not guess at response shapes.** This repo has a documented history of exactly that bug class: the `trim=true` bug that broke **100% of live traffic**, and a dual-shape adapter built against a response shape that **never occurs**. Verification output goes into `.claude/context/verified-facts.md` (which still does not exist — see 2.2).
+
+**(b) CRITICAL DEPENDENCY: bulk ingestion is blocked on the job queue (Q2.3).** Analyzing 5–20 posts in one user action **cannot** run synchronously behind the existing `maxDuration = 300` HTTP request in `app/api/analyze/route.ts`. That loop is **serial**, and this is precisely the timeout failure mode the audit identified. Bulk ingest is therefore **not a standalone feature — it is the first real CONSUMER of the queue work.** "Add creator → auto-analyze their posts" **cannot ship before Q2.3 lands.** This strengthens the case for keeping Q2.3 at its current priority rather than sliding it.
+
+**(c) Cost implication.** N posts × (1–2 SC credits + one Gemini video analysis per post). At a 5-post minimum this is modest. The **ceiling** scales with how many posts an agency chooses to ingest per creator, and there is currently **no quota and no spend visibility** (Q2.4 — `credits_remaining` is returned by ScrapeCreators and discarded). **Bulk ingest is the point at which the missing cost controls start to actually matter.** They were deferrable while ingestion was one URL at a time; they stop being deferrable when one click spends 20 analyses.
+
 ### The style fingerprint
 
 Answers Q2.7's open sub-question. All of the following is **[RECOMMENDATION]** — proposed by the boss, not objected to by the owner, but not explicitly confirmed:
@@ -76,7 +111,22 @@ Answers Q2.7's open sub-question. All of the following is **[RECOMMENDATION]** �
 - **Human-editable / overridable.** The user is an agency; they will want to correct *"no, this creator's tone is warmer than that."* Corrections improve every future generation and build trust. Cheap to build now, awkward to retrofit once generations depend on the record.
 - **Include caption/text style**, not just video style. Captions are where text voice lives and they are already stored on `analyses`.
 
-**[OPEN] — cold start.** A style fingerprint from 1 analyzed video is noise. From ~15 it is meaningful. What is the minimum N? Does the app (a) block generation until N analyses exist, (b) warn but proceed, or (c) generate with an explicit low-confidence flag? An agency onboarding a new creator hits this on day one, every time. **Not yet answered — must be decided in the Q1.4 PRD.**
+### Cold start [CONFIRMED]
+
+**Minimum: 5 analyzed videos before a style fingerprint is generated.** Previously [OPEN]; now decided by the owner. Below 5, no fingerprint exists.
+
+Why 5 holds up:
+
+- **It meaningfully reduces over-fitting versus a smaller threshold.** One off-brand video skews a 3-video sample by 33%; at 5 it skews by 20%. Five is also likelier to capture a creator's actual **range** than a coincidence of three similar posts.
+
+Caveat — recorded as a caveat, **not** as a blocking risk:
+
+- **5 is still thin for a true style fingerprint.** It is a working floor, not a statistically comfortable sample. The **human-editable style profile therefore remains the necessary backstop** — it is what makes a thin sample safe to ship on. This raises, not lowers, the priority of the editable override described above.
+
+**[RECOMMENDATION]** (tech lead — *not* owner-confirmed):
+
+- **Surface confidence in the UI.** Show the sample size on the generation surface and on the profile page, e.g. *"based on 5 videos."* The agency should never be guessing how much evidence sits behind a brief.
+- **Treat 5 as a tunable threshold**, stored as config rather than hardcoded, so it can be raised once real output quality is observed. Expect to raise it.
 
 ---
 
@@ -142,9 +192,19 @@ The relabel "Recurring Red Flags" → "Red Flags" is therefore correct for a *st
 
 Order below follows the owner's explicitly stated priorities. Deviations and additions are marked.
 
-### Phase 1 — Security & platform parity (unblocked, start now)
+### Phase 1 — Security & platform parity [APPROVED AND DISPATCHED — IN PROGRESS]
 
-#### 1.1 Migrate YouTube to ScrapeCreators [CONFIRMED]
+**Status:** the owner has **approved** this phase and it has been **dispatched to the team**. It is in progress, **not complete**. Currently in flight:
+
+- **(a)** `proxy.ts` HMAC auth verification fix,
+- **(b)** rate limiting on `/api/auth/verify`,
+- **(c)** the `existingId` guard (Q3.7)
+
+— all three in **one PR by the backend developer**; and separately,
+
+- **(d)** the YouTube → ScrapeCreators migration, currently in **FEASIBILITY VERIFICATION by the tech lead**. It is **not yet confirmed** that ScrapeCreators supports YouTube adequately. If it does not, the fallbacks are (i) fixing `yt-dlp` with `execFile` / argv arrays plus an anchored classifier regex, or (ii) cutting YouTube entirely — **that decision goes back to the owner.**
+
+#### 1.1 Migrate YouTube to ScrapeCreators [CONFIRMED — feasibility verification in progress]
 
 Owner: *"we can make youtube similar flow like instagram using ScrapeCreators."*
 
@@ -160,9 +220,11 @@ This is **not merely a security patch**. It does three things at once:
 
 **Cost: moderate.** New SC endpoint, new adapter mapping, classifier regex anchoring. Must be verified against real responses (see 2.2 below — `.claude/context/verified-facts.md` still does not exist).
 
+**Current status: feasibility verification, tech lead.** Not yet confirmed that ScrapeCreators covers YouTube adequately. Fallbacks if it does not: harden `yt-dlp` (`execFile` + argv array, anchored regex) or cut YouTube. Either fallback is an owner decision, not a team one.
+
 **Unblocks:** honest cross-platform analysis; removes the single worst security hole.
 
-#### 1.2 Auth middleware + rate limiting [CONFIRMED]
+#### 1.2 Auth middleware + rate limiting [CONFIRMED — dispatched, in progress]
 
 Owner: *"create a ticket for this too, we can implement this after this grilling session."*
 
@@ -173,11 +235,13 @@ Owner: *"create a ticket for this too, we can implement this after this grilling
 
 **Cost: cheap.** Hours, not days.
 
-#### 1.3 [RECOMMENDATION] Bundle the `existingId` fix here
+#### 1.3 `existingId` guard (Q3.7) [IN PROGRESS — included in the dispatched Phase 1 PR]
 
-Q3.7 was **never answered** in the questions doc. `app/api/analyze/route.ts` line ~45 passes the same `existingId` to every URL in the loop, so `{urls: [a,b,c], existingId: "x"}` makes three analyses fight over one row. Only reachable via the detail modal today, but it is an unguarded API contract.
+Q3.7 was never answered in the questions doc and remains the **only unanswered question from the original set**. `app/api/analyze/route.ts` line ~45 passes the same `existingId` to every URL in the loop, so `{urls: [a,b,c], existingId: "x"}` makes three analyses fight over one row. Only reachable via the detail modal today, but it is an unguarded API contract.
 
-Proposal: fix it alongside Phase 1 (reject `existingId` when `urls.length > 1`). **Not yet approved by the owner.**
+**Status change:** the boss proposed bundling the fix with the security work. The owner has since **approved the security work going ahead, and the `existingId` fix was included in that dispatch.** It is therefore **no longer merely a proposal** — it is in progress as part of Phase 1, in the same backend PR as 1.2.
+
+Fix: reject `existingId` when `urls.length > 1`.
 
 **Cost: trivial.**
 
@@ -186,6 +250,8 @@ Proposal: fix it alongside Phase 1 (reject `existingId` when `urls.length > 1`).
 ### Phase 2 — The analysis contract (the core of the work)
 
 This phase is where the product is actually decided. It needs **a dedicated PRD** — owner: *"We will need a separate PRD for this to plan in details."*
+
+**Status: the Q1.4 + Q1.5 PRD is being written now** by the project manager at **`docs/PRD-analysis-schema-redesign.md`**. In progress, not finished. It is the input to every ticket in this phase; do not write Phase 2 tickets ahead of it. It must absorb the confirmed cold-start minimum of **5 analyzed videos** (§1) and the style-first output contract below.
 
 #### 2.1 Q1.4 + Q1.5 as ONE scope [CONFIRMED as next priority; the merge is the tech lead's position]
 
