@@ -91,7 +91,7 @@ Intended flow:
 
 **Add creator `@username` → system fetches their recent N posts via ScrapeCreators → queues N analyses → the style fingerprint builds itself.**
 
-One action instead of N manual pastes. **The same flow applies to competitor profiles** — the creator-vs-competitor distinction (§3, 2.1a) rides along unchanged.
+One action instead of N manual pastes. **The same flow applies to any profile, including competitors** — there is no creator-vs-competitor distinction to accommodate (owner decision, reversed; see `docs/PRD-analysis-schema-redesign.md` §8 and §3, 2.1a below).
 
 Three technical notes that constrain when and how this can be built:
 
@@ -155,7 +155,7 @@ Rewriting re-derives all of it and re-makes the same bugs already paid for once:
 - Q1.4 (schema redesign) = a prompt + parser change — `lib/server/analysis/prompts/system.ts`, `lib/server/analysis/parser/analysis.ts`.
 - Q1.5 (reproducibility) = a config change + rubric text — `lib/server/analysis/gemini/generate.ts`, `system.ts`.
 - Q1.8 ("Recurring Red Flags" → "Red Flags") = a string change.
-- Q2.5 (YouTube) = swap a fetcher implementation. The platform-neutral `MediaMetadata` interface was designed precisely to allow this.
+- Q2.5 (YouTube) = swap the **metadata** source behind a fetcher. The platform-neutral `MediaMetadata` interface was designed precisely to allow this. (The **download** path stays on `yt-dlp` — see 1.1.)
 
 The layering — **fetcher → adapter → pipeline → Gemini → persist** — is the right shape for everything described above, including generation.
 
@@ -202,27 +202,37 @@ Order below follows the owner's explicitly stated priorities. Deviations and add
 
 — all three in **one PR by the backend developer**; and separately,
 
-- **(d)** the YouTube → ScrapeCreators migration, currently in **FEASIBILITY VERIFICATION by the tech lead**. It is **not yet confirmed** that ScrapeCreators supports YouTube adequately. If it does not, the fallbacks are (i) fixing `yt-dlp` with `execFile` / argv arrays plus an anchored classifier regex, or (ii) cutting YouTube entirely — **that decision goes back to the owner.**
+- **(d)** the YouTube work. **Feasibility verification is COMPLETE.** The full YouTube → ScrapeCreators migration was investigated and found **NOT VIABLE** (see 1.1). The owner's decision: **KEEP YouTube**, on a **hybrid** — `yt-dlp` retained for download, ScrapeCreators for metadata. Tickets **#55** and **#56**.
 
-#### 1.1 Migrate YouTube to ScrapeCreators [CONFIRMED — feasibility verification in progress]
+#### 1.1 YouTube: hybrid `yt-dlp` (download) + ScrapeCreators (metadata) [CONFIRMED]
 
-Owner: *"we can make youtube similar flow like instagram using ScrapeCreators."*
+Owner, originally: *"we can make youtube similar flow like instagram using ScrapeCreators."* That was investigated in full and **does not work.**
 
-This is **not merely a security patch**. It does three things at once:
+**Why the full migration is NOT VIABLE — verified, not theorized.** ScrapeCreators' YouTube endpoint returns video URLs that are **IP-locked to ScrapeCreators' own scraper IPs**. Fetched from our server they return **HTTP 403**. This was verified across **13 real videos — 0 usable.** `yt-dlp` works because it **deciphers signatures locally**, so the URLs it produces are bound to **our own IP**. That is a structural difference, not a configuration problem, and no amount of header or proxy fiddling on our side changes it.
 
-- kills the command-injection vector in `lib/server/analysis/fetcher/youtube.ts` (user URL interpolated into a shell string; classifier regex unanchored),
-- drops the `yt-dlp` binary dependency entirely,
-- fixes YouTube's structurally second-class status — no follower count, no like/comment counts, no engagement rate, and no UI acknowledgement of any of it (Q2.5).
+**The decision [CONFIRMED]: KEEP YouTube. Adopt a hybrid.**
 
-**Touches:** `lib/server/analysis/fetcher/youtube.ts` (rewrite), `lib/server/analysis/fetcher/router.ts`, `lib/server/analysis/fetcher/adapter.ts`, `lib/server/analysis/classifier/`, `lib/server/analysis/pipeline/index.ts` (the `if (classified.platform === "instagram")` profile-resolution guard).
+- **`yt-dlp` STAYS — for video download ONLY.** It is the only thing that produces a URL we can actually fetch. The binary dependency is **retained**.
+- **ScrapeCreators takes over METADATA** — view / like / comment counts (yt-dlp gives us **no like or comment counts** today), plus **subscriber count** via the channel endpoint. This is what fixes YouTube's structurally second-class status (Q2.5): no follower count, no like/comment counts, no engagement rate.
+- **Shorts-only. Do NOT widen to `/watch?v=` or long-form.** Two reasons: (1) the product is short-form focused; (2) a 15-minute video at `MAX_VIDEO_SECONDS = 900` is roughly **100× the Gemini input tokens** of a 30-second Short. The duration guard is not a substitute for scoping the input.
+- **Cost:** ~**2 credits per YouTube analysis** vs **1** for Instagram.
 
-**Downstream is unaffected** — the `MediaMetadata` interface absorbs the swap. That is the whole point of it.
+**Security — separate from the above, and confirmed exploitable.** The command injection in `lib/server/analysis/fetcher/youtube.ts` is **not theoretical: it was proven end-to-end**, with `$(hostname)` executed via a crafted URL. Because `yt-dlp` is being retained, this fix is **mandatory, not optional**. The fix in flight: **`execFile` / argv arrays at both call sites**, plus **end-anchoring the classifier regexes**.
 
-**Cost: moderate.** New SC endpoint, new adapter mapping, classifier regex anchoring. Must be verified against real responses (see 2.2 below — `.claude/context/verified-facts.md` still does not exist).
+**Tickets:**
 
-**Current status: feasibility verification, tech lead.** Not yet confirmed that ScrapeCreators covers YouTube adequately. Fallbacks if it does not: harden `yt-dlp` (`execFile` + argv array, anchored regex) or cut YouTube. Either fallback is an owner decision, not a team one.
+- **#55** — ScrapeCreators YouTube **metadata** fetcher, **Shorts-only**.
+- **#56** — extend `profiles` to YouTube **channels**, and remove the Instagram-only pipeline guard (`if (classified.platform === "instagram")` in `lib/server/analysis/pipeline/index.ts`).
 
-**Unblocks:** honest cross-platform analysis; removes the single worst security hole.
+**Both are blocked on a ScrapeCreators credit top-up. #55 must land before #56.**
+
+**Touches:** `lib/server/analysis/fetcher/youtube.ts` (metadata path replaced, download path retained + hardened), `lib/server/analysis/fetcher/router.ts`, `lib/server/analysis/fetcher/adapter.ts`, `lib/server/analysis/classifier/` (end-anchored regexes), `lib/server/analysis/pipeline/index.ts` (profile-resolution guard), `lib/server/profiles/`.
+
+**Downstream is unaffected** — the `MediaMetadata` interface absorbs the metadata-source swap. That is the whole point of it.
+
+**Cost: moderate.** New SC endpoints (video + channel), new adapter mapping, classifier regex anchoring, `execFile` conversion. Must be verified against real responses (see 2.2 below — `.claude/context/verified-facts.md` still does not exist).
+
+**Unblocks:** honest cross-platform analysis; closes a **confirmed-exploitable** RCE.
 
 #### 1.2 Auth middleware + rate limiting [CONFIRMED — dispatched, in progress]
 
@@ -280,7 +290,7 @@ Also in this scope, from Q1.5:
 
 **Two data-model items that belong in this PRD:**
 
-**(a) Creator vs. competitor [CONFIRMED context; the boss raised the implication].** The agency analyzes both the creators it manages **and** competitors it studies. `profiles` must distinguish the two. This is **not auth** — it is a data-model question and it belongs here regardless of when auth ships. A style fingerprint for "a creator we manage" and a reference analysis of "a competitor" are different objects with different downstream use.
+**(a) Creator vs. competitor — REVERSED, no longer in scope [CONFIRMED].** An earlier revision of this plan required `profiles` to distinguish managed creators from competitors. **The owner reversed that.** There is **no `is_own_creator` flag and no separate data model** — one profile model, treated identically. There was never a real *data-model* difference (same scraped fields, same analyses, same aggregation), and the flag's only purpose — preventing accidental generation in a competitor's voice — is already handled by the UI, since the agency explicitly picks whose profile page they are on when they hit Generate. **Upside, recorded as deliberate:** not differentiating makes "generate something in @competitor's style" a legitimate, free capability. Adding a boolean later is trivial if a concrete need appears. Full rationale: `docs/PRD-analysis-schema-redesign.md` §8.
 
 **(b) Cross-post aggregation vs. longitudinal — a distinction the questions doc conflated.**
 
@@ -305,7 +315,7 @@ Current state: **zero test files in the entire repo.** No CI. GitHub issue **#36
 
 Minimum viable version:
 
-- fixture-based tests for `lib/server/analysis/fetcher/adapter.ts` against captured real SC payloads (Instagram post, carousel, video-child, and the new YouTube shape),
+- fixture-based tests for `lib/server/analysis/fetcher/adapter.ts` against captured real SC payloads (Instagram post, carousel, video-child, and the new SC YouTube video + channel metadata shapes),
 - golden-file tests for `lib/server/analysis/parser/analysis.ts` + `validation.ts`,
 - create `.claude/context/verified-facts.md` and populate it from the YouTube migration work in Phase 1.
 
@@ -404,17 +414,22 @@ Explicit list of premises in `product-direction-open-questions.md` that are now 
 | Cross-post aggregation and longitudinal data are roughly the same need | **Wrong — they were conflated.** Cross-post aggregation is REQUIRED (it *is* the style fingerprint). Longitudinal is optional. |
 | Multi-slide carousels "mean the schema stops being one-row-one-video — which migration 005 explicitly enforced" (Q2.6) | **Not a conflict.** One content, N media parts. Migration 005 holds unchanged. The work is in the download/upload path, not the schema. |
 | Phone-native information density needed from the start (Q3.6) | **Retired.** Desktop dashboard, confirmed. |
-| "Cut YouTube" as the cheap fix for the command-injection vector (§0.1) | **Superseded.** Migrate it to ScrapeCreators instead — same fix, plus platform parity. |
+| "Cut YouTube" as the cheap fix for the command-injection vector (§0.1) | **REJECTED by the owner — no longer a live option.** YouTube is kept. See §6 for the recorded reason. |
+| The YouTube → ScrapeCreators migration is viable / planned | **False.** Verified NOT viable: SC's YouTube video URLs are IP-locked to their scrapers and return 403 from our server (13 videos tested, 0 usable). Replaced by the **hybrid** — `yt-dlp` for download, SC for metadata (§3, 1.1). |
+| The migration "drops the `yt-dlp` binary dependency entirely" | **False.** `yt-dlp` is **retained** for video download. It is the only path that yields a URL bound to our own IP. The command-injection fix is therefore mandatory, not obviated. |
 | Q1.8: Gemini's "recurring" patterns are per-video commentary | **Still true, and the owner's stated reason for it was wrong.** Gemini saw one video and nothing else. Neither recurring nor comparative. |
-| Auth/tenancy is "the highest-leverage answer in the audit" (Q2.1) | **Downgraded.** Deferrable — see §6. But the creator-vs-competitor data-model distinction it surfaced is **not** deferrable and moves into the Q1.4 PRD. |
+| Auth/tenancy is "the highest-leverage answer in the audit" (Q2.1) | **Downgraded.** Deferrable — see §6. |
+| The creator-vs-competitor data-model distinction is not deferrable and moves into the Q1.4 PRD | **Obsolete — reversed by the owner.** No distinction is being built at all. One profile model. See PRD §8 and §3, 2.1a. |
 
 ---
 
 ## 5. Open questions still blocking
 
-Three. None have answers. **Do not invent them.**
+Two remain. **Do not invent answers.** [OPEN 1] has since been resolved and is kept below with its resolution recorded.
 
-### [OPEN 1] Cold-start minimum for the style fingerprint
+### ~~[OPEN 1]~~ Cold-start minimum for the style fingerprint — **RESOLVED [CONFIRMED]**
+
+**Minimum is 5, and it stays at 5.** No formal governance process and no defined metric for raising it — the owner will revisit informally once real output quality is observed. Additionally confirmed: **all analyzed videos are weighted equally** in the aggregate (no `overallScore` weighting), and the **"based on N videos" confidence indicator is in scope for this phase.** See `docs/PRD-analysis-schema-redesign.md` §6.1. Original framing kept below for the record:
 
 A fingerprint from 1 analyzed video is noise; from ~15 it is meaningful. What is the minimum N, and what happens below it?
 
@@ -422,7 +437,7 @@ A fingerprint from 1 analyzed video is noise; from ~15 it is meaningful. What is
 - (b) warn but proceed,
 - (c) generate with an explicit low-confidence flag.
 
-An agency onboarding a new creator hits this **on day one, every time**. Must be decided in the Q1.4 PRD. **Blocking Phase 2 design.**
+An agency onboarding a new creator hits this **on day one, every time**. **No longer blocking Phase 2 design.**
 
 ### [OPEN 2] Where does generation live in the app IA?
 
@@ -443,7 +458,10 @@ Recorded with reasons so nobody relitigates them.
 | Item | Decision | Reason |
 | --- | --- | --- |
 | **Rewriting the app** | **No** | Plumbing is good, contract is wrong. See §2. |
-| **Auth / multi-tenancy (`user_id` on every table)** | **Deferred** | At 2 rows, retrofitting `user_id` is an afternoon, not a project. **Two conditions:** (1) do it **before a second organization touches the app** — not merely when it becomes annoying; (2) the creator-vs-competitor distinction is **independent of this** and ships with Q1.4 regardless. |
+| **Cutting YouTube** | **REJECTED — not doing** | Considered as the cheap fix for the command-injection vector, and as the fallback if the SC migration failed. The migration did fail, and the owner **still chose to keep YouTube**. Do not relitigate. The injection is fixed directly (`execFile` + argv arrays, end-anchored classifier regexes) and metadata parity comes from SC (§3, 1.1). |
+| **Full YouTube → ScrapeCreators migration (download included)** | **Not viable — abandoned** | SC's YouTube video URLs are IP-locked to their scraper IPs; 403 from our server. 13 videos tested, 0 usable. `yt-dlp` deciphers signatures locally so its URLs bind to our IP. Hybrid adopted instead. |
+| **Widening YouTube support to `/watch?v=` / long-form** | **Not doing** | Shorts-only. Short-form product focus, and a 15-min video at `MAX_VIDEO_SECONDS = 900` is ~100× the Gemini input tokens of a 30s Short. |
+| **Auth / multi-tenancy (`user_id` on every table)** | **Deferred** | At 2 rows, retrofitting `user_id` is an afternoon, not a project. **Condition:** do it **before a second organization touches the app** — not merely when it becomes annoying. (The creator-vs-competitor distinction previously noted here has been **removed entirely** — see §3, 2.1a.) |
 | **Scheduled metric re-fetch / longitudinal polling** | **Not doing** | Not load-bearing for on-demand per-topic generation. Costs a scheduler plus recurring SC credits per account per interval. Only the cheap snapshot-recording half survives (§4.4). |
 | **Calendar / posting schedule / cadence** | **Not doing** | Not the product. See §1. |
 | **Trend feed / competitor recommendation engine** | **Not doing** | Not the product. Requires ingesting other people's content at scale, which the single-URL model can't do. |
@@ -461,14 +479,17 @@ Recorded with reasons so nobody relitigates them.
 ## 7. Critical-path summary
 
 ```
-Phase 1  YouTube → ScrapeCreators        [CONFIRMED]  cheap-moderate  ─┐
+Phase 1  YouTube hybrid (#55 → #56)      [CONFIRMED]  moderate        ─┐
+         ├─ yt-dlp KEPT for download; SC for metadata; Shorts-only    │
+         ├─ injection fix: execFile + anchored regex  [MANDATORY]     │
+         └─ #55 and #56 blocked on SC credit top-up; #55 before #56   │
          Auth middleware + rate limit    [CONFIRMED]  cheap           ─┤ independent
          existingId fix                  [RECOMMEND]  trivial         ─┘
 
 Phase 2  Q1.4 + Q1.5 schema redesign     [CONFIRMED]  EXPENSIVE       ← needs a PRD
          ├─ style-first output contract
-         ├─ creator-vs-competitor model
-         ├─ cold-start decision           [OPEN 1] ← blocks design
+         ├─ one profile model (creator-vs-competitor split REMOVED)
+         ├─ cold-start decision           [RESOLVED: 5, all videos weighted equally]
          └─ validation harness + tests    [RECOMMEND] run in parallel
 
 Phase 3  Job queue / async pipeline      [CONFIRMED]  EXPENSIVE       ← also decides hosting
