@@ -18,11 +18,29 @@ const CACHE_CONTROL_HEADER = "public, max-age=2592000, immutable"; // 30 days
 
 class ImageTooLargeError extends Error {}
 
+class HostNotAllowedError extends Error {}
+
 function isAllowedImageHost(hostname: string): boolean {
   const lowerHostname = hostname.toLowerCase();
   return IMAGE_PROXY_ALLOWED_HOSTS.some(
     (allowedHost) => lowerHostname === allowedHost || lowerHostname.endsWith(`.${allowedHost}`),
   );
+}
+
+/**
+ * Enforces the image-proxy host allowlist on a URL. Passed to
+ * `requestWithSsrfGuard` as `validateUrl` so it runs on the entry URL AND
+ * on every redirect hop's target — the SSRF guard alone only blocks
+ * private/loopback addresses, it does not stop a redirect from an
+ * allowlisted host to an arbitrary public one. Without re-checking on every
+ * hop, an attacker-controlled (or compromised) redirect on an allowlisted
+ * CDN host could smuggle in a response that then gets cached under the
+ * original, allowlisted cache key.
+ */
+function assertAllowedImageHost(url: URL): void {
+  if (!isAllowedImageHost(url.hostname)) {
+    throw new HostNotAllowedError(`Host "${url.hostname}" is not on the image proxy allowlist.`);
+  }
 }
 
 /**
@@ -123,8 +141,16 @@ export async function GET(request: NextRequest) {
       },
       maxRedirects: MAX_REDIRECTS,
       deadlineAt: Date.now() + IMAGE_PROXY_TIMEOUT_MS,
+      validateUrl: assertAllowedImageHost,
     });
   } catch (error) {
+    if (error instanceof HostNotAllowedError) {
+      console.error(`[ImageProxy] Redirect off the host allowlist for ${cacheUrl}:`, error.message);
+      return NextResponse.json(
+        { error: "Bad Request", message: "Host is not on the image proxy allowlist.", status: 400 },
+        { status: 400 },
+      );
+    }
     console.error(`[ImageProxy] Upstream fetch failed for ${cacheUrl}:`, error);
     return NextResponse.json(
       { error: "Bad Gateway", message: "Failed to fetch image from upstream.", status: 502 },

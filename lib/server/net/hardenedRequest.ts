@@ -7,6 +7,20 @@ export interface HardenedRequestOptions {
   maxRedirects: number;
   /** Absolute deadline (`Date.now() + timeoutMs`), shared across all hops. */
   deadlineAt: number;
+  /**
+   * Optional, caller-supplied gate invoked on every hop's URL — including
+   * the initial one — before that hop is validated against the SSRF guard
+   * and connected to. Throw to reject the whole request (e.g. on a
+   * host-allowlist violation).
+   *
+   * This is intentionally opt-in: the SSRF guard alone only blocks
+   * private/loopback targets, it does not restrict *which* public hosts a
+   * caller may reach. Callers that need a host allowlist (e.g. the image
+   * proxy, which must not follow a redirect off its allowlisted CDN hosts)
+   * pass this; callers that don't need one (e.g. the video downloader) are
+   * unaffected.
+   */
+  validateUrl?: (url: URL) => void;
 }
 
 /**
@@ -85,7 +99,7 @@ function requestOnce(
  */
 export async function requestWithSsrfGuard(
   url: string,
-  { headers, maxRedirects, deadlineAt }: HardenedRequestOptions,
+  { headers, maxRedirects, deadlineAt, validateUrl }: HardenedRequestOptions,
 ): Promise<IncomingMessage> {
   let currentUrl: URL;
   try {
@@ -93,6 +107,11 @@ export async function requestWithSsrfGuard(
   } catch {
     throw new Error(`Invalid URL: ${url}`);
   }
+
+  // Run the caller's allowlist (or any other) check on the entry URL too —
+  // not just on redirect targets — so the check is uniformly applied to
+  // every hop.
+  validateUrl?.(currentUrl);
 
   let safeAddress = await assertSafeUrl(currentUrl);
 
@@ -117,9 +136,11 @@ export async function requestWithSsrfGuard(
       throw new Error(`Redirect target is not a valid URL: ${result.location}`);
     }
 
-    // Re-validate AND re-pin on every hop — the redirect target is just as
+    // Re-validate against the caller's allowlist (if any) AND the SSRF
+    // guard on every hop, then re-pin — the redirect target is just as
     // attacker-influenceable as the original URL, and its DNS is an
     // independent rebinding opportunity.
+    validateUrl?.(nextUrl);
     safeAddress = await assertSafeUrl(nextUrl);
     currentUrl = nextUrl;
   }
