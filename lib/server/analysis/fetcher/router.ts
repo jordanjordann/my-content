@@ -5,7 +5,16 @@ import { fetchShortMetadata, extractVideoUrl } from "./youtube";
 
 export interface FetchedMetadata {
   metadata: MediaMetadata;
-  /** Always null for YouTube — only Instagram post payloads carry an owner block. */
+  /**
+   * Owner block from the platform payload, when it carries one. Both
+   * platforms now do: Instagram from `owner`, YouTube from the
+   * `/v1/youtube/video` `channel` block.
+   *
+   * The YouTube hint never carries a follower count (the video payload has
+   * none), so `resolveProfile`'s follower-count short-circuit will not fire
+   * for YouTube and a `/v1/youtube/channel` call is always made on a cache
+   * miss. That is expected — see #57.
+   */
   ownerHint: OwnerProfileHint | null;
 }
 
@@ -14,14 +23,20 @@ export interface FetchedMetadata {
  */
 export async function fetchMetadata(classified: ClassifiedUrl): Promise<FetchedMetadata> {
   if (classified.platform === "youtube") {
-    return { metadata: await fetchYoutubeMetadata(classified.url), ownerHint: null };
+    return fetchYoutubeMetadata(classified.url);
   }
 
   return fetchInstagramMetadata(classified.url);
 }
 
-async function fetchYoutubeMetadata(url: string): Promise<MediaMetadata> {
-  const metadata = await fetchShortMetadata(url);
+/**
+ * Hybrid by design: metadata comes from ScrapeCreators, the playable video
+ * URL still comes from `yt-dlp` (see fetcher/youtube.ts). A failed
+ * `extractVideoUrl` yields `videoUrl: null`, which the pipeline treats as a
+ * legitimate metadata-only analysis.
+ */
+async function fetchYoutubeMetadata(url: string): Promise<FetchedMetadata> {
+  const { metadata, ownerHint } = await fetchShortMetadata(url);
   const videoUrl = await extractVideoUrl(url);
-  return { ...metadata, videoUrl };
+  return { metadata: { ...metadata, videoUrl }, ownerHint };
 }
