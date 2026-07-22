@@ -1,6 +1,6 @@
 # RUNBOOK
 
-Operational reference card. Verified against `main` at `dd4e57e` (2026-07-22).
+Operational reference card. Verified against `main` at `7c11ccb` (2026-07-22).
 
 ---
 
@@ -12,6 +12,7 @@ Operational reference card. Verified against `main` at `dd4e57e` (2026-07-22).
 | Production build | `npm run build` | |
 | Serve build | `npm start` | |
 | Lint | `npm run lint` | flat config, `eslint.config.mjs` |
+| Tests | `npm run test` | `vitest run`, node env. `npm run test:watch` for watch mode. **Offline — never calls a live API** (see §7) |
 | Typecheck | `npx tsc --noEmit` | **No `typecheck` script exists** in `package.json`; `tsconfig.json` already sets `noEmit` |
 | Migrate DB | `npm run db:migrate` | `tsx scripts/migrate.ts` |
 
@@ -252,6 +253,44 @@ recording the results in `.claude/context/verified-facts.md`.
 
 ## 7. Testing
 
-There are **zero test files in the repo** — no `*.test.*`, no `*.spec.*`, no `__tests__/`, and no
-test runner in `package.json`. Ticket **#64** establishes the harness. Until it lands, "run the
-tests" is not something you can do; verify by typecheck, lint, and manual exercise of the routes.
+Ticket **#64** established the harness: **vitest**, `npm run test` (`vitest run`) and
+`npm run test:watch`. Config is `vitest.config.ts` — node environment, `tests/**/*.test.ts`, and an
+`@/` alias that must stay in lockstep with `tsconfig.json`'s `paths`.
+
+**The suite is offline by construction, not by convention.** `vitest.config.ts`'s `setupFiles`
+installs `tests/setup/blockLiveFetch.ts` before every test file: it stubs `fetch` to throw, naming
+the attempted URL, unless a test explicitly opts in with its own `vi.stubGlobal("fetch", ...)`.
+`tests/setup/blockLiveFetch.test.ts` proves the guard fires and re-arms between tests. Fixtures are
+read from `.claude/context/fixtures/` via `tests/helpers/fixtures.ts`, which throws a clear,
+path-naming error if a fixture file is missing. See §5 for why this matters (credits, and
+`/v1/youtube/channel` charging even on a miss).
+
+Layout:
+
+```
+tests/
+├── setup/blockLiveFetch.ts                    # global fetch guard, wired via setupFiles
+├── setup/blockLiveFetch.test.ts                # proves the guard works
+├── helpers/fixtures.ts                        # loader for .claude/context/fixtures/ (fail-fast on missing file)
+├── fixtures/README.md                         # fixture inventory + the YouTube/Instagram gaps
+├── fixtures/synthetic/instagramMedia.ts       # hand-built adapter inputs — NOT captures
+├── server/scrapecreators/youtubeFixtures.test.ts
+├── server/scrapecreators/client.test.ts       # includes fake-timer retry/backoff tests
+└── server/analysis/fetcher/adapter.test.ts
+```
+
+**Known gaps:**
+
+- Real `/v1/instagram/post` captures **are now committed** (PR #84, merged) — six fixtures under
+  `.claude/context/fixtures/scrapecreators-instagram/`, including a video-bearing carousel that
+  closed the previously-open shape gap. The adapter tests in this PR still run on synthetic inputs
+  (see `tests/fixtures/synthetic/instagramMedia.ts`); the carousel-video-child describe block in
+  `adapter.test.ts` has been relabelled `FALSIFIED` rather than `UNVERIFIED` because #84 has now
+  disproven the fields it assumes. Converting the adapter tests to the real fixtures is follow-up
+  work, not done here. Details are in `tests/fixtures/README.md` and
+  `.claude/context/verified-facts.md`.
+- No non-Shorts `/v1/youtube/video` capture is committed — `yt_short.json` is a re-scrape of the
+  same Shorts video as `yt_video_fresh.json`/`yt_video_trim.json`, not an independent regular
+  video. See `tests/fixtures/README.md`.
+
+There is still **no CI** — nothing runs `npm run test` automatically.

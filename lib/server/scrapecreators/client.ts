@@ -12,6 +12,18 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * `mapStatusToMessage(0)` collapses every non-HTTP failure (DNS, abort,
+ * timeout, or a test's offline-fetch guard) into the same generic "timeout"
+ * message, with the actual underlying cause silently dropped (PR #81 review,
+ * non-blocking item). Surface it as `upstreamMessage` so a caller — or the
+ * dev tripping the tests' live-fetch guard — sees what actually happened,
+ * without changing retry behaviour or the top-level message shown to users.
+ */
+function describeNetworkError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function buildUrl(
   path: string,
   params: Record<string, string | boolean | undefined>,
@@ -107,10 +119,10 @@ export async function scRequest<T>(
         continue;
       }
 
-      throw new ScrapeCreatorsError(mapStatusToMessage(0), 0);
+      throw new ScrapeCreatorsError(mapStatusToMessage(0), 0, describeNetworkError(lastError));
     }
   }
 
   // Unreachable, but keeps TypeScript satisfied.
-  throw new ScrapeCreatorsError(mapStatusToMessage(0), 0, String(lastError));
+  throw new ScrapeCreatorsError(mapStatusToMessage(0), 0, describeNetworkError(lastError));
 }
