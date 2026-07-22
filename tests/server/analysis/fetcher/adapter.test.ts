@@ -80,14 +80,6 @@ describe("adaptPostResponse — resolveVideoUrl", () => {
     expect(adaptPostResponse(makeImagePost(), IG_POST_URL).videoUrl).toBeNull();
   });
 
-  it("uses the video child's video_url for a carousel", () => {
-    const media = makeCarousel([makeImageChild(), makeVideoChild()]);
-
-    expect(adaptPostResponse(media, IG_POST_URL).videoUrl).toBe(
-      "https://cdn.example/child-video.mp4",
-    );
-  });
-
   it("selects the FIRST video slide in document order for a multi-video carousel", () => {
     const media = makeCarousel([
       makeImageChild(),
@@ -187,29 +179,6 @@ describe("adaptPostResponse — resolveAudio", () => {
       audioArtist: "Artist Name",
       audioId: "audio-1",
       audioIsOriginal: false,
-    });
-  });
-
-  it("sources carousel audio from the video child, not the sidecar top level", () => {
-    const media = makeCarousel([makeImageChild(), makeVideoChild()], {
-      // A sidecar top level never carries these; prove they are not read even if present.
-      has_audio: false,
-      clips_music_attribution_info: {
-        song_name: "Top Level Song",
-        artist_name: "Top Level Artist",
-        audio_id: "top-level-audio",
-        uses_original_audio: false,
-      },
-    });
-
-    const result = adaptPostResponse(media, IG_POST_URL);
-
-    expect(result).toMatchObject({
-      hasAudio: true,
-      audioTitle: "Child Song",
-      audioArtist: "Child Artist",
-      audioId: "child-audio",
-      audioIsOriginal: true,
     });
   });
 
@@ -318,16 +287,6 @@ describe("adaptPostResponse — counts, dates, dimensions, duration", () => {
       carouselItemCount: null,
       externalId: "owner-1",
     });
-  });
-
-  it("sources a carousel's duration from the same child the video URL came from", () => {
-    const media = makeCarousel([
-      makeImageChild(),
-      makeVideoChild({ video_duration: 7.25 }),
-      makeVideoChild({ id: "later-video", video_duration: 90 }),
-    ]);
-
-    expect(adaptPostResponse(media, IG_POST_URL).durationSec).toBe(7.25);
   });
 
   it("returns a null duration for an all-image carousel", () => {
@@ -459,5 +418,62 @@ describe("extractOwnerProfile", () => {
       followerCount: null,
       followingCount: null,
     });
+  });
+});
+
+/**
+ * UNVERIFIED — depends on the modelled (not observed) carousel video-child shape.
+ *
+ * `ScrapeCreatorsCarouselChildNode`'s video fields (`video_url`, `video_duration`, `has_audio`,
+ * `clips_music_attribution_info`) have never been observed on a real carousel child — they are
+ * modelled by analogy with the top-level `XDTGraphVideo` shape (see
+ * `.claude/context/verified-facts.md`, "/v1/instagram/post" §"NOT VERIFIED"). The tests below
+ * read like claims about Instagram's real API ("uses the video child's video_url for a
+ * carousel", etc.), but they exercise `makeVideoChild()`, a synthetic fixture, not a captured
+ * payload. They are grouped in their own describe block, separate from the rest of this file's
+ * adapter-branch pins, specifically so nobody mistakes their names for verified API behaviour.
+ * Re-verify (and drop this caveat) once a real video-bearing carousel capture lands — tracked
+ * against PR #84 and `tests/fixtures/README.md`.
+ */
+describe("UNVERIFIED — carousel video-child shape (modelled, never observed against a live payload)", () => {
+  it("uses the video child's video_url for a carousel", () => {
+    const media = makeCarousel([makeImageChild(), makeVideoChild()]);
+
+    expect(adaptPostResponse(media, IG_POST_URL).videoUrl).toBe(
+      "https://cdn.example/child-video.mp4",
+    );
+  });
+
+  it("sources carousel audio from the video child, not the sidecar top level", () => {
+    const media = makeCarousel([makeImageChild(), makeVideoChild()], {
+      // A sidecar top level never carries these; prove they are not read even if present.
+      has_audio: false,
+      clips_music_attribution_info: {
+        song_name: "Top Level Song",
+        artist_name: "Top Level Artist",
+        audio_id: "top-level-audio",
+        uses_original_audio: false,
+      },
+    });
+
+    const result = adaptPostResponse(media, IG_POST_URL);
+
+    expect(result).toMatchObject({
+      hasAudio: true,
+      audioTitle: "Child Song",
+      audioArtist: "Child Artist",
+      audioId: "child-audio",
+      audioIsOriginal: true,
+    });
+  });
+
+  it("sources a carousel's duration from the same child the video URL came from", () => {
+    const media = makeCarousel([
+      makeImageChild(),
+      makeVideoChild({ video_duration: 7.25 }),
+      makeVideoChild({ id: "later-video", video_duration: 90 }),
+    ]);
+
+    expect(adaptPostResponse(media, IG_POST_URL).durationSec).toBe(7.25);
   });
 });

@@ -257,25 +257,36 @@ Ticket **#64** established the harness: **vitest**, `npm run test` (`vitest run`
 `npm run test:watch`. Config is `vitest.config.ts` — node environment, `tests/**/*.test.ts`, and an
 `@/` alias that must stay in lockstep with `tsconfig.json`'s `paths`.
 
-**The suite is offline by construction.** No test may call a live API: fixtures are read from
-`.claude/context/fixtures/` via `tests/helpers/fixtures.ts`, and transport tests stub `fetch`. See
-§5 for why (credits, and `/v1/youtube/channel` charging even on a miss).
+**The suite is offline by construction, not by convention.** `vitest.config.ts`'s `setupFiles`
+installs `tests/setup/blockLiveFetch.ts` before every test file: it stubs `fetch` to throw, naming
+the attempted URL, unless a test explicitly opts in with its own `vi.stubGlobal("fetch", ...)`.
+`tests/setup/blockLiveFetch.test.ts` proves the guard fires and re-arms between tests. Fixtures are
+read from `.claude/context/fixtures/` via `tests/helpers/fixtures.ts`, which throws a clear,
+path-naming error if a fixture file is missing. See §5 for why this matters (credits, and
+`/v1/youtube/channel` charging even on a miss).
 
 Layout:
 
 ```
 tests/
-├── helpers/fixtures.ts                        # loader for .claude/context/fixtures/
-├── fixtures/README.md                         # fixture inventory + the Instagram gap
+├── setup/blockLiveFetch.ts                    # global fetch guard, wired via setupFiles
+├── setup/blockLiveFetch.test.ts                # proves the guard works
+├── helpers/fixtures.ts                        # loader for .claude/context/fixtures/ (fail-fast on missing file)
+├── fixtures/README.md                         # fixture inventory + the YouTube/Instagram gaps
 ├── fixtures/synthetic/instagramMedia.ts       # hand-built adapter inputs — NOT captures
 ├── server/scrapecreators/youtubeFixtures.test.ts
-├── server/scrapecreators/client.test.ts
+├── server/scrapecreators/client.test.ts       # includes fake-timer retry/backoff tests
 └── server/analysis/fetcher/adapter.test.ts
 ```
 
-**Known gap:** no `/v1/instagram/post` captures are committed, so the adapter tests run on
-synthetic inputs and the **video-bearing carousel shape is still unconfirmed** — TDD §7 / the
-carousel ticket remains blocked on a capture. Details and the cost to close it (3 credits) are in
-`tests/fixtures/README.md` and `.claude/context/verified-facts.md`.
+**Known gaps:**
+
+- No `/v1/instagram/post` captures are committed, so the adapter tests run on synthetic inputs and
+  the **video-bearing carousel shape is still unconfirmed** — TDD §7 / the carousel ticket remains
+  blocked on a capture. PR #84 (open, unmerged) adds the real Instagram fixtures. Details are in
+  `tests/fixtures/README.md` and `.claude/context/verified-facts.md`.
+- No non-Shorts `/v1/youtube/video` capture is committed — `yt_short.json` is a re-scrape of the
+  same Shorts video as `yt_video_fresh.json`/`yt_video_trim.json`, not an independent regular
+  video. See `tests/fixtures/README.md`.
 
 There is still **no CI** — nothing runs `npm run test` automatically.

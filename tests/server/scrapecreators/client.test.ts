@@ -14,10 +14,10 @@ import { loadJsonFixture, YOUTUBE_FIXTURES } from "@/tests/helpers/fixtures";
  * body that says `"success": true` (see verified-facts.md). If anyone ever
  * "fixes" the client to trust the body, these tests fail.
  *
- * Retryable statuses (429/5xx) are deliberately untested here: `scRequest`
- * sleeps 1s then 2s between attempts and the delay is not injectable, so a
- * retry test would add ~3s of real wall time to every run. Making the backoff
- * injectable is a separate, non-blocking refactor.
+ * Retryable statuses (429/5xx) ARE tested (see the "retry/backoff" describe
+ * block below) using vitest fake timers, so the 1s/2s exponential backoff
+ * runs in zero real wall time — no production code change was needed to make
+ * this testable.
  */
 
 const ORIGINAL_KEY = process.env.SCRAPECREATORS_API_KEY;
@@ -154,5 +154,74 @@ describe("scRequest", () => {
 
     const logged = logMock.mock.calls.map((call) => JSON.stringify(call)).join(" ");
     expect(logged).not.toContain("test-key-not-a-real-key");
+  });
+});
+
+/**
+ * Retry/backoff, exercised with vitest fake timers.
+ *
+ * `scRequest` sleeps `SC_RETRY_BASE_DELAY_MS * 2 ** attempt` (1s, then 2s)
+ * between retryable-status attempts. Faking `setTimeout`/`clearTimeout` lets
+ * these tests drive that backoff to completion in ~0 real wall time, with no
+ * change to `scRequest` itself — the delay does not need to be made
+ * injectable to be tested.
+ */
+describe("scRequest — retry/backoff (fake timers)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("retries a 503 with 1s then 2s exponential backoff before succeeding on the 3rd attempt", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ error: "boom" }, 503))
+      .mockResolvedValueOnce(jsonResponse({ error: "boom" }, 503))
+      .mockResolvedValueOnce(jsonResponse({ success: true }, 200));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const wallClockStart = performance.now();
+    const resultPromise = scRequest<Record<string, unknown>>(SC_PATHS.youtubeVideo, { url: "x" });
+
+    // First attempt happens synchronously-ish; only two backoff sleeps stand between
+    // it and success (3 attempts total, SC_MAX_RETRIES = 2).
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    const result = await resultPromise;
+
+    expect(result).toEqual({ success: true });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    // Real wall time barely moved — this is fake timers, not a live ~3s sleep.
+    expect(performance.now() - wallClockStart).toBeLessThan(1_000);
+  });
+
+  it("gives up after SC_MAX_RETRIES retries (3 attempts total) and throws the mapped error", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ error: "boom" }, 503));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const assertion = expect(
+      scRequest(SC_PATHS.youtubeVideo, { url: "x" }),
+    ).rejects.toMatchObject({ status: 503 });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await assertion;
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not sleep before retrying — a non-retryable 404 fails on the first attempt", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ error: "not_found" }, 404));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(scRequest(SC_PATHS.youtubeVideo, { url: "x" })).rejects.toMatchObject({
+      status: 404,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

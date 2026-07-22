@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,6 +21,16 @@ const FIXTURES_ROOT = fileURLToPath(new URL("../../.claude/context/fixtures/", i
 /** Relative path under `.claude/context/fixtures/`, e.g. `scrapecreators-youtube/yt_video_fresh.json`. */
 export function loadJsonFixture<T>(relativePath: string): T {
   const absolutePath = join(FIXTURES_ROOT, relativePath);
+
+  if (!existsSync(absolutePath)) {
+    throw new Error(
+      `[tests] Missing fixture "${relativePath}" — expected a committed capture at ` +
+        `"${absolutePath}". These are real, credit-charged API captures; do not delete or rename ` +
+        "them (see .claude/context/fixtures/README.md). If this is intentional (a fixture set was " +
+        "moved or renamed), update the path constants in tests/helpers/fixtures.ts to match.",
+    );
+  }
+
   return JSON.parse(readFileSync(absolutePath, "utf8")) as T;
 }
 

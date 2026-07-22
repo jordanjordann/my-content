@@ -11,6 +11,29 @@ copy under `tests/` would be a second thing to drift.
 |---|---|---|
 | `scrapecreators-youtube/` | `/v1/youtube/video`, `/v1/youtube/channel` | 10 real captures (2026-07-21) |
 
+**Do not delete files under `.claude/context/fixtures/`.** They are real, credit-charged API
+captures — replacing one means spending credits again. See the "do not delete these" note
+committed alongside them at `.claude/context/fixtures/README.md`.
+
+## Outstanding: no non-Shorts YouTube video capture
+
+`yt_short.json`, `yt_video_fresh.json`, and `yt_video_trim.json` are all the SAME Shorts video
+(id `tPEE9ZwTmy0`) — `yt_short.json` is a separate scrape of it at a different time (it differs
+only in fields that naturally drift between captures: view/like counters, `watchNextVideos`
+recommendations, `credits_remaining`). There is **no capture anywhere in this repo of a regular,
+non-Shorts video**.
+
+An earlier version of `youtubeFixtures.test.ts` had a test named to the effect of "has the same
+top-level key set for a Short as for a regular video request" that compared `yt_short.json` against
+`yt_video_fresh.json` — since both are the same file, that test was comparing a capture to itself
+and presenting the tautology as a finding about Shorts vs. regular videos. It has been replaced with
+a test that states the gap plainly (`describe("/v1/youtube/video — KNOWN GAP: no non-Shorts capture
+exists")`) rather than asserting something the fixtures cannot support.
+
+To close this gap, capture one regular (non-Shorts) `/v1/youtube/video` response and commit it
+under `.claude/context/fixtures/scrapecreators-youtube/` (1 credit, 0 on a 404). Until then, any
+claim about Shorts-vs-regular-video shape parity is unverified.
+
 ## The suite is offline by construction
 
 No test may call a live API. ScrapeCreators is credit-based (~25k credits) and
@@ -47,3 +70,29 @@ and one carousel URL known to contain at least one video slide — 3 credits tot
 `.claude/context/fixtures/scrapecreators-instagram/`, add the endpoint section to
 `.claude/context/verified-facts.md`, and convert the synthetic adapter tests to golden files against
 them.
+
+**PR #84 is open and adds exactly these real fixtures** at
+`.claude/context/fixtures/scrapecreators-instagram/`, plus an append to `verified-facts.md`. It is
+not merged as of this PR. Once it lands, revisit `adapter.test.ts` and its synthetic inputs
+(`tests/fixtures/synthetic/instagramMedia.ts`) against the real captures — the synthetic tests
+should stay in place for adapter-branch coverage, but the carousel-child-shape tests called out
+below should be re-verified and have their caveat removed once a real video-bearing carousel
+capture exists.
+
+### Carousel video-child shape — caveated, not verified
+
+`tests/server/analysis/fetcher/adapter.test.ts` has a `describe` block named
+`"UNVERIFIED — carousel video-child shape (modelled, never observed)"`. The three tests inside it
+read like assertions about Instagram's real API (they exercise `resolveVideoUrl`/`resolveAudio`
+carousel branches), but they run entirely against the synthetic `makeVideoChild()` fixture, which
+is **modelled by analogy with the top-level `XDTGraphVideo` shape and has never been observed on a
+live carousel child** (see `.claude/context/verified-facts.md`, "NOT VERIFIED" section under
+`/v1/instagram/post`). They are grouped there specifically so nobody mistakes their names for
+verified API behaviour.
+
+## Fixture loader fail-fast behaviour
+
+`tests/helpers/fixtures.ts`'s `loadJsonFixture()` throws immediately, naming the missing file and
+its resolved absolute path, when a fixture file does not exist — rather than letting a bare
+`ENOENT` from `readFileSync` surface with no context about which committed capture is missing or
+why.

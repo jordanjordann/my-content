@@ -21,5 +21,10 @@ export default defineConfig({
     environment: "node",
     include: ["tests/**/*.test.ts"],
     globals: false,
+    // Installs a `fetch` stub that throws on any unstubbed call, naming the
+    // attempted URL. Makes "the suite is offline by construction" (RUNBOOK
+    // §7) self-enforcing instead of a convention only some test files
+    // happen to follow. See tests/setup/blockLiveFetch.ts.
+    setupFiles: ["./tests/setup/blockLiveFetch.ts"],
   },
 });

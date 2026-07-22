@@ -81,9 +81,21 @@ describe("/v1/youtube/video — the fields that are easy to get wrong", () => {
   it("carries watchNextVideos, which is recommendation data and must not be persisted", () => {
     expect(Array.isArray(video.watchNextVideos)).toBe(true);
   });
+});
 
-  it("has the same top-level key set for a Short as for a regular video request", () => {
-    expect(Object.keys(short).sort()).toEqual(Object.keys(video).sort());
+describe("/v1/youtube/video — KNOWN GAP: no non-Shorts capture exists", () => {
+  it("`yt_short.json` is a re-capture of the SAME Short as `yt_video_fresh.json`, not an independent video", () => {
+    // `yt_short.json` and `yt_video_fresh.json` are both the Shorts video with id
+    // tPEE9ZwTmy0, captured at two different times (they differ only in fields that
+    // naturally drift between scrapes — view/like counters, watchNextVideos
+    // recommendations, credits_remaining). There is NO capture in this repo of a regular
+    // (non-Shorts) video, so nothing here can assert a Short's shape against a regular
+    // video's shape. See tests/fixtures/README.md and .claude/context/verified-facts.md
+    // for the gap this leaves open.
+    expect(short.id).toBe(video.id);
+    expect(short.type).toBe(video.type);
+    expect(short.durationMs).toBe(video.durationMs);
+    expect(short.title).toBe(video.title);
   });
 });
 

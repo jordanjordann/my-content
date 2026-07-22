@@ -913,6 +913,49 @@ reads `.claude/context/fixtures/` and stubs `fetch`.
 | `tests/server/scrapecreators/client.test.ts` | `scRequest` decides success from the HTTP status, never the body's `success` field (the `/v1/youtube/channel` 404-with-`success:true` trap); param serialisation; 404 not retried; key never logged |
 | `tests/server/analysis/fetcher/adapter.test.ts` | `adaptPostResponse()` branching — media-type resolution, first-video-slide selection, thumbnail fallback chain, carousel audio sourced from the video child, `bool()` returning `null` (never `false`) for absent values, the no-username throw. **Synthetic inputs** — see the gap above |
 
-Retryable statuses (429/5xx) are not covered: `scRequest`'s backoff sleeps 1s
-then 2s and is not injectable, so testing it would add ~3s of wall time per
-run. Making the delay injectable is a separate, non-blocking refactor.
+Retryable statuses (429/5xx) are covered under vitest fake timers (see the PR
+#81 review follow-up below) — `scRequest`'s 1s/2s exponential backoff runs in
+zero real wall time per test run, with no change to production code.
+
+---
+
+## PR #81 review follow-up (ticket #64) — gaps recorded plainly
+
+**Appended after code review on PR #81. Read before trusting the coverage table above.**
+
+- **No non-Shorts `/v1/youtube/video` capture exists.** `yt_short.json`,
+  `yt_video_fresh.json`, and `yt_video_trim.json` are all the same Shorts video
+  (id `tPEE9ZwTmy0`) — `yt_short.json` is a separate scrape of it at a
+  different time, not an independent regular-video capture. An earlier
+  version of `youtubeFixtures.test.ts` had a test asserting "the same
+  top-level key set for a Short as for a regular video request"; since both
+  inputs were the same video, that test compared a capture to itself and
+  presented the tautology as a finding. It has been replaced by a test named
+  for what the fixtures actually show (`describe("/v1/youtube/video — KNOWN
+  GAP: no non-Shorts capture exists")`). To close this gap: capture one
+  regular, non-Shorts `/v1/youtube/video` response (1 credit, 0 on a 404) and
+  commit it under `.claude/context/fixtures/scrapecreators-youtube/`.
+- **The suite is now offline by construction, not by convention.**
+  `tests/setup/blockLiveFetch.ts` (wired via `vitest.config.ts`'s
+  `setupFiles`) installs a `fetch` stub before every test that throws, naming
+  the attempted URL, unless a test opts in with its own
+  `vi.stubGlobal("fetch", ...)`. `tests/setup/blockLiveFetch.test.ts` proves
+  the guard fires on an unstubbed call and re-arms between tests.
+- **Retry/backoff is now tested**, using vitest fake timers rather than real
+  wall-clock delays — `scRequest`'s exponential backoff (1s, then 2s) runs in
+  zero real time under `vi.useFakeTimers()` with no production code change.
+  See `tests/server/scrapecreators/client.test.ts`, the "retry/backoff"
+  describe block.
+- **The carousel video-child shape is still unconfirmed.** Three tests in
+  `tests/server/analysis/fetcher/adapter.test.ts` exercise
+  `makeVideoChild()` (synthetic) and read like claims about Instagram's real
+  API; they are grouped under `describe("UNVERIFIED — carousel video-child
+  shape (modelled, never observed against a live payload)")` so their names
+  are not mistaken for verified behaviour. This is the same gap already
+  recorded above under "NOT VERIFIED — open gap, blocks TDD §7 / carousel
+  ticket 8" — nothing new was learned about the real shape.
+- **PR #84 is open (not merged as of this writing)** and adds real
+  `/v1/instagram/post` fixtures under
+  `.claude/context/fixtures/scrapecreators-instagram/` plus its own append to
+  this file. Once merged, revisit `adapter.test.ts`'s synthetic inputs and
+  the "UNVERIFIED" describe block above against the real captures.
