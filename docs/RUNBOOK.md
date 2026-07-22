@@ -1,6 +1,6 @@
 # RUNBOOK
 
-Operational reference card. Verified against `main` at `7c11ccb` (2026-07-22).
+Operational reference card. Verified against `main` at `f181f53` (2026-07-22, session 2).
 
 ---
 
@@ -102,9 +102,11 @@ turned on behind a proxy that overwrites that header.
 Live in `.env.local` at repo root — **gitignored** (`.env*`), untracked. Never commit or reproduce
 key values.
 
-`.env.example` is committed but **stale**: it lists none of the rate-limit vars, `TRUST_PROXY_HEADERS`,
-or the image-proxy vars, and it describes `RESET_PIN` as `your-reset-pin` when the code only checks
-for the literal string `"true"`.
+`.env.example` is committed and, as of 2026-07-22 (session 2), **current** — it now lists every var
+below, including the rate-limit vars, `TRUST_PROXY_HEADERS` and the image-proxy vars, and it states
+that `RESET_PIN` is only ever compared against the literal string `"true"`. It previously advertised
+`RESET_PIN=your-reset-pin`, which is a silent no-op. If you add a `process.env` read, add it there
+too — the table below is the audit source.
 
 Full set actually read by the code:
 
