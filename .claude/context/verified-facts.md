@@ -423,6 +423,8 @@ All five posts belong to the same creator (`@giorrando`).
 
 ### ⚠️ STILL UNVERIFIED: a carousel containing a VIDEO slide
 
+⚠️ **SUPERSEDED** — see "VIDEO-BEARING CAROUSEL CAPTURED (2026-07-22, follow-up)" below.
+
 **No captured payload contains a video-bearing carousel.** The only sidecar
 captured (`ig_carousel_all_images_10_slides.json`) has 10 children, every one
 `__typename: "XDTGraphImage"` with `is_video: false` and `video_url: null`.
@@ -475,6 +477,8 @@ status: string              // "ok"
 
 ### Carousel child node — CONFIRMED shape, MUCH thinner than modelled
 
+⚠️ **SUPERSEDED** — see "Image carousel child — CONFIRMED shape (3 samples) — DIFFERENT from the other carousel's image children" below (this 7-key shape is specific to an all-image carousel, not a general carousel-child rule).
+
 Every one of the 10 children in the captured sidecar has **exactly these 7
 keys and no others**:
 
@@ -504,6 +508,8 @@ Relative to `ScrapeCreatorsCarouselChildNode`:
   `id`, which is a bare numeric string.
 
 ### Top-level carousel (`XDTGraphSidecar`) — key set differs from reels
+
+⚠️ **SUPERSEDED** — see "⚠️ CORRECTION to the previous session's carousel-level findings" below (the "no top-level `dimensions`/`display_resources`" and "`owner` is always a 5-key stub" claims below are falsified by a second carousel sample).
 
 - **`dimensions` is ABSENT** and **`display_resources` is ABSENT** on the
   carousel; both are present on reels and on the single image post.
