@@ -244,3 +244,155 @@ is needed for this endpoint given current `scRequest` behaviour (it checks
 Net spend for this ticket's verification: 7 credits (video: 2 successful
 calls = 2 credits + 1 not-found = 0; channel: 5 calls, all charged, = 5
 credits).
+
+---
+
+## Gemini SDK — `@google/genai`
+
+- **Captured:** 2026-07-22, ticket #75 (SDK migration off the EOL
+  `@google/generative-ai`).
+- **Provenance — read this before trusting a line of it:** everything below is
+  taken from the **installed typings and shipped source** in
+  `node_modules/@google/genai/dist/{genai.d.ts,index.mjs}` at the resolved
+  version, plus an **offline** harness that stubs `globalThis.fetch` and drives
+  the real SDK end-to-end with canned response bodies. **No live Gemini call
+  was made for this section.** Anything below marked *(unverified live)* has
+  not been observed against the real service.
+- **Resolved version:** `@google/genai@2.13.0` (`package.json` range
+  `^2.13.0`). The legacy `@google/generative-ai@0.24.1` is removed; nothing in
+  the repo imports it.
+
+### Client construction
+
+```ts
+import { GoogleGenAI } from "@google/genai";
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
+```
+
+Options object, **not** a positional key string. There is no long-lived "model"
+object — `getGenerativeModel()` has no successor; `model` is a per-call
+argument.
+
+### `ai.models.generateContent`
+
+```ts
+const response = await ai.models.generateContent({
+  model: "gemini-2.5-flash",
+  contents: parts,          // ContentListUnion — a Part[] is accepted directly
+  config: { temperature: 0.2, maxOutputTokens: 8192 },
+});
+```
+
+- `generationConfig` is renamed **`config`** on the parameters object, but is
+  still serialised onto the wire as `generationConfig`. Observed request body
+  from the offline harness: `{"temperature":0.2,"maxOutputTokens":8192}` under
+  `generationConfig`, POSTed to
+  `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`.
+- `config` keys relevant here: `temperature`, `topP`, `topK`, `candidateCount`,
+  `maxOutputTokens`, `stopSequences`, `seed`, `responseMimeType`,
+  `responseSchema`, `thinkingConfig`, `systemInstruction`, `abortSignal`,
+  `httpOptions` (`GenerateContentConfig`, `genai.d.ts:4969`).
+- `createPartFromUri(uri, mimeType)` (`genai.d.ts:2653`) returns exactly
+  `{ fileData: { fileUri, mimeType } }` — verified by calling it. It is a
+  drop-in for the hand-built `fileData` part.
+
+### ⚠️ `response.text` is a PROPERTY, not a method
+
+`GenerateContentResponse` declares `get text(): string | undefined`
+(`genai.d.ts:5186`). Verified at runtime:
+`Object.getOwnPropertyDescriptor(GenerateContentResponse.prototype, "text")`
+has a `get` function and **no** `value` — it is a getter.
+
+On the legacy SDK it was `result.response.text()`. **A leftover `()` does not
+throw**; it evaluates to a function reference that stringifies into whatever
+you persist. Assert `typeof text === "string" && text.length > 0` at the
+boundary. `lib/server/analysis/gemini/generate.ts` does this and throws
+`"Gemini returned no text content"` otherwise.
+
+The getter returns the concatenation of text parts of the **first** candidate,
+**excluding thought parts**, and returns `undefined` when there are none.
+
+### `finishReason` and `usageMetadata`
+
+- `finishReason` lives per-candidate: `response.candidates?.[0]?.finishReason`,
+  typed as the `FinishReason` string enum (`genai.d.ts:4522`) —
+  `FINISH_REASON_UNSPECIFIED | STOP | MAX_TOKENS | SAFETY | RECITATION | ...`.
+- `response.usageMetadata` is a `GenerateContentResponseUsageMetadata`
+  (`genai.d.ts:5304`) with `promptTokenCount`, `candidatesTokenCount`,
+  **`thoughtsTokenCount`** (separate from `candidatesTokenCount`),
+  `cachedContentTokenCount`, `toolUsePromptTokenCount`, `totalTokenCount`, and
+  per-modality breakdowns. `totalTokenCount` is documented as the sum
+  *including* `thoughtsTokenCount`.
+- Thinking tokens are billed against `maxOutputTokens` on `gemini-2.5-flash`
+  (proven last session on the legacy SDK: 38 output + 48 thinking →
+  `MAX_TOKENS`, truncated unparseable JSON). Truncated output is not
+  salvageable: inspect `finishReason` and throw **before** parsing.
+
+### `config.thinkingConfig` — available, deliberately NOT enabled
+
+`ThinkingConfig` (`genai.d.ts:12883`):
+
+| Field | Meaning |
+|---|---|
+| `includeThoughts?: boolean` | return thought parts in the response |
+| `thinkingBudget?: number` | tokens; **`0` = disabled, `-1` = automatic**; defaults and allowed range are model-dependent |
+| `thinkingLevel?: ThinkingLevel` | `THINKING_LEVEL_UNSPECIFIED \| MINIMAL \| LOW \| MEDIUM \| HIGH` |
+
+The typings do **not** state the default budget for `gemini-2.5-flash`; with
+`thinkingConfig` omitted the SDK sends nothing and the service applies its own
+default (i.e. automatic). *(unverified live — the exact default budget for
+`gemini-2.5-flash` was not measured, because that needs a live call.)* The
+legacy SDK had **no** `thinkingConfig`/`thinkingBudget`/`thoughtsTokenCount`
+anywhere, so this surface is new. **#75 did not set it**; the production call
+path is unchanged.
+
+### Files API — `ai.files.*` (replaces `GoogleAIFileManager`)
+
+`GoogleAIFileManager` and the `@google/generative-ai/server` entry point have
+no successor class. Everything moves onto the unified client.
+
+| Legacy | `@google/genai` |
+|---|---|
+| `fileManager.uploadFile(path, { mimeType, displayName })` | `ai.files.upload({ file, config: { mimeType, displayName } })` |
+| `fileManager.getFile(name)` | `ai.files.get({ name })` |
+| `FileState.ACTIVE` / `.FAILED` | same enum, same spelling, exported from the root |
+
+- **`upload` resolves to the `File` object directly** — there is **no
+  `{ file: ... }` wrapper** as on the legacy SDK. `upload(params:
+  UploadFileParameters): Promise<types.File>` (`genai.d.ts:4106`).
+- `UploadFileParameters` = `{ file: string | Blob, config?: UploadFileConfig }`;
+  `UploadFileConfig` = `{ mimeType?, displayName?, name?, httpOptions?,
+  abortSignal? }` (`genai.d.ts:14787`). A Node file path string is supported.
+- `File` fields are all optional (output-only): `name` (`files/<id>`),
+  `uri`, `mimeType`, `sizeBytes`, `createTime`, `expirationTime`, `updateTime`,
+  `sha256Hash`, `state`, `error`, `videoMetadata` (`genai.d.ts:3928`).
+  `uri` being optional is a real typing change — guard it.
+- `FileState` is a genuine string enum: `STATE_UNSPECIFIED | PROCESSING |
+  ACTIVE | FAILED` (verified at runtime, `genai.d.ts:4437`). Comparisons
+  against `FileState.ACTIVE` / `FileState.FAILED` port unchanged.
+- **`ai.files.get({ name })` normalises its argument.** `tFileName`
+  (`index.mjs:3699`) accepts a full `https://.../files/<id>` URI, a
+  `files/<id>` resource name, **or** a bare id, and always sends
+  `GET /files/<id>`. The legacy `uri.split("/").pop()` surgery in
+  `pollUntilReady` is therefore unnecessary and was removed — the full URI is
+  now passed straight through. Verified offline: the stubbed fetch saw
+  `.../files/abc123` when given the full v1beta URI.
+
+### Schema (`responseSchema`) — for #66, not used yet
+
+- `Type` replaces the legacy `SchemaType` enum (same members:
+  `STRING`/`NUMBER`/`INTEGER`/`BOOLEAN`/`ARRAY`/`OBJECT`).
+- `Schema` supports `format: "enum"` + `enum: string[]`, `nullable`, `items`,
+  `properties`, `required`, and — unlike the legacy `Schema` type —
+  **`propertyOrdering?: string[]`** (`genai.d.ts:11905`).
+- **`IntegerSchema` still has no `minimum`/`maximum`.** The 1–5 range check
+  belongs in the validation layer (#68). This is unchanged by the migration;
+  don't go looking for a schema-level fix.
+- The behavioural baseline harness at
+  `.claude/context/fixtures/gemini/structured-output-baseline.mjs` has been
+  ported to `@google/genai` (full schema, native enums, array of enums,
+  nullable enum, nullable number, nested object with `required`,
+  `propertyOrdering`, `maxOutputTokens: 32768`). *(unverified live — #75 was
+  run under a zero-live-call constraint, so the ported harness was type- and
+  shape-checked but not executed. #66 should run it once and record the
+  `finishReason` / `usageMetadata` / nullable-number results here.)*

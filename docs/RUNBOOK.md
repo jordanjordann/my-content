@@ -209,8 +209,10 @@ making live calls.**
 
 `gemini/structured-output-baseline.mjs` — a working Gemini structured-output harness
 (enum-constrained schema: hook types, format archetypes, topic niches, CTA types). Reads
-`GEMINI_API_KEY` from env; run with `node`. Uses the legacy `@google/generative-ai` SDK, which
-ticket #75 migrates off — treat it as a behavioural baseline to port, not as target-state code.
+`GEMINI_API_KEY` from env; run with `node`. Ported to `@google/genai` by #75; it has **not been
+run since the port** (#75 ran under a zero-live-call constraint), so its output is not yet a
+captured fixture. Running it makes one live billed Gemini call — #66 owns doing that once and
+recording the results in `.claude/context/verified-facts.md`.
 
 ---
 
