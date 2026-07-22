@@ -21,7 +21,9 @@ export interface MediaMetadata {
   originalWidth?: number | null;
   originalHeight?: number | null;
   carouselItemCount?: number | null;
-  externalId?: string | null; // IG media owner id
+  // Stable platform-side owner id: the IG media owner id, or the YouTube
+  // `UC...` channel id.
+  externalId?: string | null;
   followerCount?: number | null; // filled by pipeline after profile resolve
   engagementRate?: number | null; // filled by pipeline after profile resolve
 }
