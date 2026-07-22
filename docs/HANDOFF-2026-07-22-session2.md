@@ -59,6 +59,7 @@ Three consequences worth stating plainly:
 - **Node pinned to 24.14.1.**
 - **ScrapeCreators key rotation is DEFERRED.** The key was pasted in plaintext in an earlier session and **is still exposed**. Outstanding risk, owner's call, not an agent's.
 - **#71 Q1–Q4, all answered:** Q1 = (a) nullable `durationSec` (null for carousel video parts; the guard **skips**, never coerces to 0) · Q2 `dash_info` **deferred with a documented comment in the type**, not silently absent · Q3 **`MAX_MEDIA_PARTS = 20`** · Q4 = (c) **store both** `video_play_count` and `video_view_count`, **display views**.
+- **#71 C9 co-author data — _"just store the data for now, but keep it away from analysis"_** (owner, verbatim). Sequence, because the issue looks contradictory otherwise: an agent **struck C9 out of #71 entirely without owner approval** and replaced it with an **inverted** criterion ("reviewer confirms `coauthor_producers` appears nowhere in the diff"). The owner has now **partially restored it** — the field **IS persisted**, and **must not** reach Gemini, the prompt, or any analysis output. The inverted criterion was **removed as wrong**; the original C9 criteria are restored. **Cheap path:** it is already inside `raw_payload`, so "store it" may be zero work; a dedicated column is a **scoping call to RAISE**, not to fold silently into 008. **The strike-throughs you will find on #71 are annotated history, not live scope.**
 - **Max 2 concurrent agents.**
 
 ---
@@ -80,11 +81,13 @@ Labels were reconciled against `main` this session; the list below is the verifi
 
 **#69 and #70 ship in the SAME deploy.** #71 and #72 are parallel with each other once #69 lands.
 
-**#71 is still `blocked` — on #69 alone.** Its other two blockers (PR #84's fixture, #64's harness) are cleared and its four owner questions are answered. The "#84 + #64" reading of its dependency line is incomplete; #69 is in the list too, and #69's own body says "Blocks #70, #71, #72".
+**#71 is still `blocked` — on #69 alone** (and see trap **0**: #69 creates migration 007, without which #71's 008 rebuild cannot be written safely)**.** Its other two blockers (PR #84's fixture, #64's harness) are cleared and its four owner questions are answered. The "#84 + #64" reading of its dependency line is incomplete; #69 is in the list too, and #69's own body says "Blocks #70, #71, #72".
 
 ---
 
 ## The traps that will bite
+
+**0. ⛔ HARD BLOCKER — there is NO `007` migration on `main`.** Verified this session: `migrations/` stops at `006_scrapecreators_fields_and_profiles.sql`. **#69 is the ticket that creates 007.** #71 instructs migration **008 to reproduce "every column from 004/006/007"** — so **008 cannot be written until #69 lands and 007's column list is known.** A SQLite table rebuild (`CREATE new` → `INSERT SELECT` → `DROP` → `RENAME`) written against a **guessed** schema **silently drops columns**: no error, no warning, data gone. This is an **ordering constraint, not a preference**, and it independently confirms **#71 must wait on #69** regardless of labels. Before starting 008: `ls migrations/` and confirm `007_*.sql` exists, then read its full column list.
 
 1. **#69 + #70 must merge AND deploy together.** The 1–5 rescale touches seven files, including a **second, independent copy of the colour thresholds in `AnalysisDataTable.tsx`** and a radial gauge computing `(overallScore / 10) * 327`. Any window where #69 has shipped and #70 has not is a visibly broken app.
 2. **Thinking tokens count against `maxOutputTokens`.** Proven: 38 output + 48 thinking → `finishReason: MAX_TOKENS`, JSON truncated mid-string. Inspect `finishReason` and **throw before parsing**. Log `usageMetadata` on every call.
@@ -99,10 +102,10 @@ Labels were reconciled against `main` this session; the list below is the verifi
 
 **#71 has no open questions.** These do:
 
-- **Co-authored posts and the style fingerprint (#72).** Do posts co-authored with another account count toward a creator's style fingerprint? Our only single-creator sample is **40% co-authored**, and **5 posts is exactly the style-inference threshold** — so this is not a hypothetical, it decides whether that sample qualifies at all. **OPEN.**
+- **Co-authored posts and the style fingerprint (#72).** Do posts co-authored with another account count toward a creator's style fingerprint? Our only single-creator sample is **40% co-authored**, and **5 posts is exactly the style-inference threshold** — so this is not a hypothetical, it decides whether that sample qualifies at all. **STILL OPEN.** ⚠️ The 2026-07-22 C9 decision ("store the data, keep it out of analysis") governs the co-author **data only** and does **NOT** answer this. **Needs a home; deliberately NOT ticketed** (duplicate-ticket history) and **#72 was not edited**.
 - **The `username` split-account bug.** #82 changed YouTube `analyses.username` from the channel display name to the **handle**, with **no backfill**. `getUniqueAccounts()` (`lib/server/db.ts`) is a bare `SELECT DISTINCT username FROM analyses`, so any channel analysed both before and after #82 shows up as **two creators** in the UI account filter. **Needs a ticket** (not created this session — see the note at the bottom).
 - **`credits_charged` / spend visibility.** Nothing tracks spend today. `credits_remaining` is returned on every ScrapeCreators response and discarded unread. No budget alarm exists.
-- **Scoping call on #71 Q4.** Storing both view and play counts implies **two new columns**, and migration 008 is already a full table rebuild. Whether they ride along in 008 is a call the implementer must **RAISE, not fold in silently.**
+- **Scoping call on #71 Q4.** **[CORRECTED]** Storing both counts is **ONE new column, not two.** `analyses.view_count` **already exists** — `content_items.view_count` in `001_initial.sql`, moved onto `analyses` by `004_flatten_analysis_content.sql` (`ALTER TABLE analyses ADD COLUMN view_count INTEGER`) and reproduced in the `005` rebuild. **Only `play_count` is new.** Do not re-add, rename or duplicate `view_count`. Whether `play_count` rides along in 008's rebuild is still a call the implementer must **RAISE, not fold in silently.** Also: the "display views" half of Q4 is **already how the code behaves** — `lib/server/analysis/fetcher/adapter.ts:211` reads `video_view_count` only (`const viewCount = num(raw.video_view_count);`). No change needed there; the work is the reel `video_play_count` fallback, not the display rule.
 
 ---
 
