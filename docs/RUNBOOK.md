@@ -144,15 +144,25 @@ sqlite3 my-content.db "select name from _migrations;"
 sqlite3 my-content.db "select count(*) from analyses;"
 ```
 
-### Current state — effectively empty
+### Current state — effectively empty (re-measured 2026-07-22)
 
-Measured on the committed `my-content.db` at `dd4e57e`:
+Measured on the local `my-content.db` on 2026-07-22 (this section previously claimed 006 was
+unapplied and that no `profiles` table existed — that was **stale and has misled at least one
+agent**; corrected below):
 
-- Tables present: `_migrations`, `analyses`, `settings`. **No `profiles` table** — migration
-  `006_scrapecreators_fields_and_profiles.sql` has not been applied to this file.
+- Tables present: `_migrations`, `analyses`, **`profiles`**, `settings`.
+- `_migrations`: **001–006 all applied.** `006_scrapecreators_fields_and_profiles.sql` was applied
+  at `2026-07-22 01:51:31`.
 - `analyses`: **1 row**.
+- `profiles`: **0 rows** (table exists, empty).
 - `settings`: 2 rows (`pin_hash`, `pin_set_at`).
-- `_migrations`: 001–005 applied; 006 not.
+
+Re-verify rather than trusting this snapshot:
+
+```bash
+sqlite3 my-content.db "select name, applied_at from _migrations;"
+sqlite3 my-content.db ".tables"
+```
 
 This is why the analysis schema redesign is a **replacement, not a migration project** — there is
 essentially no data to preserve. Do not budget for backfill.
@@ -170,13 +180,14 @@ essentially no data to preserve. Do not budget for backfill.
 
 ## 5. API cost discipline
 
-ScrapeCreators is **credit-based**, roughly **25,000 credits remaining** as of 2026-07-21.
+ScrapeCreators is **credit-based**, **31,994 credits remaining** as of 2026-07-22 (the account was
+topped up since the 2026-07-21 measurement of ~25,000 — don't trust older numbers).
 
 | Endpoint | Cost |
 |---|---|
 | `/v1/youtube/video` | 1 credit on success; **0 on 404** (deleted/invalid id) |
 | `/v1/youtube/channel` | 1 credit **always — including not-found/bogus handles** |
-| `/v1/instagram/post` | 1 credit (`trim` on/off costs the same) |
+| `/v1/instagram/post` | 1 credit (`trim` on/off costs the same); response also echoes `credits_charged: 1` |
 
 `credits_remaining` is present in every response body and is **currently discarded** —
 `scRequest()` in `lib/server/scrapecreators/client.ts` returns the parsed JSON untouched and nothing
@@ -206,6 +217,29 @@ making live calls.**
 | `yt_channel_ucid.json`, `yt_channel_ucid2.json` | by `UC…` channel id |
 | `yt_channel_trim.json` | `trim` variant |
 | `yt_channel_bogus.json` | nonexistent channel — note `success:true` with a near-empty payload, and it **still cost a credit** |
+
+`scrapecreators-instagram/` (6 files) — captured live 2026-07-22, all
+`GET /v1/instagram/post?url=…&trim=false`, all HTTP 200, 1 credit each (6 total). Full field-level
+findings and the list of divergences from `lib/server/scrapecreators/types.ts` are in
+`.claude/context/verified-facts.md`:
+
+| File | What it captures |
+|---|---|
+| `ig_carousel_all_images_10_slides.json` | `XDTGraphSidecar`, 10 children — **every child is `XDTGraphImage`**. Carousel children carry only 7 keys (`__typename, id, shortcode, display_url, video_url:null, is_video, dimensions`); no `thumbnail_src`, no `display_resources`. The sidecar itself has **no** top-level `dimensions`/`display_resources`, and its `owner` is a 5-key stub with **no `edge_followed_by`** |
+| `ig_carousel_mixed_video_and_image_10_slides.json` | `XDTGraphSidecar`, 10 children, **7 `XDTGraphVideo` + 3 `XDTGraphImage`** — the previously-missing video-bearing carousel (closes the #71 gap). See verified-facts.md for the full child-shape breakdown, including the undocumented `dash_info` field and a contradiction of the "carousel owner is always a stub" claim above |
+| `ig_reel_1_zero_view_count.json` | `XDTGraphVideo` — the trap case: `video_view_count: 0` while `video_play_count: 116333` |
+| `ig_reel_2.json` | `XDTGraphVideo`, `has_audio: true`, `video_view_count: 305044` |
+| `ig_reel_3.json` | `XDTGraphVideo`, `video_view_count: 150780` |
+| `ig_single_image_post.json` | `XDTGraphImage` from a `/p/` URL — proof that a `/p/` URL is **not** necessarily a carousel; no `edge_sidecar_to_children` at all |
+
+> ✅ **Gap closed 2026-07-22:** a video-bearing carousel has now been captured
+> (`ig_carousel_mixed_video_and_image_10_slides.json`). `ScrapeCreatorsCarouselChildNode`'s video
+> fields are now confirmed against a real payload — but the real shape is **thinner** than modelled
+> (no `video_duration`, no `clips_music_attribution_info`, no `thumbnail_src` on video children) and
+> carries one wholly new undocumented field (`dash_info`). See verified-facts.md for the full diff;
+> #71 owns applying the fix to `types.ts`.
+
+No Instagram error case is captured either (`/v1/instagram/post` non-2xx behaviour is unobserved).
 
 `gemini/structured-output-baseline.mjs` — a working Gemini structured-output harness
 (enum-constrained schema: hook types, format archetypes, topic niches, CTA types). Reads
