@@ -802,3 +802,117 @@ In addition to the 10 divergences already on record from the first 5 fixtures:
 
 **Total spend: 1 credit.** Exactly the one call authorised, no retries needed (HTTP 200 on the
 first attempt), no exploratory calls.
+
+## ScrapeCreators — `/v1/instagram/post` (SECOND-HAND — no raw capture committed)
+
+**Appended by ticket #64. Read the confidence note before relying on this.**
+
+⚠️ **PARTIALLY SUPERSEDED** — real, first-hand `/v1/instagram/post` captures are now
+committed at `.claude/context/fixtures/scrapecreators-instagram/` (six fixtures — see the
+"(live capture, 2026-07-22)" and "VIDEO-BEARING CAROUSEL CAPTURED (2026-07-22, follow-up)"
+sections above). The "no raw capture committed" framing below is no longer true; the
+transcribed-from-memory notes in this section are superseded wherever they overlap with the
+capture sections above and should only be treated as authoritative for things the captures
+above don't cover (e.g. `/v1/instagram/profile`, which remains uncaptured).
+
+- **Originally tested:** 2026-07-20, during PR #42 — live, against a real reel
+  and a real 12-slide all-image carousel.
+- **Raw captures:** **NOT committed at the time this section was written** (2026-07-20/#64).
+  The originals lived in `/tmp/sc-carousel-response.json` /
+  `/tmp/sc-profile-response.json` and are gone. First-hand captures for
+  `/v1/instagram/post` now exist — see above. `/v1/instagram/profile` is still
+  uncaptured; nothing under `.claude/context/fixtures/` covers that endpoint.
+- **Confidence:** everything below is transcribed from code and code comments
+  written at the time of that live session
+  (`lib/server/scrapecreators/types.ts`, `lib/server/scrapecreators/instagram.ts`,
+  PR #42 description). It was **not** re-verified for ticket #64 — that ticket
+  was explicitly scoped to spend zero credits. Treat it as strong secondary
+  evidence, not as a capture you can diff against.
+
+### Request
+
+- `GET /v1/instagram/post?url=<full post/reel URL>&trim=false`
+- **`trim` must stay `false`.** With `trim=true` the API strips the `data`
+  envelope entirely (top-level keys become
+  `[success, credits_remaining, xdt_shortcode_media]`), which made the
+  fetcher's `envelope.data?.xdt_shortcode_media` unwrap always `undefined`,
+  and it also drops `dimensions` and `display_resources` — the fields the
+  adapter reads for `originalWidth`/`originalHeight`. Same 1-credit cost
+  either way, ~9KB more payload.
+
+### Envelope
+
+`{ success, credits_remaining, data: { xdt_shortcode_media: {...} }, status }`
+— **wrapped**, unlike both YouTube endpoints. Unwrapping happens at the
+fetcher call site (`lib/server/analysis/fetcher/instagram.ts`), not in the
+transport layer.
+
+There is **no** "media-info" response variant. That was a PRD assumption that
+never matched a live payload; it has been removed from the types.
+
+### `xdt_shortcode_media` — shape notes that drive adapter behaviour
+
+- `__typename` is the media-type discriminator: `XDTGraphSidecar` (carousel),
+  `XDTGraphVideo`, `XDTGraphImage`. A reel is additionally identifiable by
+  `product_type === "clips"`.
+- `taken_at_timestamp` is **unix seconds** (contrast YouTube's `publishDate`,
+  which is ISO-8601 with an offset).
+- Counts are nested objects, not scalars: `edge_media_preview_like.count`,
+  `edge_media_to_parent_comment.count`,
+  `edge_media_to_caption.edges[0].node.text`.
+- **A carousel's top level carries no `video_url`, no `video_duration`, no
+  `has_audio` and no `clips_music_attribution_info`** — those exist only on
+  video-typed children in `edge_sidecar_to_children.edges[].node`. Confirmed
+  against the real all-image carousel payload.
+- `/v1/instagram/profile` uses the same wrapped envelope shape with
+  `data.user`, regardless of `trim`. Follower/following counts are the nested
+  `edge_followed_by.count` / `edge_follow.count` objects; there is no flat
+  `follower_count`/`pk` variant.
+
+### Credit cost
+
+- 1 credit per call, `trim` on or off.
+
+### NOT VERIFIED — open gap, blocks TDD §7 / carousel ticket 8
+
+⚠️ **SUPERSEDED** — see "ScrapeCreators — `/v1/instagram/post` — VIDEO-BEARING CAROUSEL
+CAPTURED (2026-07-22, follow-up)" above. PR #84 closed this gap: a video-bearing carousel
+was captured and committed at
+`.claude/context/fixtures/scrapecreators-instagram/ig_carousel_mixed_video_and_image_10_slides.json`.
+The paragraph below describes the gap as it stood before that capture.
+
+The **video-bearing carousel** has never been captured. Every video field on
+`ScrapeCreatorsCarouselChildNode` (`video_url`, `video_duration`, `has_audio`,
+`clips_music_attribution_info`) is **modelled by analogy with the top-level
+`XDTGraphVideo` shape, never observed**. `adapter.ts:resolveAudio()` logs
+loudly when a resolved video child is missing them, precisely because of this.
+
+Ticket #64 was required to capture it and **could not**: capturing means live,
+credit-charged calls, which that ticket's brief prohibited outright, and
+`AGENTS.md` forbids synthesising a payload to stand in for a real one. So the
+gap is recorded here rather than papered over.
+
+To close it, someone with owner approval to spend credits needs three
+`/v1/instagram/post` calls (3 credits total): a reel, an all-image carousel,
+and a carousel known to contain at least one video slide. Commit the raw
+bodies under `.claude/context/fixtures/scrapecreators-instagram/`, replace
+this section with a first-hand capture, and convert
+`tests/server/analysis/fetcher/adapter.test.ts` off its synthetic inputs.
+
+---
+
+## Test-harness coverage of these facts (ticket #64)
+
+`npm run test` (vitest, `vitest.config.ts`) now pins the facts above that have
+committed captures behind them. **The suite makes zero live API calls** — it
+reads `.claude/context/fixtures/` and stubs `fetch`.
+
+| Test file | Pins |
+|---|---|
+| `tests/server/scrapecreators/youtubeFixtures.test.ts` | Both YouTube endpoints against the 10 committed captures: flat envelope, `durationMs` in ms, `publishDate` ISO-with-offset, `channel.handle` without `@` vs the channel endpoint's `handle` with `@`, `subscriberCount` numeric, `tags` a string, `avatar` an object, `banner` an array, `trim` a no-op, both not-found bodies |
+| `tests/server/scrapecreators/client.test.ts` | `scRequest` decides success from the HTTP status, never the body's `success` field (the `/v1/youtube/channel` 404-with-`success:true` trap); param serialisation; 404 not retried; key never logged |
+| `tests/server/analysis/fetcher/adapter.test.ts` | `adaptPostResponse()` branching — media-type resolution, first-video-slide selection, thumbnail fallback chain, carousel audio sourced from the video child, `bool()` returning `null` (never `false`) for absent values, the no-username throw. **Synthetic inputs** — see the gap above |
+
+Retryable statuses (429/5xx) are not covered: `scRequest`'s backoff sleeps 1s
+then 2s and is not injectable, so testing it would add ~3s of wall time per
+run. Making the delay injectable is a separate, non-blocking refactor.

@@ -1,6 +1,6 @@
 # RUNBOOK
 
-Operational reference card. Verified against `main` at `dd4e57e` (2026-07-22).
+Operational reference card. Verified against `main` at `7c11ccb` (2026-07-22).
 
 ---
 
@@ -12,6 +12,7 @@ Operational reference card. Verified against `main` at `dd4e57e` (2026-07-22).
 | Production build | `npm run build` | |
 | Serve build | `npm start` | |
 | Lint | `npm run lint` | flat config, `eslint.config.mjs` |
+| Tests | `npm run test` | `vitest run`, node env. `npm run test:watch` for watch mode. **Offline — never calls a live API** (see §7) |
 | Typecheck | `npx tsc --noEmit` | **No `typecheck` script exists** in `package.json`; `tsconfig.json` already sets `noEmit` |
 | Migrate DB | `npm run db:migrate` | `tsx scripts/migrate.ts` |
 
@@ -252,6 +253,29 @@ recording the results in `.claude/context/verified-facts.md`.
 
 ## 7. Testing
 
-There are **zero test files in the repo** — no `*.test.*`, no `*.spec.*`, no `__tests__/`, and no
-test runner in `package.json`. Ticket **#64** establishes the harness. Until it lands, "run the
-tests" is not something you can do; verify by typecheck, lint, and manual exercise of the routes.
+Ticket **#64** established the harness: **vitest**, `npm run test` (`vitest run`) and
+`npm run test:watch`. Config is `vitest.config.ts` — node environment, `tests/**/*.test.ts`, and an
+`@/` alias that must stay in lockstep with `tsconfig.json`'s `paths`.
+
+**The suite is offline by construction.** No test may call a live API: fixtures are read from
+`.claude/context/fixtures/` via `tests/helpers/fixtures.ts`, and transport tests stub `fetch`. See
+§5 for why (credits, and `/v1/youtube/channel` charging even on a miss).
+
+Layout:
+
+```
+tests/
+├── helpers/fixtures.ts                        # loader for .claude/context/fixtures/
+├── fixtures/README.md                         # fixture inventory + the Instagram gap
+├── fixtures/synthetic/instagramMedia.ts       # hand-built adapter inputs — NOT captures
+├── server/scrapecreators/youtubeFixtures.test.ts
+├── server/scrapecreators/client.test.ts
+└── server/analysis/fetcher/adapter.test.ts
+```
+
+**Known gap:** no `/v1/instagram/post` captures are committed, so the adapter tests run on
+synthetic inputs and the **video-bearing carousel shape is still unconfirmed** — TDD §7 / the
+carousel ticket remains blocked on a capture. Details and the cost to close it (3 credits) are in
+`tests/fixtures/README.md` and `.claude/context/verified-facts.md`.
+
+There is still **no CI** — nothing runs `npm run test` automatically.
