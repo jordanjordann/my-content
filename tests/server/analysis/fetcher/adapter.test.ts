@@ -422,20 +422,24 @@ describe("extractOwnerProfile", () => {
 });
 
 /**
- * UNVERIFIED — depends on the modelled (not observed) carousel video-child shape.
+ * FALSIFIED — pins a carousel video-child shape that PR #84's real capture has disproven.
  *
  * `ScrapeCreatorsCarouselChildNode`'s video fields (`video_url`, `video_duration`, `has_audio`,
- * `clips_music_attribution_info`) have never been observed on a real carousel child — they are
- * modelled by analogy with the top-level `XDTGraphVideo` shape (see
- * `.claude/context/verified-facts.md`, "/v1/instagram/post" §"NOT VERIFIED"). The tests below
- * read like claims about Instagram's real API ("uses the video child's video_url for a
- * carousel", etc.), but they exercise `makeVideoChild()`, a synthetic fixture, not a captured
- * payload. They are grouped in their own describe block, separate from the rest of this file's
- * adapter-branch pins, specifically so nobody mistakes their names for verified API behaviour.
- * Re-verify (and drop this caveat) once a real video-bearing carousel capture lands — tracked
- * against PR #84 and `tests/fixtures/README.md`.
+ * `clips_music_attribution_info`, `thumbnail_src`) were originally modelled by analogy with the
+ * top-level `XDTGraphVideo` shape, never observed on a real carousel child. PR #84 closed that
+ * gap with a real video-bearing carousel capture
+ * (`.claude/context/fixtures/scrapecreators-instagram/ig_carousel_mixed_video_and_image_10_slides.json`,
+ * 7 real video children) and it disproves this shape: `video_duration`,
+ * `clips_music_attribution_info`, and `thumbnail_src` are **absent on all 7** real video
+ * children (see `.claude/context/verified-facts.md`, "Video carousel child — CONFIRMED shape").
+ * `makeVideoChild()` below still synthesizes those fields, so the tests in this block exercise a
+ * shape known not to match the real API, not merely an unconfirmed one. They are deliberately
+ * kept (not deleted) so they fail loudly and visibly the moment #71 rewrites the adapter against
+ * the real (thinner) shape — that failure is the point, not a bug. Do not "fix" this block by
+ * quietly updating `makeVideoChild()` to match reality without also updating the adapter; that
+ * would silently smuggle a wrong shape back into a green suite.
  */
-describe("UNVERIFIED — carousel video-child shape (modelled, never observed against a live payload)", () => {
+describe("FALSIFIED — carousel video-child shape disproven by the real capture (PR #84)", () => {
   it("uses the video child's video_url for a carousel", () => {
     const media = makeCarousel([makeImageChild(), makeVideoChild()]);
 

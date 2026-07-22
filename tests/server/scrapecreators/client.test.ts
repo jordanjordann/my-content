@@ -186,15 +186,23 @@ describe("scRequest — retry/backoff (fake timers)", () => {
     const wallClockStart = performance.now();
     const resultPromise = scRequest<Record<string, unknown>>(SC_PATHS.youtubeVideo, { url: "x" });
 
-    // First attempt happens synchronously-ish; only two backoff sleeps stand between
-    // it and success (3 attempts total, SC_MAX_RETRIES = 2).
-    await vi.advanceTimersByTimeAsync(1_000);
-    await vi.advanceTimersByTimeAsync(2_000);
+    // Pin the actual CURVE, not just "sums to <=3s": a constant-delay implementation summing
+    // to the same total must fail this. First attempt happens synchronously-ish.
+    // Backoff #1 (attempt=0) must be exactly 1000ms — not a hair less, not 2000ms.
+    await vi.advanceTimersByTimeAsync(999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    // Backoff #2 (attempt=1) must be exactly 2000ms — double the first, not another 1000ms.
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
 
     const result = await resultPromise;
 
     expect(result).toEqual({ success: true });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
     // Real wall time barely moved — this is fake timers, not a live ~3s sleep.
     expect(performance.now() - wallClockStart).toBeLessThan(1_000);
   });

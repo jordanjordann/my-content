@@ -10,6 +10,7 @@ copy under `tests/` would be a second thing to drift.
 | Fixture set | Endpoint | Count |
 |---|---|---|
 | `scrapecreators-youtube/` | `/v1/youtube/video`, `/v1/youtube/channel` | 10 real captures (2026-07-21) |
+| `scrapecreators-instagram/` | `/v1/instagram/post` | 6 real captures (2026-07-22, PR #84) — see `docs/RUNBOOK.md` §6 |
 
 **Do not delete files under `.claude/context/fixtures/`.** They are real, credit-charged API
 captures — replacing one means spending credits again. See the "do not delete these" note
@@ -46,11 +47,17 @@ No test may call a live API. ScrapeCreators is credit-based (~25k credits) and
 exist to drive `adapter.ts`'s own branches. They are **not evidence of what the API returns** and
 must never be cited as such, nor promoted into `.claude/context/verified-facts.md`.
 
-## Outstanding: `/v1/instagram/post` captures
+## `/v1/instagram/post` captures — now committed (PR #84)
 
 Ticket #64 asked for three real Instagram captures — a reel, an all-image carousel, and a
-**video-bearing carousel**. **None are committed, and none were captured**, because capturing them
-requires live credit-charged calls, which this ticket's brief prohibits outright.
+**video-bearing carousel**. None of that was committed *by ticket #64* — capturing them required
+live credit-charged calls, which #64's brief prohibited outright — but **PR #84 has since captured
+and committed six real fixtures**, including a video-bearing carousel, at
+`.claude/context/fixtures/scrapecreators-instagram/`. See `docs/RUNBOOK.md` §6 for the full
+inventory and `.claude/context/verified-facts.md` for the field-level findings.
+
+The adapter tests below still run on synthetic inputs — converting them to golden files against
+the real captures is follow-up work this PR does not do.
 
 What that costs, concretely:
 
@@ -71,24 +78,28 @@ and one carousel URL known to contain at least one video slide — 3 credits tot
 `.claude/context/verified-facts.md`, and convert the synthetic adapter tests to golden files against
 them.
 
-**PR #84 is open and adds exactly these real fixtures** at
-`.claude/context/fixtures/scrapecreators-instagram/`, plus an append to `verified-facts.md`. It is
-not merged as of this PR. Once it lands, revisit `adapter.test.ts` and its synthetic inputs
-(`tests/fixtures/synthetic/instagramMedia.ts`) against the real captures — the synthetic tests
-should stay in place for adapter-branch coverage, but the carousel-child-shape tests called out
-below should be re-verified and have their caveat removed once a real video-bearing carousel
-capture exists.
+**PR #84 has merged** and added exactly these real fixtures at
+`.claude/context/fixtures/scrapecreators-instagram/` (six files, including a video-bearing
+carousel), plus an append to `verified-facts.md`. `adapter.test.ts`'s synthetic inputs
+(`tests/fixtures/synthetic/instagramMedia.ts`) have **not** been converted to golden files against
+the real captures yet — that conversion is follow-up work, not done in this PR. The synthetic
+tests stay in place for adapter-branch coverage; the carousel-child-shape tests called out below
+have had their caveat updated from "unverified" to "falsified", since #84's capture disproved the
+shape they assume rather than merely leaving it unconfirmed.
 
-### Carousel video-child shape — caveated, not verified
+### Carousel video-child shape — falsified by the real capture (PR #84)
 
 `tests/server/analysis/fetcher/adapter.test.ts` has a `describe` block named
-`"UNVERIFIED — carousel video-child shape (modelled, never observed)"`. The three tests inside it
-read like assertions about Instagram's real API (they exercise `resolveVideoUrl`/`resolveAudio`
-carousel branches), but they run entirely against the synthetic `makeVideoChild()` fixture, which
-is **modelled by analogy with the top-level `XDTGraphVideo` shape and has never been observed on a
-live carousel child** (see `.claude/context/verified-facts.md`, "NOT VERIFIED" section under
-`/v1/instagram/post`). They are grouped there specifically so nobody mistakes their names for
-verified API behaviour.
+`"FALSIFIED — carousel video-child shape disproven by the real capture (PR #84)"`. The three tests
+inside it read like assertions about Instagram's real API (they exercise
+`resolveVideoUrl`/`resolveAudio` carousel branches), but they run entirely against the synthetic
+`makeVideoChild()` fixture, which models `video_duration`, `clips_music_attribution_info`, and
+`thumbnail_src` on a video child. PR #84's real capture
+(`ig_carousel_mixed_video_and_image_10_slides.json`, 7 real video children) proves those three
+fields are **absent on all 7** (see `.claude/context/verified-facts.md`, "Video carousel child —
+CONFIRMED shape"). The tests are **kept deliberately** — not deleted — so they fail loudly when
+#71 rewrites the adapter against the real (thinner) shape; that failure is the intended outcome,
+not a regression to silence.
 
 ## Fixture loader fail-fast behaviour
 

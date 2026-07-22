@@ -281,10 +281,14 @@ tests/
 
 **Known gaps:**
 
-- No `/v1/instagram/post` captures are committed, so the adapter tests run on synthetic inputs and
-  the **video-bearing carousel shape is still unconfirmed** — TDD §7 / the carousel ticket remains
-  blocked on a capture. PR #84 (open, unmerged) adds the real Instagram fixtures. Details are in
-  `tests/fixtures/README.md` and `.claude/context/verified-facts.md`.
+- Real `/v1/instagram/post` captures **are now committed** (PR #84, merged) — six fixtures under
+  `.claude/context/fixtures/scrapecreators-instagram/`, including a video-bearing carousel that
+  closed the previously-open shape gap. The adapter tests in this PR still run on synthetic inputs
+  (see `tests/fixtures/synthetic/instagramMedia.ts`); the carousel-video-child describe block in
+  `adapter.test.ts` has been relabelled `FALSIFIED` rather than `UNVERIFIED` because #84 has now
+  disproven the fields it assumes. Converting the adapter tests to the real fixtures is follow-up
+  work, not done here. Details are in `tests/fixtures/README.md` and
+  `.claude/context/verified-facts.md`.
 - No non-Shorts `/v1/youtube/video` capture is committed — `yt_short.json` is a re-scrape of the
   same Shorts video as `yt_video_fresh.json`/`yt_video_trim.json`, not an independent regular
   video. See `tests/fixtures/README.md`.
