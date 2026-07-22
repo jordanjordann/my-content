@@ -603,3 +603,196 @@ Balance is **~32,000, not ~25,000** — the account was topped up since the
 
 **Total spend: 5 credits** — 1 per call, `trim=false`, all HTTP 200, no
 retries, no exploratory calls.
+
+---
+
+## ScrapeCreators — `/v1/instagram/post` — VIDEO-BEARING CAROUSEL CAPTURED (2026-07-22, follow-up)
+
+- **Authorisation:** one-time owner-approved live capture, exactly 1 URL, 1 credit. This is a
+  follow-up to the 5-fixture session above — it closes the gap that session explicitly left open.
+- **Tested URL:** `https://www.instagram.com/p/DZCPPJTjKVy/` (`utm_source`/`igsh` stripped before
+  the call, per instruction).
+- **Request:** identical to production —
+  `GET /v1/instagram/post?url=<url>&trim=false`, header `x-api-key`, `Accept: application/json`.
+- **Raw capture (committed, byte-unmodified):**
+  `.claude/context/fixtures/scrapecreators-instagram/ig_carousel_mixed_video_and_image_10_slides.json`
+- **HTTP 200, `success: true`, `credits_charged: 1`.**
+
+### ⚠️⚠️ VERDICT: THIS IS THE VIDEO-BEARING CAROUSEL — THE GAP IS CLOSED
+
+This post is a **10-slide carousel (`__typename: "XDTGraphSidecar"`)** whose children are
+**7 `XDTGraphVideo` + 3 `XDTGraphImage`** (indices 0–4, 6, 7 are video; 5, 8, 9 are image, per
+`is_video`). This is the FIRST time a video-bearing carousel has been captured for this codebase.
+`ScrapeCreatorsCarouselChildNode`'s video fields are now **confirmed against a real payload** —
+but the real shape is **narrower** than what's modelled, and one field is entirely undocumented.
+Report below; #71 owns updating `types.ts`/the adapter.
+
+### Video carousel child — CONFIRMED shape (7 samples, all identical key set)
+
+```
+__typename: "XDTGraphVideo"
+id: string                    // e.g. "3909753692152934905" — PLAIN NUMERIC,
+                               // same format as top-level media id. NOT
+                               // POLARIS_-prefixed (contradicts the prior
+                               // all-image carousel's child id format — see
+                               // "id format is NOT reliably POLARIS_" below)
+shortcode: string              // per-slide shortcode
+is_video: true
+video_url: string              // populated CDN mp4 URL
+video_view_count: number       // POPULATED here, e.g. 234050, 163868, ... —
+                               // see the video_play_count reversal below
+video_play_count: null         // *** present but ALWAYS null on every one of
+                               // the 7 video children — the OPPOSITE
+                               // reliability pattern from top-level reels ***
+has_audio: false               // false on all 7 — do not read as "silent
+                               // reel", same caveat as top-level has_audio
+dash_info: {                   // *** ENTIRELY UNDOCUMENTED, not in types.ts
+                               // at all, not even the index signature (well,
+                               // it falls through [key:string]:unknown, but
+                               // no field-level comment describes it) ***
+  is_dash_eligible: boolean,   // true on all 7
+  video_dash_manifest: string, // full DASH XML manifest, several KB per
+                               // child — this is the bulk of the fixture's
+                               // 166KB size. Do not persist as-is.
+  number_of_qualities: number, // 5-8 observed across the 7 children
+}
+dimensions: { height, width }
+display_url: string
+display_resources: ScrapeCreatorsImageResource[3]   // matches the modelled shape
+accessibility_caption: null
+media_preview: string           // low-res blurhash-like base64 preview, NOT modelled
+tracking_token: string           // NOT modelled
+edge_media_to_tagged_user: { edges: [] }   // NOT modelled
+gating_info, fact_check_overall_rating, fact_check_information,
+  sensitivity_friction_info, sharing_friction_info, media_overlay_info,
+  upcoming_event: all null/near-empty scaffolding fields, NOT modelled,
+  fall through the index signature
+```
+
+**Fields the modelled `ScrapeCreatorsCarouselChildNode` claims but that are ABSENT on every one
+of these 7 real video children:**
+
+- `video_duration` — **absent**, not even null. Not measurable from this field on carousel video
+  children (contrast: present on top-level reels as a float-seconds value).
+- `clips_music_attribution_info` — **absent** on children (present, but `null`, at the top level).
+- `thumbnail_src` — **absent** on children (top-level carousel has a `thumbnail_src`, matching the
+  first child's `display_url`).
+
+**Reliability reversal vs. top-level reels — READ BEFORE WIRING #71's view-count logic:**
+
+The Instagram capture session above found that for top-level reels, `video_view_count` can be `0`
+while the real number lives in `video_play_count`. **The opposite is true for carousel video
+children in this fixture**: `video_play_count` is `null` on all 7, and `video_view_count` is
+consistently populated with plausible descending values (234050 → 42947, matching slide order).
+**Do not port the "prefer `video_play_count`" rule from reels onto carousel children — for
+carousel children, `video_view_count` is the field that's actually populated.**
+
+### Image carousel child — CONFIRMED shape (3 samples) — DIFFERENT from the other carousel's image children
+
+```
+__typename: "XDTGraphImage"
+id: string                      // plain numeric, same format as video siblings
+shortcode: string
+is_video: false
+dimensions: { height, width }
+display_url: string
+display_resources: ScrapeCreatorsImageResource[3]
+accessibility_caption: null
+media_preview, tracking_token, edge_media_to_tagged_user,
+  gating_info, fact_check_*, sensitivity_friction_info,
+  sharing_friction_info, media_overlay_info, upcoming_event: same
+  scaffolding fields as the video children, not modelled
+```
+
+**No `video_url` key at all** — not even present-as-null. This directly contradicts the earlier
+finding from `ig_carousel_all_images_10_slides.json`, where every image child had `video_url:
+null` (key present, value null) and only 7 total keys. **The real shape of an image carousel
+child is context-dependent** — a carousel that also contains video siblings gives its image
+children the full ~14-key scaffold (matching the video children minus the video-only fields);
+an all-image carousel gives its image children a stripped-down 7-key shape. Do not assume a
+fixed key count for carousel image children; the presence/absence of `video_url` on an image
+child is not a reliable signal either way — check `is_video`/`__typename` only.
+
+### ⚠️ CORRECTION to the previous session's carousel-level findings
+
+The 5-fixture session above stated, as if a general rule: "the carousel itself has no top-level
+`dimensions`/`display_resources`" and "carousel `owner` is always a 5-key stub with no
+`edge_followed_by`". **Both claims are FALSIFIED by this new sample:**
+
+- This carousel's top-level `xdt_shortcode_media` **DOES have `dimensions: {height:937,
+  width:750}` and a 3-entry `display_resources` array** — values that exactly match the FIRST
+  child (a video). Hypothesis (only 2 samples, not confirmed as a rule): a carousel mirrors its
+  first slide's dimensions/display data onto the top-level object; the previous all-image carousel
+  either didn't do this or the hypothesis is wrong. Needs a third sample to resolve — flagging as
+  unresolved, not asserting a new rule.
+- This carousel's top-level `owner` is the **full 17-key block**, including
+  `edge_followed_by: {count: 153617}` and `edge_owner_to_timeline_media` — identical richness to
+  a reel/image-post owner, not a stub.
+- **Corrected statement: carousel top-level `dimensions`/`display_resources`/`owner` richness is
+  NOT reliably determined by `__typename: "XDTGraphSidecar"` alone.** Two carousels, two different
+  shapes. The profiles service must not assume a carousel payload lacks `edge_followed_by` — check
+  for its presence per-response, don't hardcode a carousel-shape exception.
+- This carousel also does **not** have the flat `comment_count` field the other carousel had
+  (`comment_count: 13840` there vs. absent here) — another point of carousel-vs-carousel
+  divergence, not carousel-vs-reel.
+
+### New envelope-level finding: a partial `errors` array can coexist with `success: true`
+
+This response's top level includes an `errors` key **never seen in any of the other 5
+fixtures**:
+
+```json
+"errors": [{"message": "execution error", "path": ["xdt_shortcode_media", "location", "address_json"], "severity": "ERROR"}]
+```
+
+`success` is still `true`, `data.xdt_shortcode_media` is still fully populated, and
+`credits_charged` is still `1` — this is a GraphQL-style **partial/non-fatal error** for one
+specific sub-field (`location.address_json`, which came back `null`), not a request failure. Not
+modelled in `ScrapeCreatorsPostEnvelope` at all (falls through the index signature, but there's no
+comment describing it). Callers should not treat the presence of `errors` as fatal, but the
+adapter should tolerate a `location` block with `address_json: null` alongside a still-successful
+response.
+
+### `location` field, also new
+
+`media.location` (`{id, has_public_page, name, slug, address_json}`) was `null` on all 5 prior
+fixtures and is populated here (`"London, United Kingdom"`) — not modelled in `types.ts` at all.
+Not required for #71, noted for completeness.
+
+### Updated divergence list vs. `lib/server/scrapecreators/types.ts` (reported only — #71 owns the fix)
+
+In addition to the 10 divergences already on record from the first 5 fixtures:
+
+11. `ScrapeCreatorsCarouselChildNode` still **over-models** `video_duration`,
+    `clips_music_attribution_info`, and `thumbnail_src` for video children — confirmed absent on
+    all 7 real video-child samples in this capture.
+12. `ScrapeCreatorsCarouselChildNode` is missing `video_play_count` (present, always `null`, on
+    every video child here) and **entirely missing `dash_info`** (`is_dash_eligible`,
+    `video_dash_manifest`, `number_of_qualities`) — a genuinely new, previously-unseen field.
+13. The "prefer `video_play_count` over `video_view_count`" rule recorded for top-level reels
+    (#3 above / divergence context) must NOT be applied to carousel video children — the reverse
+    is true there. If #71 introduces a shared "resolve view count" helper, it needs a
+    carousel-vs-top-level branch, not one shared rule.
+14. The prior claim that carousel `owner` is always a 5-key stub lacking `edge_followed_by`, and
+    that a carousel always lacks top-level `dimensions`/`display_resources`, is **wrong as a
+    general rule** — this sample has the full owner block and top-level `dimensions`/
+    `display_resources`. `ScrapeCreatorsMedia`/`ScrapeCreatorsOwner` being all-optional already
+    tolerates both shapes; just don't let calling code assume the stub shape for carousels.
+15. Carousel child `id` is not reliably `POLARIS_`-prefixed — this sample's children use plain
+    numeric ids identical in format to top-level media ids, while the earlier all-image carousel
+    used `POLARIS_<numeric>`. Do not parse or validate the `id` format.
+16. Carousel image children do not have a fixed key count — 7 keys in the all-image carousel vs.
+    ~14 in this mixed carousel (matching the video siblings minus video-only fields). `video_url`
+    presence-as-null on an image child is not a reliable signal in either direction.
+17. Envelope is also missing `errors` (GraphQL partial-error array, can appear alongside
+    `success: true`) and `data.xdt_shortcode_media.location` (only `null` in prior samples, now
+    confirmed populated with `{id, has_public_page, name, slug, address_json}`).
+
+### Credit ledger — this follow-up capture
+
+| Call | credits_remaining before | credits_remaining after |
+|---|---|---|
+| `/p/DZCPPJTjKVy/` (the video-bearing carousel) | 31995 | 31994 |
+
+**Total spend: 1 credit.** Exactly the one call authorised, no retries needed (HTTP 200 on the
+first attempt), no exploratory calls.
