@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { AnalysisListItem } from "@/lib/api/analyses/types";
+import { getScoreBgClass, getScoreColorClass } from "@/app/app/analyses/helpers";
 
 // --- TYPE DEFINITIONS ---
 interface AnalysisTableProps {
@@ -27,27 +28,13 @@ interface AnalysisTableProps {
   isDeleting?: boolean;
 }
 
-// --- SCORE COLOR HELPERS ---
-function getScoreColor(score: number | null): string {
-  if (score == null) return "text-muted-foreground";
-  if (score >= 7) return "text-green-600 dark:text-green-400";
-  if (score >= 5) return "text-yellow-600 dark:text-yellow-400";
-  return "text-destructive";
-}
-
-function getScoreBg(score: number | null): string {
-  if (score == null) return "bg-muted";
-  if (score >= 7) return "bg-green-500/10";
-  if (score >= 5) return "bg-yellow-500/10";
-  return "bg-destructive/10";
-}
-
 // --- DIMENSION SCORE CELL ---
+// Threshold logic lives once, in `@/app/app/analyses/helpers`, shared with
+// `AnalysisScorecardSection` (TDD §8.2) — two independent copies of this
+// rule is exactly how it broke on the pre-redesign 1-10 scale.
 function DimensionScoreCell({ score }: { score: number | null }) {
   return (
-    <span
-      className={cn("text-sm font-semibold tabular-nums", getScoreColor(score))}
-    >
+    <span className={cn("text-sm font-semibold tabular-nums", getScoreColorClass(score))}>
       {score ?? "—"}
     </span>
   );
@@ -85,10 +72,10 @@ export const AnalysisDataTable = ({
               <TableHead className="text-center">Hook</TableHead>
               <TableHead className="text-center">Retention</TableHead>
               <TableHead className="text-center">Visual</TableHead>
-              <TableHead className="text-center">A/V</TableHead>
-              <TableHead className="text-center">Trend</TableHead>
               <TableHead className="text-center">CTA</TableHead>
-              <TableHead className="text-center">Brand</TableHead>
+              <TableHead className="text-center">Message</TableHead>
+              <TableHead className="text-center">Original.</TableHead>
+              <TableHead className="text-center">Emotion</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -153,8 +140,8 @@ export const AnalysisDataTable = ({
                     <div
                       className={cn(
                         "inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold",
-                        getScoreBg(analysis.overallScore),
-                        getScoreColor(analysis.overallScore),
+                        getScoreBgClass(analysis.overallScore),
+                        getScoreColorClass(analysis.overallScore),
                       )}
                     >
                       {analysis.overallScore ?? "—"}
@@ -179,22 +166,22 @@ export const AnalysisDataTable = ({
                   </TableCell>
                   <TableCell className="text-center">
                     <DimensionScoreCell
-                      score={analysis.scorecard?.audioVisualSync ?? null}
+                      score={analysis.scorecard?.ctaEffectiveness ?? null}
                     />
                   </TableCell>
                   <TableCell className="text-center">
                     <DimensionScoreCell
-                      score={analysis.scorecard?.trendAlignment ?? null}
+                      score={analysis.scorecard?.messageClarity ?? null}
                     />
                   </TableCell>
                   <TableCell className="text-center">
                     <DimensionScoreCell
-                      score={analysis.scorecard?.callToAction ?? null}
+                      score={analysis.scorecard?.originality ?? null}
                     />
                   </TableCell>
                   <TableCell className="text-center">
                     <DimensionScoreCell
-                      score={analysis.scorecard?.brandConsistency ?? null}
+                      score={analysis.scorecard?.emotionalResonance ?? null}
                     />
                   </TableCell>
 

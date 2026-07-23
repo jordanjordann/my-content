@@ -21,10 +21,13 @@ import {
   useDeleteAnalysisMutation,
 } from "@/lib/api/analyses";
 import { ANALYSIS_KEYS } from "@/lib/api/analyses/constants";
+import { AnalysisStyleSection } from "@/app/app/analyses/components/sections/AnalysisStyleSection";
 import { AnalysisScorecardSection } from "@/app/app/analyses/components/sections/AnalysisScorecardSection";
-import { AnalysisPatternsSection } from "@/app/app/analyses/components/sections/AnalysisPatternsSection";
+import { AnalysisRedFlagsSection } from "@/app/app/analyses/components/sections/AnalysisRedFlagsSection";
 import { AnalysisSuggestionsSection } from "@/app/app/analyses/components/sections/AnalysisSuggestionsSection";
-import type { AnalysisDetailModalProps } from "./types";
+import { PatternBlock } from "@/app/app/analyses/components/sections/PatternBlock";
+import { AnalysisDetailTabList } from "./components/tabs/AnalysisDetailTabList";
+import type { AnalysisDetailModalProps, AnalysisDetailTab } from "./types";
 import { formatViews, formatDate } from "./helpers";
 
 export function AnalysisDetailModal({ id, onClose }: AnalysisDetailModalProps) {
@@ -35,6 +38,9 @@ export function AnalysisDetailModal({ id, onClose }: AnalysisDetailModalProps) {
   const [isClosing, setIsClosing] = useState(false);
   const [isReAnalyzing, setIsReAnalyzing] = useState(false);
   const [reAnalyzeError, setReAnalyzeError] = useState<string | null>(null);
+  // Tab state is local UI state, not URL/query state — no deep-linking
+  // requirement (design doc §1). "Gaya" (style) is the default landing tab.
+  const [activeTab, setActiveTab] = useState<AnalysisDetailTab>("style");
 
   const handleClose = useCallback(() => {
     setIsClosing(true);
@@ -210,6 +216,13 @@ export function AnalysisDetailModal({ id, onClose }: AnalysisDetailModalProps) {
                         </p>
                       )}
                     </div>
+
+                    {/* Fingerprint hint line (design doc §2.7) — a single analysis is one
+                        data point feeding a fingerprint, not a fingerprint itself. */}
+                    <div className="mt-4 rounded-lg bg-secondary p-3 text-xs leading-relaxed text-muted-foreground">
+                      Part of <span className="font-medium text-foreground">@{data.username}</span>
+                      &apos;s style — needs 5+ analyses.
+                    </div>
                   </>
                 ) : (
                   <div className="flex items-center justify-center py-12 text-muted-foreground">
@@ -221,14 +234,58 @@ export function AnalysisDetailModal({ id, onClose }: AnalysisDetailModalProps) {
               {/* Vertical divider */}
               <div className="hidden w-px shrink-0 self-stretch bg-border lg:block" />
 
-              {/* Content panel */}
-              <div className="min-w-0 flex-1 overflow-y-auto p-6">
-                <AnalysisScorecardSection results={results} />
-                <div className="mt-6">
-                  <AnalysisPatternsSection results={results} />
-                </div>
-                <div className="mt-6">
-                  <AnalysisSuggestionsSection results={results} />
+              {/* Content panel — Direction A tabbed shell (design doc §1) */}
+              <div className="flex min-w-0 flex-1 flex-col">
+                <AnalysisDetailTabList activeTab={activeTab} onTabChange={setActiveTab} />
+
+                <div className="min-h-0 flex-1 overflow-y-auto p-6">
+                  <div
+                    id="analysis-detail-panel-style"
+                    role="tabpanel"
+                    aria-labelledby="analysis-detail-tab-style"
+                    hidden={activeTab !== "style"}
+                  >
+                    {activeTab === "style" && <AnalysisStyleSection results={results} />}
+                  </div>
+
+                  <div
+                    id="analysis-detail-panel-score"
+                    role="tabpanel"
+                    aria-labelledby="analysis-detail-tab-score"
+                    hidden={activeTab !== "score"}
+                  >
+                    {activeTab === "score" && <AnalysisScorecardSection results={results} />}
+                  </div>
+
+                  <div
+                    id="analysis-detail-panel-notes"
+                    role="tabpanel"
+                    aria-labelledby="analysis-detail-tab-notes"
+                    hidden={activeTab !== "notes"}
+                  >
+                    {activeTab === "notes" && (
+                      <div className="flex flex-col gap-6">
+                        <p className="-mt-1 text-xs text-muted-foreground">
+                          Supporting AI commentary. Primary planning signal is in the Gaya and
+                          Skor AI tabs.
+                        </p>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <PatternBlock
+                            title="Strengths"
+                            items={results.strengths}
+                            variant="default"
+                          />
+                          <PatternBlock
+                            title="Weaknesses"
+                            items={results.weaknesses}
+                            variant="default"
+                          />
+                        </div>
+                        <AnalysisRedFlagsSection results={results} />
+                        <AnalysisSuggestionsSection results={results} />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </>

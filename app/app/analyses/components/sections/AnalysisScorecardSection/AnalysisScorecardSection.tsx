@@ -1,102 +1,56 @@
 "use client";
 
+import { SparklesIcon } from "lucide-react";
+
 import type { ScorecardSectionProps } from "@/app/app/analyses/components/sections/types";
+import { ScorePipMeter } from "./components/meters/ScorePipMeter";
+import { DimensionScoreRow } from "./components/rows/DimensionScoreRow";
+import { AI_SCORE_DISCLAIMER, DIMENSIONS } from "./constants";
+import { getRubricSentence } from "./helpers";
 
-const DIMENSIONS: { key: keyof import("@/lib/api/analyses/types").Scorecard; label: string }[] = [
-  { key: "hookStrength", label: "Hook Strength" },
-  { key: "retentionFlow", label: "Retention Flow" },
-  { key: "visualPolish", label: "Visual Polish" },
-  { key: "audioVisualSync", label: "Audio-Visual Sync" },
-  { key: "trendAlignment", label: "Trend Alignment" },
-  { key: "callToAction", label: "Call to Action" },
-  { key: "brandConsistency", label: "Brand Consistency" },
-];
-
-/** Radial score display with per-dimension breakdown. */
+/**
+ * Tier 2 scorecard — 7 dimensions, each a 1-5 pip meter (design doc,
+ * Direction A "Skor AI" tab). Replaces the old radial gauge: on the new
+ * 1-5 scale `overallScore / 10` drew a perfect 5 as a half-empty ring
+ * labelled "5 / 10" (TDD §8.1) — the pip meter has no such division.
+ *
+ * The "Penilaian AI" disclaimer sits once at the top of this section, not
+ * per-row — the per-row rubric tooltip carries the per-score honesty
+ * burden (design doc §2.3).
+ */
 export function AnalysisScorecardSection({ results }: ScorecardSectionProps) {
   const { overallScore, scorecard, summary } = results;
-  const scoreColor = getScoreColor(overallScore);
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col items-center gap-2">
-        <div className="relative flex h-32 w-32 items-center justify-center">
-          <svg className="h-32 w-32 -rotate-90" viewBox="0 0 120 120">
-            <circle
-              cx="60"
-              cy="60"
-              r="52"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="8"
-              className="text-muted/20"
-            />
-            <circle
-              cx="60"
-              cy="60"
-              r="52"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="8"
-              strokeLinecap="round"
-              strokeDasharray={`${(overallScore / 10) * 327} 327`}
-              className={scoreColor}
-            />
-          </svg>
-          <div className="absolute flex flex-col items-center">
-            <span className={`text-3xl font-bold ${scoreColor}`}>{overallScore}</span>
-            <span className="text-xs text-muted-foreground">/ 10</span>
-          </div>
-        </div>
-        <p className="text-center text-sm text-muted-foreground">{summary}</p>
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5 text-xs text-primary">
+        <SparklesIcon className="size-4 shrink-0" aria-hidden="true" />
+        <span>{AI_SCORE_DISCLAIMER}</span>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center">
+        <div className="flex flex-col items-start gap-1">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Overall
+          </span>
+          <ScorePipMeter score={overallScore} />
+        </div>
+        <p className="text-sm text-muted-foreground sm:flex-1">{summary}</p>
+      </div>
+
+      <div className="rounded-xl border">
         {DIMENSIONS.map(({ key, label }) => {
           const score = scorecard[key];
           return (
-            <div
+            <DimensionScoreRow
               key={key}
-              className="flex flex-col items-center gap-1 rounded-lg border p-3"
-            >
-              <div className="relative flex h-16 w-16 items-center justify-center">
-                <svg className="h-16 w-16 -rotate-90" viewBox="0 0 64 64">
-                  <circle
-                    cx="32"
-                    cy="32"
-                    r="26"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="5"
-                    className="text-muted/20"
-                  />
-                  <circle
-                    cx="32"
-                    cy="32"
-                    r="26"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="5"
-                    strokeLinecap="round"
-                    strokeDasharray={`${(score / 10) * 163} 163`}
-                    className={getScoreColor(score)}
-                  />
-                </svg>
-                <span className={`absolute text-sm font-semibold ${getScoreColor(score)}`}>
-                  {score}
-                </span>
-              </div>
-              <span className="text-center text-xs text-muted-foreground">{label}</span>
-            </div>
+              label={label}
+              score={score}
+              rubricSentence={getRubricSentence(key, score)}
+            />
           );
         })}
       </div>
     </div>
   );
-}
-
-function getScoreColor(score: number): string {
-  if (score >= 7) return "text-green-500";
-  if (score >= 5) return "text-yellow-500";
-  return "text-red-500";
 }

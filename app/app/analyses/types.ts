@@ -49,3 +49,10 @@ export type FilterOption = {
 };
 
 export type OptionCounts = Record<FilterDimension, FilterOption[]>;
+
+/**
+ * Plain-language band word for a 1-5 scorecard score, pulled from the same
+ * anchored rubric that defines the score (design doc §2.1) — the visual
+ * (pip meter / color) and this word must never disagree.
+ */
+export type ScoreBand = "Poor" | "Weak" | "Adequate" | "Strong" | "Excellent";
