@@ -959,3 +959,72 @@ zero real wall time per test run, with no change to production code.
   `.claude/context/fixtures/scrapecreators-instagram/` plus its own append to
   this file. Once merged, revisit `adapter.test.ts`'s synthetic inputs and
   the "UNVERIFIED" describe block above against the real captures.
+
+---
+
+## Gemini `@google/genai` structured output — LIVE call (2026-07-23, ticket #66)
+
+- **Authorisation:** one-time owner-approved live call for #66, exactly one call, one billed
+  Gemini request. No retries needed — succeeded on the first attempt.
+- **What was run:** `.claude/context/fixtures/gemini/structured-output-baseline.mjs` unmodified
+  (ported to `@google/genai` by #75, never executed since the port — this is the first run).
+  `model: "gemini-2.5-flash"`, `temperature: 0.2`, `maxOutputTokens: 32768`,
+  `responseMimeType: "application/json"`, `responseSchema` = the harness's own probe schema
+  (enum-constrained hook/format/topic/CTA taxonomies, nested `scorecard` object with `required`,
+  nullable enum `hookTypeSecondary`, nullable number `durationSeconds`, array-of-enum `ctaType`).
+  **Note:** the harness's schema is a superset/analog probe, not `ANALYSIS_RESPONSE_SCHEMA` from
+  `lib/server/analysis/schema/responseSchema.ts` — the harness predates and is independent of that
+  file; this run verifies the SDK mechanics (finishReason, usageMetadata, text getter, JSON
+  parseability, nullable/array/enum expressibility), not the exact production schema shape.
+- **Raw output:** captured at `/tmp/gemini-live-output.txt` (not committed — scratch, outside the
+  repo per `AGENTS.md`).
+
+### Result
+
+```
+finishReason: STOP
+usageMetadata: {
+  promptTokenCount: 68,
+  candidatesTokenCount: 329,
+  totalTokenCount: 1093,
+  thoughtsTokenCount: 696,
+  promptTokensDetails: [{ modality: "TEXT", tokenCount: 68 }],
+  serviceTier: "standard"
+}
+typeof response.text === "string", length 1148
+```
+
+- **`response.text` is confirmed to behave as a getter property** (per the SDK note elsewhere in
+  this file) — `typeof text === "string"` held, no leftover-`()` bug present.
+- **Body was directly `JSON.parse`-able** — no code fence, no prose wrapper, confirmed on a real
+  (not stubbed) response for the first time since the SDK migration.
+- `ctaType` came back as a real array (`["FOLLOW", "JOIN_COMMUNITY"]`).
+- `hookTypeSecondary` came back as a real non-null enum string (`"NUMBERED_LIST"`) in this sample
+  — the harness's probe schema makes it `nullable: true`, but this particular generation happened
+  to populate it. Nullable-string expressibility itself (schema accepts `nullable: true` on an
+  enum-typed string without the SDK rejecting the config) is confirmed structurally by the request
+  succeeding; a `null` value for that specific field was not observed in this one sample.
+- `durationSeconds` (the nullable-number probe) came back as a real number (`75`), not `null`, in
+  this sample — same caveat: the nullable config was accepted, but a `null` value for a nullable
+  number specifically was not observed in this run. Still an open item if a stricter "did the SDK
+  emit an actual `null` for a number field" proof is ever needed — this run only proves the
+  request/schema combination is accepted and produces a valid, honest value.
+- **Headroom against the 32768 budget:** `candidatesTokenCount: 329` + `thoughtsTokenCount: 696` =
+  `1025` tokens actually spent (`totalTokenCount: 1093` including the 68 prompt tokens) — **~97%
+  headroom remaining** on this short synthetic prompt. This is a single short hypothetical prompt,
+  not the full production prompt (#67) against a real video with the full 7-dimension scorecard
+  and every Tier-1 prose field, so it establishes the mechanism (thinking tokens are billed against
+  `maxOutputTokens`, exactly as the legacy-SDK measurement showed) and a lower bound on headroom,
+  not the real-world headroom for a production-sized request.
+- `lib/server/analysis/gemini/generate.ts` (production call path, modified by #66) now sets
+  `temperature: 0`, `responseMimeType: "application/json"`, `responseSchema:
+  ANALYSIS_RESPONSE_SCHEMA` (from `lib/server/analysis/schema/responseSchema.ts`, spread from
+  `lib/analysis/taxonomy/constants.ts`, no literal enum lists), `maxOutputTokens: 32768`, logs
+  `response.usageMetadata` on every call, and throws before any parse attempt if
+  `finishReason !== STOP` — this exact configuration was **not** itself live-called in this
+  session (that would have required a real video + Gemini file upload, out of scope for the
+  one-call budget); the live call above validates the underlying SDK plumbing
+  (`ai.models.generateContent`, `response.text`, `response.candidates[0].finishReason`,
+  `response.usageMetadata`, JSON-Schema `nullable`/array/enum acceptance) that `generate.ts`'s new
+  config relies on. `ANALYSIS_RESPONSE_SCHEMA` itself is verified by typecheck/build only, not by
+  a live call — see #66's PR description for the schema-only-vs-live-verified breakdown.
