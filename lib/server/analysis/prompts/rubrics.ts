@@ -1,10 +1,15 @@
+import type { Scorecard } from "@/lib/server/analysis/types";
+
 /**
  * Anchored 5-band rubrics for the Tier 2 scorecard (PRD §4.5, §4.6; TDD §5.1).
  *
- * `ScorecardDimension` mirrors the 7-key `Scorecard` contract from TDD §3.2
- * (`lib/server/analysis/types/analysis.ts`, owned/rewritten by #68 — not
- * imported from here so this ticket does not reach into a file it does not
- * own). Keep the two lists in lockstep if either changes.
+ * `ScorecardDimension` is `keyof Scorecard`, imported from the canonical
+ * contract in `lib/server/analysis/types/analysis.ts` (owned/rewritten by
+ * #68). This was a local duplicate type prior to #68 (that file still held
+ * the pre-redesign 1-10/7-old-dimension shape when this module was written);
+ * now that #68 has landed the new 7-key `Scorecard`, importing it here means
+ * the two contracts cannot drift apart — a renamed or added dimension is a
+ * compile error in this file instead of a silent mismatch.
  *
  * `RubricBands` is a fixed 5-tuple, not `string[]`. This is deliberate: it
  * makes "add a dimension without writing all five bands" a COMPILE ERROR
@@ -17,14 +22,7 @@
  * "hook yang baik") — PRD §5.3.
  */
 
-export type ScorecardDimension =
-  | "hookStrength"
-  | "retentionFlow"
-  | "visualPolish"
-  | "ctaEffectiveness"
-  | "messageClarity"
-  | "originality"
-  | "emotionalResonance";
+export type ScorecardDimension = keyof Scorecard;
 
 /** Band 1 = weakest observed property, band 5 = strongest. */
 export type RubricBands = readonly [string, string, string, string, string];

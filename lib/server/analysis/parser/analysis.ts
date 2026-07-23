@@ -1,48 +1,36 @@
+import { ANALYSIS_SCHEMA_VERSION } from "@/lib/server/analysis/schema/constants";
 import type { ContentAnalysis } from "@/lib/server/analysis/types";
-import { validateScorecard, validatePatterns } from "./validation";
+import { assertContentAnalysis } from "./validation";
 
+/**
+ * TDD §4.4. Under `responseMimeType: "application/json"` (#66) the response
+ * body IS JSON, full stop — `extractJson()` (regex brace-hunting / code-fence
+ * stripping) is deleted. A `SyntaxError` from `JSON.parse` is a thrown error,
+ * never a recovery path: truncation is caught upstream in #66 (the generate
+ * layer throws on `finishReason !== "STOP"` before the body ever reaches
+ * here), but if a truncated/malformed body ever does reach this function, the
+ * resulting `SyntaxError` must propagate unchanged. No repair path is added
+ * here as a safety net.
+ */
 export function parseContentAnalysis(text: string): ContentAnalysis {
-  const json = extractJson(text);
-  const parsed = JSON.parse(json) as Record<string, unknown>;
+  const parsed: unknown = JSON.parse(text);
+  const validated = assertContentAnalysis(parsed);
 
-  const overallScore = typeof parsed.overallScore === "number" ? parsed.overallScore : 0;
-  const summary = typeof parsed.summary === "string" ? parsed.summary : "";
-  const strengths = validateStringArray(parsed.strengths);
-  const weaknesses = validateStringArray(parsed.weaknesses);
-  const keyMoments = validateStringArray(parsed.keyMoments);
-  const suggestions = validateStringArray(parsed.suggestions);
-  const scorecard = validateScorecard(parsed.scorecard);
-  const patterns = validatePatterns(parsed.patterns);
+  // [TAXONOMY] instrumentation (TDD §4.6, PRD §4.3.5/§4.3.6): one structured
+  // log line per completed analysis carrying the classified values, so the
+  // OTHER-rate and ["NONE"]-rate are queryable via json_extract on
+  // analyses.result_content (query recorded in TDD §4.6) without a dashboard.
+  console.info("[TAXONOMY]", {
+    topicNiche: validated.style.topicNiche,
+    hookType: validated.style.hookType,
+    formatArchetype: validated.style.formatArchetype,
+    ctaType: validated.style.ctaType,
+  });
 
   return {
-    overallScore,
-    summary,
-    strengths,
-    weaknesses,
-    keyMoments,
-    scorecard,
-    patterns,
-    suggestions,
+    // Stamped server-side (TDD §4.4 step 3) — the model has no business
+    // asserting which contract it was run under.
+    schemaVersion: ANALYSIS_SCHEMA_VERSION,
+    ...validated,
   };
-}
-
-function validateStringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
-}
-
-function extractJson(text: string): string {
-  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (codeBlockMatch) {
-    return codeBlockMatch[1].trim();
-  }
-
-  const firstBrace = text.indexOf("{");
-  const lastBrace = text.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    return text.slice(firstBrace, lastBrace + 1);
-  }
-
-  throw new Error("No valid JSON found in response");
 }
