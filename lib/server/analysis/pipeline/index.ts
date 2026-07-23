@@ -105,19 +105,17 @@ export async function runAnalysis({
     report("profiling", 1, "Resolving creator profile...");
 
     let profile: Profile | null = null;
-    if (classified.platform === "instagram") {
-      try {
-        profile = await resolveProfile({
-          platform: "instagram",
-          username: metadata.username,
-          ownerHint: toProfileInputHint(ownerHint),
-        });
-      } catch (error) {
-        // A profile failure must never fail an analysis — engagement rate
-        // simply comes out NULL.
-        console.error("[PIPELINE] Profile resolve failed:", error);
-        profile = null;
-      }
+    try {
+      profile = await resolveProfile({
+        platform: classified.platform,
+        username: metadata.username,
+        ownerHint: toProfileInputHint(ownerHint),
+      });
+    } catch (error) {
+      // A profile failure must never fail an analysis — engagement rate
+      // simply comes out NULL.
+      console.error("[PIPELINE] Profile resolve failed:", error);
+      profile = null;
     }
 
     const followerCount = profile?.followerCount ?? null;
