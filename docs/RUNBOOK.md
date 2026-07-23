@@ -13,8 +13,13 @@ Operational reference card. Verified against `main` at `f181f53` (2026-07-22, se
 | Serve build | `npm start` | |
 | Lint | `npm run lint` | flat config, `eslint.config.mjs` |
 | Tests | `npm run test` | `vitest run`, node env. `npm run test:watch` for watch mode. **Offline — never calls a live API** (see §7) |
-| Typecheck | `npx tsc --noEmit` | **No `typecheck` script exists** in `package.json`; `tsconfig.json` already sets `noEmit` |
+| Typecheck | `npm run typecheck` | `tsc --noEmit`; `tsconfig.json` already sets `noEmit` (ticket #83) |
 | Migrate DB | `npm run db:migrate` | `tsx scripts/migrate.ts` |
+
+CI (`.github/workflows/ci.yml`, ticket #83) runs `npm run test`, `npm run typecheck`,
+`npm run lint`, and `npm run build` in that order on every PR and every push to `main`. Node
+version comes from `.nvmrc` (`24.14.1`), installs use `npm ci`, and no live-API secrets
+(`GEMINI_API_KEY`, `SCRAPECREATORS_API_KEY`) are ever set in the workflow — see §7.
 
 Next.js **16.2.10**, React **19.2.4**. This is not the Next.js in your training data — read
 `node_modules/next/dist/docs/` before writing app code (see `AGENTS.md`).
@@ -295,4 +300,19 @@ tests/
   same Shorts video as `yt_video_fresh.json`/`yt_video_trim.json`, not an independent regular
   video. See `tests/fixtures/README.md`.
 
-There is still **no CI** — nothing runs `npm run test` automatically.
+**CI (ticket #83):** `.github/workflows/ci.yml` runs on every `pull_request` and every `push` to
+`main` — `npm run test`, then `npm run typecheck`, then `npm run lint`, then `npm run build` (last,
+since it's the slowest and the others fail faster). `permissions: contents: read`,
+`timeout-minutes: 10`, Node pinned via `.nvmrc`, deps installed with `npm ci`. The hard
+no-live-API-calls guarantee has two independent layers:
+
+1. **Test-level:** `tests/setup/blockLiveFetch.ts` (above) — a real, credit-charged call would have
+   to bypass this stub from inside the test process itself.
+2. **CI-level (belt and braces):** the workflow never sets `GEMINI_API_KEY` or
+   `SCRAPECREATORS_API_KEY` as env vars or GitHub Actions secrets, and neither is added to the
+   repo/environment secrets store. So even if a future test somehow bypassed the fetch stub (e.g. by
+   calling `lib/server/scrapecreators/client.ts` in a way that doesn't go through the stubbed
+   global), the outbound call would still fail — there is no credential for it to authenticate with.
+   `.next/cache` is cached for build speed; the tracked-but-gitignored `my-content.db` (§4) is never
+   checked for cleanliness and the workflow has no write permissions, so it can't drift or commit
+   it.
