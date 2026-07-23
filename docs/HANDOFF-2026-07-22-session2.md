@@ -1,5 +1,7 @@
 # Handoff — my-content (session 2)
 
+> **Superseded by `docs/HANDOFF-2026-07-23.md`. Read that one first.**
+
 **Session:** 2026-07-22 (session 2)
 **Repo:** `/Users/jordanatha/Desktop/Projects/my-content` · github: `jordanjordann/my-content`
 **Branch:** `main`, at `f181f53`. **Zero open PRs** (other than the one carrying this document).
