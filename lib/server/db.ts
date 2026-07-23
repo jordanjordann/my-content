@@ -60,6 +60,7 @@ export async function getAnalysesList() {
         a.caption,
         a.duration_sec,
         a.result_content,
+        a.schema_version,
         a.created_at,
         a.updated_at
       FROM analyses a
@@ -83,6 +84,7 @@ export async function getAnalysesList() {
     caption: (row.caption as string) ?? null,
     durationSec: row.duration_sec == null ? null : Number(row.duration_sec),
     resultContent: (row.result_content as string) ?? null,
+    schemaVersion: row.schema_version == null ? null : Number(row.schema_version),
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   }));
@@ -102,7 +104,7 @@ export async function getAnalysisDetail(analysisId: string) {
     sql: `
       SELECT id, prompt, status, title, url, platform, media_type, username,
              thumbnail_url, view_count, post_date, caption, duration_sec,
-             result_content, created_at
+             result_content, schema_version, created_at
       FROM analyses
       WHERE id = ?
       LIMIT 1
@@ -130,6 +132,7 @@ export async function getAnalysisDetail(analysisId: string) {
     caption: (analysisRow.caption as string) ?? null,
     durationSec: analysisRow.duration_sec == null ? null : Number(analysisRow.duration_sec),
     resultContent: (analysisRow.result_content as string) ?? null,
+    schemaVersion: analysisRow.schema_version == null ? null : Number(analysisRow.schema_version),
     createdAt: analysisRow.created_at as string,
   };
 }
