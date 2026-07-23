@@ -22,8 +22,11 @@ export async function analyzeContent(
   // TDD §4.2 / PRD §5.1, §5.2: temperature 0 for reproducibility, structured
   // JSON output constrained by ANALYSIS_RESPONSE_SCHEMA (no fence, no prose
   // wrapper), and a raised token budget — thinking tokens are billed out of
-  // the same maxOutputTokens budget on gemini-2.5-flash, so 8192 truncates
-  // real-world prompts (proven: 38 output + 48 thinking -> MAX_TOKENS).
+  // the same maxOutputTokens budget on gemini-2.5-flash, so a short budget
+  // risks MAX_TOKENS truncation before the model finishes "thinking" and
+  // starts emitting the JSON body. This has truncated real Gemini calls
+  // before; see .claude/context/verified-facts.md for the SDK mechanics
+  // (usageMetadata.thoughtsTokenCount is billed against maxOutputTokens).
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash",
     contents: parts,
