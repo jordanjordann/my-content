@@ -6,8 +6,14 @@ import type {
   AnalysisStatus,
 } from "@/lib/api/analyses/types";
 import { normalize } from "@/lib/api/analyses/helpers";
-import { FILTER_PARAM_KEYS, PLATFORM_OPTIONS, STATUS_OPTIONS } from "@/app/app/analyses/constants";
-import type { AnalysisFilters, FilterDimension } from "@/app/app/analyses/types";
+import {
+  FILTER_PARAM_KEYS,
+  MAX_SCORE,
+  PLATFORM_OPTIONS,
+  SCORE_BAND_WORDS,
+  STATUS_OPTIONS,
+} from "@/app/app/analyses/constants";
+import type { AnalysisFilters, FilterDimension, ScoreBand } from "@/app/app/analyses/types";
 
 const PLATFORM_VALUES = new Set<string>(PLATFORM_OPTIONS.map((option) => option.value));
 const STATUS_VALUES = new Set<string>(STATUS_OPTIONS.map((option) => option.value));
@@ -139,4 +145,37 @@ export function anyActive(filters: AnalysisFilters): boolean {
     filters.status.length > 0 ||
     filters.q !== ""
   );
+}
+
+/**
+ * Single shared source of the 1-5 score color ramp (TDD §8.2 — was
+ * independently duplicated in `AnalysisScorecardSection` and
+ * `AnalysisDataTable` with pre-redesign 1-10 thresholds; both now import
+ * this). On a 5-band anchored rubric, 4-5 is "good", 3 is "adequate", 1-2
+ * is "poor" — the ramp says what the bands say.
+ */
+export function getScoreColorClass(score: number | null): string {
+  if (score == null) return "text-muted-foreground";
+  if (score >= 4) return "text-green-600 dark:text-green-400";
+  if (score >= 3) return "text-yellow-600 dark:text-yellow-400";
+  return "text-destructive";
+}
+
+/** Background variant of `getScoreColorClass`, for filled badges/pills. */
+export function getScoreBgClass(score: number | null): string {
+  if (score == null) return "bg-muted";
+  if (score >= 4) return "bg-green-500/10";
+  if (score >= 3) return "bg-yellow-500/10";
+  return "bg-destructive/10";
+}
+
+/** Plain-language band word for an integer 1-5 score (design doc §2.1). */
+export function getScoreBandWord(score: number): ScoreBand {
+  const index = Math.min(Math.max(Math.round(score), 1), MAX_SCORE);
+  return SCORE_BAND_WORDS[index] as ScoreBand;
+}
+
+/** `"4/5 · Strong"` — the text equivalent that must always accompany a pip meter (a11y §4). */
+export function formatScoreBandLabel(score: number): string {
+  return `${score}/${MAX_SCORE} · ${getScoreBandWord(score)}`;
 }

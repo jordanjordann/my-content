@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { AnalysisCardProps } from "@/app/app/analyses/types";
+import { getScoreColorClass } from "@/app/app/analyses/helpers";
 
 /** Card displaying an analysis summary with status, score, and actions. */
 export function AnalysisCard({
@@ -85,16 +86,9 @@ function getStatusColor(status: string): string {
   return "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400";
 }
 
-function getScoreColor(score: number | null): string {
-  if (score == null) return "text-muted-foreground";
-  if (score >= 7) return "text-green-600 dark:text-green-400";
-  if (score >= 5) return "text-yellow-600 dark:text-yellow-400";
-  return "text-destructive";
-}
-
 function getScoreIcon(status: string, score: number | null) {
   if (status === "completed" && score != null) {
-    return <span className={`text-2xl font-bold ${getScoreColor(score)}`}>{score}</span>;
+    return <span className={`text-2xl font-bold ${getScoreColorClass(score)}`}>{score}</span>;
   }
   if (status === "failed") {
     return <span className="text-2xl text-destructive">✕</span>;

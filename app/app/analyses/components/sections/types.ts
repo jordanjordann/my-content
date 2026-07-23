@@ -4,7 +4,12 @@ export type ScorecardSectionProps = {
   results: ContentAnalysis
 }
 
-export type PatternsSectionProps = {
+export type StyleSectionProps = {
+  results: ContentAnalysis
+}
+
+/** Renders `redFlags` only (TDD §8.2) — `viralFormulas`/`audiencePsychology` no longer exist. */
+export type RedFlagsSectionProps = {
   results: ContentAnalysis
 }
 
