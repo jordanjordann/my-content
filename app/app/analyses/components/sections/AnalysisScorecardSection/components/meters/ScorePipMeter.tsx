@@ -15,8 +15,7 @@ import type { ScorePipMeterProps } from "@/app/app/analyses/components/sections/
  * the pips, never color-only, so this remains legible without relying on
  * fill color alone (a11y §4).
  */
-export function ScorePipMeter({ score, size = "md" }: ScorePipMeterProps) {
-  const pipSize = size === "sm" ? "h-2.5 w-2.5" : "h-3.5 w-3.5";
+export function ScorePipMeter({ score }: ScorePipMeterProps) {
   const colorClass = getScoreColorClass(score);
 
   return (
@@ -27,7 +26,7 @@ export function ScorePipMeter({ score, size = "md" }: ScorePipMeterProps) {
             key={pip}
             className={cn(
               "rounded-sm",
-              pipSize,
+              "h-3.5 w-3.5",
               pip <= score ? cn("bg-current", colorClass) : "bg-muted",
             )}
           />
