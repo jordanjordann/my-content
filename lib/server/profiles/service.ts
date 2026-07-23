@@ -84,7 +84,12 @@ async function fetchYoutubeChannelInput(handle: string): Promise<ProfileInput> {
     followerCount: raw.subscriberCount,
     followingCount: null,
     fullName: raw.name ?? null,
-    profilePicUrl: null,
+    // `avatar.image.sources` carries a single 68x68 entry in every observed
+    // capture (see ScrapeCreatorsYoutubeChannelAvatar) — [0] is both the
+    // first and only option. Missing avatar/sources is optional display
+    // data, not required like subscriberCount, so fall back to null instead
+    // of throwing.
+    profilePicUrl: raw.avatar?.image?.sources?.[0]?.url ?? null,
     biography: raw.description ?? null,
     isVerified: raw.isVerified ?? null,
     isBusinessAccount: null,
