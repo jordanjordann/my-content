@@ -1,4 +1,7 @@
-import { SCORECARD_RUBRICS, type ScorecardDimension } from "./rubrics";
+import {
+  SCORECARD_RUBRICS,
+  type ScorecardDimension,
+} from "@/lib/analysis/rubrics";
 import { buildTaxonomyPrompt } from "./taxonomyPrompt";
 
 /**

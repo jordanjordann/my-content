@@ -254,10 +254,10 @@ export async function runAnalysis({
       sql: `
         UPDATE analyses
         SET raw_gemini = ?, result_content = ?, result_created_at = datetime('now'),
-            status = 'completed', updated_at = datetime('now')
+            status = 'completed', schema_version = ?, updated_at = datetime('now')
         WHERE id = ?
       `,
-      args: [geminiResult.raw, JSON.stringify(content), analysisId],
+      args: [geminiResult.raw, JSON.stringify(content), content.schemaVersion, analysisId],
     });
 
     report("complete", 1, "Analysis complete");
