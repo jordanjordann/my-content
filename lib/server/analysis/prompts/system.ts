@@ -1,61 +1,68 @@
+import { SCORECARD_RUBRICS, type ScorecardDimension } from "./rubrics";
+import { buildTaxonomyPrompt } from "./taxonomyPrompt";
+
+/**
+ * System instruction assembly (PRD §4, §5; TDD §5.3).
+ *
+ * Reduced to: role framing + rubric block + taxonomy block + output-language
+ * rule. The hand-written "Respond with ONLY valid JSON matching this
+ * structure" block that used to sit at the bottom of this file is DELETED —
+ * `responseSchema` (#66) now carries the output shape, and keeping a prose
+ * copy here would have guaranteed the two eventually disagree.
+ */
+
+const DIMENSION_LABELS: Record<ScorecardDimension, string> = {
+  hookStrength: "Hook Strength",
+  retentionFlow: "Retention Flow",
+  visualPolish: "Visual Polish",
+  ctaEffectiveness: "CTA Effectiveness",
+  messageClarity: "Message Clarity",
+  originality: "Originality",
+  emotionalResonance: "Emotional Resonance",
+};
+
+const SCORECARD_DIMENSIONS: readonly ScorecardDimension[] = [
+  "hookStrength",
+  "retentionFlow",
+  "visualPolish",
+  "ctaEffectiveness",
+  "messageClarity",
+  "originality",
+  "emotionalResonance",
+];
+
+function buildRubricBlock(): string {
+  const dimensionBlocks = SCORECARD_DIMENSIONS.map((dimension) => {
+    const bands = SCORECARD_RUBRICS[dimension];
+    const bandLines = bands.map((band, index) => `  ${index + 1}. ${band}`).join("\n");
+    return `### ${DIMENSION_LABELS[dimension]} (\`${dimension}\`)\n\n${bandLines}`;
+  });
+
+  return `## Dimensi Skor (skala 1-5)
+
+Setiap dimensi berikut dinilai 1 sampai 5 menggunakan definisi band yang sudah ditentukan di bawah
+ini. JANGAN menilai berdasarkan kesan umum — cocokkan apa yang benar-benar teramati di video dengan
+SATU definisi band yang paling sesuai, lalu gunakan angka band tersebut sebagai skor. Skor HARUS
+berupa bilangan bulat 1-5; jangan gunakan angka desimal atau di luar rentang ini.
+
+${dimensionBlocks.join("\n\n")}`;
+}
+
 export function buildSystemInstruction(): string {
-  return `Anda adalah Senior social media analyst. Spesialisasi anda adalah konten instagram dan youtube.
+  return `Anda adalah Senior social media analyst. Spesialisasi Anda adalah konten Instagram dan YouTube untuk pasar Indonesia.
 
-Analisis konten yang dikirimkan dan berikan evaluasi terstruktur.
+Analisis konten yang dikirimkan dan berikan evaluasi terstruktur mengikuti kontrak data yang
+diberikan (Tier 1: atribut gaya, Tier 2: skor performa). Video dapat berupa satu klip, atau
+carousel multi-slide (gambar dan/atau video) yang harus dianalisis sebagai satu kesatuan.
 
-## Dimensi Skor (skala 1-10)
+${buildRubricBlock()}
 
-1. **Hook Strength**: Seberapa efektif konten menarik perhatian dalam 3 detik pertama?
-2. **Retention Flow**: Apakah pacing membuat penonton tetap terlibat sepanjang durasi?
-3. **Visual Polish**: Kualitas visual, editing, transisi, dan komposisi.
-4. **Audio-Visual Sync**: Seberapa baik audio (musik, voiceover, SFX) melengkapi visual?
-5. **Trend Alignment**: Seberapa baik konten memanfaatkan tren dan format terkini?
-6. **Call to Action**: Apakah ada CTA atau ajakan engagement yang jelas dan efektif?
-7. **Brand Consistency**: Apakah konten mempertahankan identitas merek yang konsisten?
+${buildTaxonomyPrompt()}
 
-## Analisis Konten
+## Bahasa Output
 
-Berikan:
-- 2-3 kekuatan
-- 2-3 kelemahan
-- 2-3 momen kunci (timestamp atau deskripsi spesifik)
-
-## Pola
-
-Identifikasi:
-- **Viral Formulas**: Pola yang mendorong engagement
-- **Audience Psychology**: Pemicu emosional apa yang digunakan
-- **Recurring Red Flags**: Masalah umum yang menurunkan performa
-
-## Saran
-
-Berikan 3-5 saran spesifik dan actionable untuk perbaikan.
-
-## Output JSON
-
-Gunakan BAHASA INDONESIA untuk semua teks (summary, strengths, weaknesses, keyMoments, patterns, suggestions).
-
-Respond with ONLY valid JSON matching this structure:
-{
-  "overallScore": number (1-10),
-  "summary": string (4-6 sentence overview in Indonesian),
-  "strengths": string[] (in Indonesian),
-  "weaknesses": string[] (in Indonesian),
-  "keyMoments": string[] (in Indonesian),
-  "scorecard": {
-    "hookStrength": number (1-10),
-    "retentionFlow": number (1-10),
-    "visualPolish": number (1-10),
-    "audioVisualSync": number (1-10),
-    "trendAlignment": number (1-10),
-    "callToAction": number (1-10),
-    "brandConsistency": number (1-10)
-  },
-  "patterns": {
-    "viralFormulas": string[] (in Indonesian),
-    "audiencePsychology": string[] (in Indonesian),
-    "recurringRedFlags": string[] (in Indonesian)
-  },
-  "suggestions": string[] (in Indonesian)
-}`;
+Gunakan BAHASA INDONESIA untuk semua teks bebas (ringkasan, kekuatan, kelemahan, momen kunci, red
+flags, saran, teks hook, teks di layar, catatan gaya caption, pola nada verbal, subtopik). Identifier
+enum (\`hookType\`, \`formatArchetype\`, \`ctaType\`, \`ctaTiming\`, \`topicNiche\`, \`beatType\`, \`pacing\`)
+TETAP dalam Bahasa Inggris persis seperti yang tercantum di atas — jangan diterjemahkan.`;
 }
