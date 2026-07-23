@@ -1,4 +1,4 @@
-import { SCORECARD_RUBRICS, type ScorecardDimension } from "@/lib/server/analysis/prompts/rubrics";
+import { SCORECARD_RUBRICS, type ScorecardDimension } from "@/lib/analysis/rubrics";
 import { MAX_SCORE } from "@/app/app/analyses/constants";
 
 /**
