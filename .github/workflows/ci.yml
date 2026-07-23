@@ -1,0 +1,62 @@
+name: CI
+
+# Runs on every PR (any branch) and every push to main. This is the only
+# workflow in the repo — see docs/RUNBOOK.md §1 and §7.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  # Dummy, non-secret value so lib/server/auth/auth.ts doesn't throw when
+  # `next build` runs with NODE_ENV=production (RUNBOOK §2). Never a real
+  # secret.
+  APP_SESSION_SECRET: ci-not-a-real-secret
+  # Deliberately NOT set: GEMINI_API_KEY, SCRAPECREATORS_API_KEY.
+  # This workflow must never reach either live API — see the "no live API
+  # calls" guardrail in docs/RUNBOOK.md §7 and tests/setup/blockLiveFetch.ts.
+  # TURSO_DATABASE_URL / TURSO_AUTH_TOKEN are also left unset so
+  # lib/server/db.ts falls back to file:./my-content.db (RUNBOOK §4) — the
+  # test suite in this workflow never touches the database, so this file is
+  # never written to.
+
+jobs:
+  ci:
+    name: test, typecheck, lint, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test (offline by construction — tests/setup/blockLiveFetch.ts)
+        run: npm run test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Cache Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ hashFiles('**/*.[jt]s', '**/*.[jt]sx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-
+
+      - name: Build
+        run: npm run build
