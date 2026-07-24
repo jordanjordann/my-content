@@ -49,7 +49,12 @@ export async function pollUntilReady(uri: string, maxAttempts = 30): Promise<voi
   throw new Error("Gemini file processing timed out");
 }
 
-function getMimeType(filePath: string): string {
+/**
+ * Ticket #71 Step 4: gains jpg/jpeg/png/webp — carousel images are inlined
+ * as base64 `inlineData` and Gemini rejects `application/octet-stream`
+ * (the previous default) for those. Video extensions are unchanged.
+ */
+export function getMimeType(filePath: string): string {
   const ext = filePath.split(".").pop()?.toLowerCase();
   switch (ext) {
     case "mp4":
@@ -58,6 +63,13 @@ function getMimeType(filePath: string): string {
       return "video/quicktime";
     case "webm":
       return "video/webm";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "webp":
+      return "image/webp";
     default:
       return "application/octet-stream";
   }

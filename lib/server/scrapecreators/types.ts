@@ -1,10 +1,14 @@
 /**
  * Raw ScrapeCreators response types.
  *
- * Confirmed against live payloads (a reel and a 12-slide carousel), fetched
- * with `trim: false` (see lib/server/scrapecreators/instagram.ts for why):
+ * Confirmed against real, committed payload captures — a reel, a 10-slide
+ * all-image carousel, a 10-slide mixed video/image carousel, and a single
+ * image post — all fetched with `trim: false` (see
+ * lib/server/scrapecreators/instagram.ts for why) and committed at
+ * `.claude/context/fixtures/scrapecreators-instagram/`. See
+ * `.claude/context/verified-facts.md` for the full capture notes.
  * `/v1/instagram/post` returns an envelope —
- * `{ success, credits_remaining, data: { xdt_shortcode_media: {...} }, status }`
+ * `{ success, credits_remaining, credits_charged, data: { xdt_shortcode_media: {...} }, status, errors?, extensions? }`
  * — wrapping the Instagram GraphQL `xdt_shortcode_media` shape. There is no
  * "media-info" variant; that was a PRD assumption that never matched the
  * live API and has been removed. This module models only the confirmed
@@ -12,10 +16,9 @@
  * the fetcher call site (lib/server/analysis/fetcher/instagram.ts), not
  * here — this module only owns transport types.
  *
- * `/v1/instagram/profile` was captured live (2026-07-20, see
- * /tmp/sc-profile-response.json) and confirmed to return
- * `{ success, credits_remaining, data: { user: {...} }, status }` — same
- * envelope shape regardless of `trim`. There is no flat
+ * `/v1/instagram/profile` was captured live (2026-07-20) and confirmed to
+ * return `{ success, credits_remaining, data: { user: {...} }, status }` —
+ * same envelope shape regardless of `trim`. There is no flat
  * `follower_count`/`following_count`/`pk` variant; that was an unverified
  * fallback that never matched a real payload and has been removed.
  * Unwrapping `data.user` happens at the call site
@@ -47,40 +50,71 @@ export interface ScrapeCreatorsOwner {
 export type ScrapeCreatorsMediaTypename = "XDTGraphVideo" | "XDTGraphImage" | "XDTGraphSidecar";
 
 /**
+ * A single co-author entry in a post's `coauthor_producers` array (post-level
+ * only — confirmed absent on every carousel child in both captured
+ * carousels). Ticket #71 / C9: the owner decided (2026-07-22, verbatim)
+ * "i think just store the data for now, but keep it away from analysis" —
+ * this field is modelled and persisted, but must never reach the Gemini
+ * request, the prompt, or an analysis output field.
+ */
+export interface ScrapeCreatorsCoauthorProducer {
+  id?: string;
+  username?: string;
+  is_verified?: boolean;
+  profile_pic_url?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * `dash_info` on a real video-carousel-child (7/7 samples in
+ * ig_carousel_mixed_video_and_image_10_slides.json). DELIBERATELY UNMODELLED
+ * beyond this comment, per Q1=(a)/Q2 (ticket #71): `mediaPresentationDuration`
+ * inside `video_dash_manifest`'s MPD XML is the ONLY in-payload duration for a
+ * carousel video slide, but Q1 resolved to (a) — drop the summed-duration
+ * guard for carousels, `durationSec` stays `null`, and NO code in this
+ * repository parses this manifest for a duration or any other value. Do not
+ * add a `dash_info` field to `ScrapeCreatorsCarouselChildNode` without also
+ * re-opening Q1 — it falls through the index signature below and is never
+ * read. Shape observed: `{ is_dash_eligible: boolean, video_dash_manifest:
+ * string (MPEG-DASH MPD XML, several KB), number_of_qualities: number }`.
+ * Download always comes from `video_url` (progressive MP4), never this
+ * manifest.
+ */
+
+/**
  * A single slide of a carousel (`edge_sidecar_to_children.edges[].node`).
- * Only video-typed slides (`__typename: "XDTGraphVideo"`) carry
- * `video_url`/`video_view_count`/`has_audio` — image slides do not.
+ *
+ * Re-verified field-by-field against the real video-bearing carousel fixture
+ * (`.claude/context/fixtures/scrapecreators-instagram/ig_carousel_mixed_video_and_image_10_slides.json`,
+ * 7 XDTGraphVideo + 3 XDTGraphImage children) by ticket #71 — see
+ * verified-facts.md, "Video carousel child — CONFIRMED shape (7 samples)".
+ * `video_duration`, `clips_music_attribution_info` and `thumbnail_src` were
+ * previously modelled here by analogy with the top-level `XDTGraphVideo`
+ * shape and are confirmed ABSENT on all 7 real video children — removed.
+ * `video_play_count` is added: present but `null` on all 7 real video
+ * children (the opposite reliability pattern from top-level reels — see the
+ * view-count branch in fetcher/adapter.ts, C4). `dash_info` is deliberately
+ * NOT modelled — see the comment above this interface.
+ *
+ * Every field here must be treated as optional with a defined fallback (C7):
+ * child key counts range from 7 (all-image carousel) to 18/23 (mixed
+ * carousel image/video children) across the two captured fixtures.
+ * Discriminate `kind` on `__typename`/`is_video`, NEVER on `video_url`
+ * presence — an all-image carousel's image children carry `video_url: null`
+ * (key present, value null), not absent.
  */
 export interface ScrapeCreatorsCarouselChildNode {
   __typename?: ScrapeCreatorsMediaTypename | string;
   id?: string;
   shortcode?: string;
   is_video?: boolean;
-  video_url?: string;
+  video_url?: string | null;
   video_view_count?: number;
-  video_duration?: number;
+  video_play_count?: number | null;
   has_audio?: boolean;
   display_url?: string;
-  thumbnail_src?: string;
   display_resources?: ScrapeCreatorsImageResource[];
   dimensions?: { width?: number; height?: number };
-  /**
-   * Not confirmed against a real video-carousel-slide payload — the only
-   * captured carousel sample (/tmp/sc-carousel-response.json) is all-image.
-   * Modeled after the top-level `XDTGraphVideo` shape since carousel video
-   * children share the same GraphQL `__typename`/field conventions as the
-   * top-level media object. Flagged in the #42 review; get a real sample
-   * with a video slide to confirm before relying on this further in
-   * production — adapter.ts logs loudly when a resolved video child is
-   * missing these fields.
-   */
-  clips_music_attribution_info?: {
-    song_name?: string;
-    artist_name?: string;
-    audio_id?: string;
-    uses_original_audio?: boolean;
-    should_mute_audio?: boolean;
-  };
   [key: string]: unknown;
 }
 
@@ -101,6 +135,11 @@ export interface ScrapeCreatorsMedia {
 
   video_url?: string;
   video_view_count?: number;
+  // video_play_count — the field that actually carries reel views (C4):
+  // top-level video_view_count can be a misleading 0 while video_play_count
+  // holds the real number (ig_reel_1_zero_view_count.json: 0 / 116333). NOT
+  // reliable on carousel children — see ScrapeCreatorsCarouselChildNode.
+  video_play_count?: number;
   video_duration?: number;
   has_audio?: boolean;
 
@@ -123,17 +162,51 @@ export interface ScrapeCreatorsMedia {
 
   edge_sidecar_to_children?: { edges?: { node?: ScrapeCreatorsCarouselChildNode }[] };
 
+  /**
+   * C8 (ticket #71): post-level only, absent on all carousel children.
+   * Observed absent on 1/6 fixtures (the all-image carousel) and `false` on
+   * the other 5 — no captured fixture has it `true`. Absence must NOT be
+   * read as `false`: when the key is truly absent, its disabled-state is
+   * unknown, not confirmed-off. When `true`, the affected counts must be
+   * persisted as NULL (unknown), never coerced to 0 — the same trap class
+   * as C4's reel zero-view count.
+   */
+  like_and_view_counts_disabled?: boolean;
+
+  /**
+   * C9 (ticket #71): present on 6/6 fixtures, non-empty on 2/6
+   * (ig_reel_3.json: sandiuno; ig_single_image_post.json: masterfulofc).
+   * Absent on all carousel children — post-level only. Owner decision
+   * (2026-07-22, verbatim): "i think just store the data for now, but keep
+   * it away from analysis" — model/carry/persist this field, but it must
+   * never be sent to Gemini, referenced by any prompt, or surfaced as an
+   * analysis output. Absent and empty (`[]`) must be handled identically.
+   */
+  coauthor_producers?: ScrapeCreatorsCoauthorProducer[];
+
   owner?: ScrapeCreatorsOwner;
 
   [key: string]: unknown;
 }
 
-/** Envelope returned by `/v1/instagram/post`. */
+/**
+ * Envelope returned by `/v1/instagram/post`. `errors` (C6) can be a
+ * populated array alongside `success: true` — a GraphQL-style partial/
+ * non-fatal error for one sub-field (observed:
+ * `location.address_json`), not a request failure. Do not infer success
+ * from `errors` being non-empty, and do not treat `success: true` as proof
+ * that every requested field is present. `credits_charged` and `extensions`
+ * are transport metadata, not modelled beyond presence — not useful payload
+ * data, not persisted.
+ */
 export interface ScrapeCreatorsPostEnvelope {
   success?: boolean;
   credits_remaining?: number;
+  credits_charged?: number;
   data?: { xdt_shortcode_media?: ScrapeCreatorsMedia };
   status?: string;
+  errors?: { message?: string; path?: string[]; severity?: string }[];
+  extensions?: unknown;
   [key: string]: unknown;
 }
 
