@@ -288,18 +288,28 @@ read from `.claude/context/fixtures/` via `tests/helpers/fixtures.ts`, which thr
 path-naming error if a fixture file is missing. See §5 for why this matters (credits, and
 `/v1/youtube/channel` charging even on a miss).
 
+**Current state: 11 test files, 138 tests** (confirmed via `npm run test -- --run` as of PR #95 /
+ticket #71).
+
 Layout:
 
 ```
 tests/
-├── setup/blockLiveFetch.ts                    # global fetch guard, wired via setupFiles
-├── setup/blockLiveFetch.test.ts                # proves the guard works
-├── helpers/fixtures.ts                        # loader for .claude/context/fixtures/ (fail-fast on missing file)
-├── fixtures/README.md                         # fixture inventory + the YouTube/Instagram gaps
-├── fixtures/synthetic/instagramMedia.ts       # hand-built adapter inputs — NOT captures
+├── setup/blockLiveFetch.ts                              # global fetch guard, wired via setupFiles
+├── setup/blockLiveFetch.test.ts                          # proves the guard works
+├── helpers/fixtures.ts                                  # loader for .claude/context/fixtures/ (fail-fast on missing file)
+├── fixtures/README.md                                   # fixture inventory + the YouTube/Instagram gaps
+├── fixtures/synthetic/instagramMedia.ts                 # hand-built adapter inputs — NOT captures
 ├── server/scrapecreators/youtubeFixtures.test.ts
-├── server/scrapecreators/client.test.ts       # includes fake-timer retry/backoff tests
-└── server/analysis/fetcher/adapter.test.ts
+├── server/scrapecreators/client.test.ts                 # includes fake-timer retry/backoff tests
+├── server/analysis/fetcher/adapter.test.ts
+├── server/analysis/parser/validation.test.ts            # parser + validation rewrite: loud failure, no fabricated scores (#68)
+├── server/analysis/media/prepareParts.test.ts           # MAX_TOTAL_MEDIA_BYTES/MAX_MEDIA_PARTS caps and partial-failure temp-file cleanup
+├── server/analysis/media/resolveMediaParts.test.ts      # carousel/non-carousel enumeration, kind discrimination by __typename/is_video, MAX_MEDIA_PARTS truncation
+├── server/analysis/media/prepareParts.mimeType.test.ts  # real-URL mime resolution — regression test for the carousel mime-type bug fixed in #71
+├── server/analysis/pipeline/viewCountBinding.test.ts    # view_count binds from video_view_count, never video_play_count; also covers coauthor_producers / like_and_view_counts_disabled persistence (#71)
+├── server/analysis/prompts/user.slideManifest.test.ts   # slide manifest "N of M" truncation signal (#71)
+└── server/db/migrations.schema.test.ts                  # full 001→009 migration chain schema assertion (#71)
 ```
 
 **Known gaps:**
