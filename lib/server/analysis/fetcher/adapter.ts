@@ -121,7 +121,16 @@ function resolveFirstVideoChild(
   );
 }
 
-/** thumbnail_src -> display_url -> first carousel child's thumbnail_src/display_url. */
+/**
+ * thumbnail_src -> display_url -> first carousel child's display_url.
+ *
+ * Fix-round note (review item 10): this used to also try
+ * `firstChild.thumbnail_src` before `firstChild.display_url` — C1 confirmed
+ * `thumbnail_src` is ABSENT on every real carousel child (it only exists on
+ * the top-level media object), so that read was dead: it resolved through
+ * `ScrapeCreatorsCarouselChildNode`'s index signature as `unknown` and was
+ * never populated. Removed rather than left in as a no-op fallback.
+ */
 function resolveThumbnailUrl(raw: ScrapeCreatorsMedia): string | null {
   const direct = str(raw.thumbnail_src) ?? str(raw.display_url);
   if (direct) {
@@ -132,7 +141,7 @@ function resolveThumbnailUrl(raw: ScrapeCreatorsMedia): string | null {
   if (!firstChild) {
     return null;
   }
-  return str(firstChild.thumbnail_src) ?? str(firstChild.display_url);
+  return str(firstChild.display_url);
 }
 
 interface ResolvedAudio {
@@ -214,7 +223,11 @@ export function adaptPostResponse(raw: ScrapeCreatorsMedia, url: string): MediaM
   const resolvedMediaType = resolveMediaType(raw, url);
   const videoChild = resolveFirstVideoChild(raw, resolvedMediaType);
 
-  const { parts: mediaParts, truncated: mediaPartsTruncated } = resolveMediaParts(raw);
+  const {
+    parts: mediaParts,
+    truncated: mediaPartsTruncated,
+    totalPartsBeforeCap: mediaPartsTotalBeforeCap,
+  } = resolveMediaParts(raw);
   const firstVideoPart = mediaParts.find((p) => p.kind === "video") ?? null;
 
   // C8: `like_and_view_counts_disabled` is post-level only, and absence
@@ -267,6 +280,7 @@ export function adaptPostResponse(raw: ScrapeCreatorsMedia, url: string): MediaM
     displayedCountIsPlayCount,
     mediaParts,
     mediaPartsTruncated,
+    mediaPartsTotalBeforeCap,
     likeAndViewCountsDisabled: bool(raw.like_and_view_counts_disabled) ?? undefined,
     coauthorUsernames: resolveCoauthorUsernames(raw),
   };

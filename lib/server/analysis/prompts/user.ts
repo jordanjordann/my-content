@@ -54,7 +54,17 @@ function buildSlideManifest(metadata: MediaMetadata): string | null {
     ? "\n\n(NOTE: this carousel has MORE slides than are listed above — it was truncated before being sent to you. Base your analysis only on the slides shown.)"
     : "";
 
-  return `## Slides (${parts.length} total, in order)\n\n${lines.join("\n")}${truncationNote}\n\nThis is ONE post — give a single holistic verdict over all slides, not a per-slide verdict.`;
+  // PR #95 review item 7: report "20 of 34" rather than just "20 total" when
+  // truncated — `mediaPartsTotalBeforeCap` carries the pre-truncation count
+  // through from resolveMediaParts()/prepareParts(), which used to be
+  // discarded before reaching the manifest.
+  const totalBeforeCap = metadata.mediaPartsTotalBeforeCap;
+  const countLabel =
+    totalBeforeCap != null && totalBeforeCap > parts.length
+      ? `${parts.length} of ${totalBeforeCap}`
+      : `${parts.length} total`;
+
+  return `## Slides (${countLabel}, in order)\n\n${lines.join("\n")}${truncationNote}\n\nThis is ONE post — give a single holistic verdict over all slides, not a per-slide verdict.`;
 }
 
 /**

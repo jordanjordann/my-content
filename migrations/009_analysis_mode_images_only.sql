@@ -1,11 +1,13 @@
 BEGIN TRANSACTION;
 
--- Ticket #71 (TDD §7, PRD §7). Two changes bundled into one rebuild because
--- SQLite cannot ALTER a CHECK constraint in place — any change to
+-- Ticket #71 (TDD §7, PRD §7). Bundled into one rebuild because SQLite
+-- cannot ALTER a CHECK constraint in place — any change to
 -- `analysis_mode`'s allowed values requires recreating the table, and once
--- that rebuild is happening the `play_count` column (Q4=(c), see below)
--- rides along for free rather than forcing a second full-table rebuild
--- later (see the ticket's owner-decision comment thread, 2026-07-22).
+-- that rebuild is happening the `play_count`, `coauthor_producers`, and
+-- `like_and_view_counts_disabled` columns (see below) ride along for free
+-- rather than forcing a second full-table rebuild later (see the ticket's
+-- owner-decision comment threads, 2026-07-22 and the PR #95 fix-round
+-- review, 2026-07-23/24).
 --
 -- 1. `analysis_mode` CHECK widens from ('full_video','metadata_only') to
 --    ('full_video','images_only','metadata_only'). An all-image carousel
@@ -26,6 +28,42 @@ BEGIN TRANSACTION;
 --    never 0 — a 0 backfill would be indistinguishable from a genuine
 --    zero-play post (the same trap as `like_and_view_counts_disabled`,
 --    C8), and historical play counts cannot be recovered after the fact.
+--
+-- 3. `coauthor_producers TEXT` (nullable) is added — PR #95 review item 4
+--    (C9). The ticket's premise that this is "already inside the
+--    persisted raw_payload" was factually false: `raw_payload` exists only
+--    on `profiles`, never on `analyses` — nothing persisted it before this.
+--    Owner decision (2026-07-23): yes, persist it, for downstream
+--    style-fingerprint work (ticket #72) — NOT for the analysis/prompt
+--    path, which must continue to never read it (see the static grep
+--    guard test in adapter.test.ts). Representation: a JSON array of
+--    coauthor usernames (e.g. '["sandiuno"]'), the natural fit for a list
+--    field — matches `resolveCoauthorUsernames()`'s `string[]` output
+--    one-to-one, no relational join needed for a rarely-queried list.
+--    Backfill for existing rows is NULL (unknown/never captured), never
+--    '[]' — a historical row's coauthor list was never recorded and an
+--    empty-array backfill would be indistinguishable from a genuinely
+--    solo-authored historical post.
+--
+-- 4. `like_and_view_counts_disabled INTEGER` (nullable boolean, 0/1/NULL)
+--    is added — PR #95 review item 9/(b). The adapter already nulls
+--    `viewCount`/`likeCount` when this flag is true (C8), which makes a
+--    `NULL` count ambiguous between "creator hid the counts" and "never
+--    fetched" — the new owner UI decision needs to display "Hidden" as a
+--    state distinct from "unknown", which requires the flag itself, not
+--    just its downstream effect on the count columns. Follows this
+--    repo's established nullable-boolean convention (`profiles.is_private`
+--    / `is_business_account`, `toNullableBoolInt`/`toNullableBoolean` in
+--    `lib/server/profiles/repository.ts`): NULL means "we don't know",
+--    never coerced to 0/false. `playCount` is deliberately NOT suppressed
+--    when this flag is true (settled, PR #95 review) — the UI decides how
+--    to present it, so the raw data is kept.
+--
+--    Explicitly NOT added: a `displayed_count_is_play_count` column (owner
+--    decision, settled) — it's a pure function of `view_count = 0 AND
+--    play_count > 0`, both of which are already real, persisted columns;
+--    storing the derived flag separately would be duplicated state that
+--    can drift. The display-layer derivation is a separate frontend ticket.
 --
 -- Table rebuild follows the 005 pattern: reproduces every column added by
 -- 001-008 and every index created by 001/003/005/006/007 verbatim, so no
@@ -68,7 +106,9 @@ CREATE TABLE analyses_new (
   engagement_rate        REAL,
   analysis_mode          TEXT CHECK(analysis_mode IN ('full_video', 'images_only', 'metadata_only')),
   schema_version         INTEGER,
-  play_count             INTEGER
+  play_count             INTEGER,
+  coauthor_producers     TEXT,
+  like_and_view_counts_disabled INTEGER
 );
 
 INSERT INTO analyses_new (
@@ -78,7 +118,8 @@ INSERT INTO analyses_new (
   result_content, result_created_at, like_count, comment_count, has_audio,
   audio_title, audio_artist, audio_id, audio_is_original, original_width,
   original_height, carousel_item_count, profile_id, follower_count,
-  engagement_rate, analysis_mode, schema_version, play_count
+  engagement_rate, analysis_mode, schema_version, play_count,
+  coauthor_producers, like_and_view_counts_disabled
 )
 SELECT
   id, prompt, raw_gemini, status, created_at, updated_at, title, url,
@@ -87,7 +128,7 @@ SELECT
   result_content, result_created_at, like_count, comment_count, has_audio,
   audio_title, audio_artist, audio_id, audio_is_original, original_width,
   original_height, carousel_item_count, profile_id, follower_count,
-  engagement_rate, analysis_mode, schema_version, NULL
+  engagement_rate, analysis_mode, schema_version, NULL, NULL, NULL
 FROM analyses;
 
 DROP TABLE analyses;

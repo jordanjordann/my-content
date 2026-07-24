@@ -233,6 +233,16 @@ export async function runAnalysis({
       }
     }
 
+    // Migration 009 (PR #95 fix-round, review items 4 and 9/(b)):
+    // `coauthor_producers` is a JSON array of usernames — the natural
+    // representation for `resolveCoauthorUsernames()`'s `string[]` output.
+    // `like_and_view_counts_disabled` follows the repo's established
+    // nullable-boolean convention (`toDbBool`, same as `has_audio`/
+    // `audio_is_original` above) — NULL means "unknown", never coerced to
+    // false, so the UI can tell "creator hid the counts" apart from
+    // "never fetched".
+    const coauthorProducersJson = JSON.stringify(metadata.coauthorUsernames ?? []);
+
     await db.execute({
       sql: `
         UPDATE analyses
@@ -243,7 +253,7 @@ export async function runAnalysis({
             audio_artist = ?, audio_id = ?, audio_is_original = ?,
             original_width = ?, original_height = ?, carousel_item_count = ?,
             profile_id = ?, follower_count = ?, engagement_rate = ?,
-            analysis_mode = ?,
+            analysis_mode = ?, coauthor_producers = ?, like_and_view_counts_disabled = ?,
             updated_at = datetime('now')
         WHERE id = ?
       `,
@@ -274,6 +284,8 @@ export async function runAnalysis({
         followerCount,
         engagementRate,
         analysisMode,
+        coauthorProducersJson,
+        toDbBool(metadata.likeAndViewCountsDisabled),
         analysisId,
       ],
     });

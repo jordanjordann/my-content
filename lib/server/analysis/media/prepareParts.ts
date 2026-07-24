@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { downloadVideo, downloadMedia } from "@/lib/server/analysis/downloader";
-import { uploadToGemini, pollUntilReady, getMimeType } from "@/lib/server/analysis/gemini";
-import { MAX_TOTAL_MEDIA_BYTES } from "./constants";
+import { uploadToGemini, pollUntilReady, getMimeType, getImageMimeType } from "@/lib/server/analysis/gemini";
+import { resolveMaxTotalMediaBytes, MAX_IMAGE_BYTES } from "./constants";
 import type { MediaPart, PreparedGeminiPart, PreparedParts } from "./types";
 
 /**
@@ -44,6 +44,12 @@ export class PreparePartsError extends Error {
  * manifest, same as a `MAX_MEDIA_PARTS` truncation.
  */
 export async function prepareParts(parts: MediaPart[]): Promise<PreparedParts> {
+  // Validated here, at call time, not at module-eval time (review item 8):
+  // an invalid MAX_TOTAL_MEDIA_BYTES env var must fail loudly when an
+  // analysis actually runs, not kill `next build` with a stack trace
+  // pointing at a constants file nobody was importing on purpose.
+  const maxTotalMediaBytes = resolveMaxTotalMediaBytes();
+
   const geminiParts: PreparedGeminiPart[] = [];
   const tempFilePaths: string[] = [];
   const videoFileUris: { uri: string; expiresAt: string }[] = [];
@@ -62,7 +68,14 @@ export async function prepareParts(parts: MediaPart[]): Promise<PreparedParts> {
         tempFilePaths.push(filePath);
 
         const stat = await fs.promises.stat(filePath);
-        if (bytesUsed + stat.size > MAX_TOTAL_MEDIA_BYTES && geminiParts.length > 0) {
+        // `&& geminiParts.length > 0` deliberately exempts the FIRST part
+        // from the aggregate ceiling — the request must never come out with
+        // ZERO parts just because the very first slide alone exceeds the
+        // total budget. This is safe for video: it's already bounded
+        // per-file by MAX_VIDEO_BYTES (enforced inside downloadVideo()).
+        // See MAX_IMAGE_BYTES in constants.ts for why images need their own
+        // per-part ceiling to make the same exemption safe there too.
+        if (bytesUsed + stat.size > maxTotalMediaBytes && geminiParts.length > 0) {
           truncatedForBytes = true;
           break;
         }
@@ -73,20 +86,28 @@ export async function prepareParts(parts: MediaPart[]): Promise<PreparedParts> {
         videoFileUris.push(uploaded);
         geminiParts.push({ fileData: { fileUri: uploaded.uri, mimeType: getMimeType(filePath) } });
       } else {
-        const remaining = MAX_TOTAL_MEDIA_BYTES - bytesUsed;
+        const remaining = maxTotalMediaBytes - bytesUsed;
+        // Same first-part exemption as the video branch above. Unlike
+        // video, images had no per-file ceiling until MAX_IMAGE_BYTES was
+        // added (review item 3) — without it, a first image on a
+        // byte-heavy carousel could consume the ENTIRE aggregate budget
+        // (~300MB), held as a Buffer AND again as ~400MB of base64 text.
+        // `perPartCap` therefore always applies MAX_IMAGE_BYTES on top of
+        // whatever budget remains, first part or not.
         if (remaining <= 0 && geminiParts.length > 0) {
           truncatedForBytes = true;
           break;
         }
-        const buffer = await downloadMedia(part.url, { maxBytes: Math.max(remaining, 1) });
-        if (bytesUsed + buffer.length > MAX_TOTAL_MEDIA_BYTES && geminiParts.length > 0) {
+        const perPartCap = Math.min(Math.max(remaining, 1), MAX_IMAGE_BYTES);
+        const buffer = await downloadMedia(part.url, { maxBytes: perPartCap });
+        if (bytesUsed + buffer.length > maxTotalMediaBytes && geminiParts.length > 0) {
           truncatedForBytes = true;
           break;
         }
         bytesUsed += buffer.length;
 
         geminiParts.push({
-          inlineData: { mimeType: getMimeType(part.url), data: buffer.toString("base64") },
+          inlineData: { mimeType: getImageMimeType(buffer, part.url), data: buffer.toString("base64") },
         });
       }
     }

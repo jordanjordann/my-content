@@ -1,3 +1,4 @@
+import path from "node:path";
 import { GoogleGenAI, FileState } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
@@ -77,4 +78,75 @@ export function getMimeType(filePath: string): string {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Ticket #71 fix-round B1: `getMimeType(filePath)` above was written for
+ * `/tmp/<uuid>.mp4` FILE PATHS and does `filePath.split(".").pop()` — for a
+ * real Instagram `display_url` (a CDN URL with a query string), that splits
+ * on every `.` in the query string too, e.g.
+ * `...&_nc_oc=Q6cZ2gGWxHcoe7LAo...` yields `'com&_nc_cat=107&_nc_oc=...'`,
+ * never `jpg`. It fell through to `default:` -> `application/octet-stream`,
+ * which Gemini rejects for `inlineData` — every carousel image failed in
+ * production.
+ *
+ * Buffer magic-byte sniffing is used here (rather than only parsing the URL
+ * pathname) because it is robust against extensionless CDN URLs too, and the
+ * caller already holds the downloaded buffer in memory (`prepareParts.ts`)
+ * — no extra I/O required. The URL pathname's extension is still tried as a
+ * fallback for the rare case a signature isn't recognised, and `image/jpeg`
+ * — Instagram's near-universal image format — is the final fallback so an
+ * unrecognised-but-real image is never sent as `application/octet-stream`.
+ */
+export function getImageMimeType(buffer: Buffer, url: string): string {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  if (
+    buffer.length >= 12 &&
+    buffer.toString("ascii", 0, 4) === "RIFF" &&
+    buffer.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  if (
+    buffer.length >= 6 &&
+    (buffer.toString("ascii", 0, 6) === "GIF87a" || buffer.toString("ascii", 0, 6) === "GIF89a")
+  ) {
+    return "image/gif";
+  }
+
+  try {
+    const ext = path.extname(new URL(url).pathname).toLowerCase();
+    switch (ext) {
+      case ".jpg":
+      case ".jpeg":
+        return "image/jpeg";
+      case ".png":
+        return "image/png";
+      case ".webp":
+        return "image/webp";
+      case ".gif":
+        return "image/gif";
+      default:
+        break;
+    }
+  } catch {
+    // Invalid URL — fall through to the default below.
+  }
+
+  return "image/jpeg";
 }

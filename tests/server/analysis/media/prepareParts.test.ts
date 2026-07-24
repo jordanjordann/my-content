@@ -16,6 +16,11 @@ vi.mock("@/lib/server/analysis/gemini", () => ({
   uploadToGemini: (...args: unknown[]) => uploadToGemini(...args),
   pollUntilReady: (...args: unknown[]) => pollUntilReady(...args),
   getMimeType: (path: string) => (path.endsWith(".jpg") ? "image/jpeg" : "video/mp4"),
+  // `getImageMimeType` is mocked away here (this file's URLs are synthetic
+  // `.jpg` placeholders, not real CDN URLs) — the REAL, unmocked
+  // implementation is exercised separately against a verbatim fixture
+  // `display_url` in prepareParts.mimeType.test.ts (ticket #71 fix-round B1).
+  getImageMimeType: (_buffer: Buffer, url: string) => (url.endsWith(".jpg") ? "image/jpeg" : "video/mp4"),
 }));
 
 vi.mock("node:fs", async (importOriginal) => {

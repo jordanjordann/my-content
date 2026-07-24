@@ -56,6 +56,16 @@ export interface MediaMetadata {
   mediaParts?: MediaPart[];
   /** `true` iff `mediaParts` was truncated by `MAX_MEDIA_PARTS` (Q3). */
   mediaPartsTruncated?: boolean;
+  /**
+   * Total part count BEFORE any truncation (`MAX_MEDIA_PARTS` or, later,
+   * `MAX_TOTAL_MEDIA_BYTES` — see pipeline/index.ts's `truncatedForBytes`
+   * reconciliation) was applied. PR #95 review item 7: without this, the
+   * slide manifest (prompts/user.ts) could only ever report how many slides
+   * it's showing, never how many the post actually had — a 34-slide post
+   * capped to 20 read "Slides (20 total)" instead of the more informative
+   * "Slides (20 of 34)".
+   */
+  mediaPartsTotalBeforeCap?: number;
 
   /**
    * C8: post-level `like_and_view_counts_disabled`. `undefined` when the

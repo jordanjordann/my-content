@@ -146,18 +146,18 @@ describe("adaptPostResponse — resolveThumbnailUrl fallback chain", () => {
     );
   });
 
-  it("falls back to the FIRST carousel child's thumbnail_src", () => {
+  it("ignores a carousel child's thumbnail_src (review item 10 — C1 confirms the field is absent on real children; dead read removed) and uses display_url instead", () => {
     const media = makeCarousel([
       makeImageChild({ thumbnail_src: "https://cdn.example/first-child-thumb.jpg" }),
       makeVideoChild(),
     ]);
 
     expect(adaptPostResponse(media, IG_POST_URL).thumbnailUrl).toBe(
-      "https://cdn.example/first-child-thumb.jpg",
+      "https://cdn.example/child-image-display.jpg",
     );
   });
 
-  it("falls back to the first carousel child's display_url when it has no thumbnail_src", () => {
+  it("falls back to the first carousel child's display_url when there's nothing else", () => {
     const media = makeCarousel([makeImageChild(), makeVideoChild()]);
 
     expect(adaptPostResponse(media, IG_POST_URL).thumbnailUrl).toBe(
@@ -593,6 +593,19 @@ describe("adaptPostResponse — real fixtures (ticket #71)", () => {
     delete withoutKey.coauthor_producers;
     const resultAbsent = adaptPostResponse(withoutKey, "https://www.instagram.com/reel/DEC1qiWsmYm/");
     expect(resultAbsent.coauthorUsernames).toEqual([]);
+  });
+
+  it("review item 7 — mediaPartsTotalBeforeCap threads the pre-cap total through to metadata", () => {
+    const children = Array.from({ length: 34 }, (_, i) =>
+      makeImageChild({ id: `slide-${i}`, display_url: `https://cdn.example/slide-${i}.jpg` }),
+    );
+    const media = makeCarousel(children);
+
+    const result = adaptPostResponse(media, "https://www.instagram.com/p/xyz/");
+
+    expect(result.mediaParts).toHaveLength(20);
+    expect(result.mediaPartsTruncated).toBe(true);
+    expect(result.mediaPartsTotalBeforeCap).toBe(34);
   });
 
   it("C9 — coauthorUsernames is never read by any prompt builder (grep-level guard)", () => {
