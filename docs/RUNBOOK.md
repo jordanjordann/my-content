@@ -1,6 +1,9 @@
 # RUNBOOK
 
-Operational reference card. Verified against `main` at `f181f53` (2026-07-22, session 2).
+Operational reference card. Migration section (§4) and test count (§7) re-verified against
+`be-71-carousel-media-migration-009` at `12e37db` (2026-07-24, PR #95 fix-round) — the rest of this
+document is unchanged from the `f181f53` (2026-07-22, session 2) verification and may be stale
+outside the areas §4/§7 touch.
 
 ---
 
@@ -152,28 +155,21 @@ sqlite3 my-content.db "select name from _migrations;"
 sqlite3 my-content.db "select count(*) from analyses;"
 ```
 
-### Current state — effectively empty (re-measured 2026-07-22)
+### Current state — stale, re-verify before trusting
 
-Measured on the local `my-content.db` on 2026-07-22 (this section previously claimed 006 was
-unapplied and that no `profiles` table existed — that was **stale and has misled at least one
-agent**; corrected below):
-
-- Tables present: `_migrations`, `analyses`, **`profiles`**, `settings`.
-- `_migrations`: **001–006 all applied.** `006_scrapecreators_fields_and_profiles.sql` was applied
-  at `2026-07-22 01:51:31`.
-- `analyses`: **1 row**.
-- `profiles`: **0 rows** (table exists, empty).
-- `settings`: 2 rows (`pin_hash`, `pin_set_at`).
-
-Re-verify rather than trusting this snapshot:
+The last hand-measured local-DB snapshot (2026-07-22, session 2: `_migrations` 001–006 applied, 1
+`analyses` row, empty `profiles`) predates 007/008/009 below and is **not** re-verified here — the
+schema facts that matter are captured in the migration files themselves and in the
+`PRAGMA table_info`/`index_list` assertion test (§7), not in a point-in-time row count. Re-measure
+your own local DB rather than trusting any snapshot in this doc:
 
 ```bash
 sqlite3 my-content.db "select name, applied_at from _migrations;"
 sqlite3 my-content.db ".tables"
 ```
 
-This is why the analysis schema redesign is a **replacement, not a migration project** — there is
-essentially no data to preserve. Do not budget for backfill.
+This is why the analysis schema redesign is a **replacement, not a migration project** — there was
+essentially no production data to preserve as of the redesign's start. Do not budget for backfill.
 
 ### Migrations
 
@@ -183,6 +179,26 @@ essentially no data to preserve. Do not budget for backfill.
 - Convention: **additive only, no down-migrations.** Nothing in the repo rolls back — to undo, write
   a new forward migration.
 - Run with `npm run db:migrate`.
+
+**Current chain (001 → 009, as of PR #95):**
+
+| # | File | What it does |
+|---|---|---|
+| 001 | `001_initial.sql` | Initial schema: `settings`, `analyses`, `content_items`, `analysis_results` |
+| 002 | `002_make_prompt_nullable.sql` | `analyses.prompt` nullable |
+| 003 | `003_add_title_to_analyses.sql` | `+ analyses.title` |
+| 004 | `004_flatten_analysis_content.sql` | Flattens `content_items`/`analysis_results` into `analyses` |
+| 005 | `005_enforce_single_content_analysis.sql` | Full rebuild: enforces single-content-per-analysis, `NOT NULL`s |
+| 006 | `006_scrapecreators_fields_and_profiles.sql` | `+ profiles` table; adds ScrapeCreators-sourced columns to `analyses` (audio, engagement, etc.) |
+| 007 | `007_add_schema_version.sql` | `+ analyses.schema_version` |
+| 008 | `008_delete_legacy_pre_redesign_analyses.sql` | Data-only: deletes pre-redesign rows (no schema change) |
+| 009 | `009_analysis_mode_images_only.sql` | Full rebuild (ticket #71 + PR #95 fix-round): widens `analysis_mode` CHECK to include `'images_only'`; adds `play_count`, `coauthor_producers` (JSON array of usernames), `like_and_view_counts_disabled` (nullable boolean). **37 → 39 columns on `analyses`**, no drops — see the migration file's own header comment and the `PRAGMA table_info`/`index_list` assertion test (§7) for the full before/after. |
+
+`analyses` currently has **39 named columns** and **6 explicitly-created indexes**
+(`idx_analyses_updated_at`, `idx_analyses_title`, `idx_analyses_username`, `idx_analyses_platform`,
+`idx_analyses_profile_id`, `idx_analyses_schema_version`) — asserted by
+`tests/server/db/migrations.schema.test.ts`, which runs the full 001→009 chain against a fresh
+in-memory database rather than relying on hand-verification of each rebuild.
 
 ---
 
@@ -272,18 +288,28 @@ read from `.claude/context/fixtures/` via `tests/helpers/fixtures.ts`, which thr
 path-naming error if a fixture file is missing. See §5 for why this matters (credits, and
 `/v1/youtube/channel` charging even on a miss).
 
+**Current state: 11 test files, 138 tests** (confirmed via `npm run test -- --run` as of PR #95 /
+ticket #71).
+
 Layout:
 
 ```
 tests/
-├── setup/blockLiveFetch.ts                    # global fetch guard, wired via setupFiles
-├── setup/blockLiveFetch.test.ts                # proves the guard works
-├── helpers/fixtures.ts                        # loader for .claude/context/fixtures/ (fail-fast on missing file)
-├── fixtures/README.md                         # fixture inventory + the YouTube/Instagram gaps
-├── fixtures/synthetic/instagramMedia.ts       # hand-built adapter inputs — NOT captures
+├── setup/blockLiveFetch.ts                              # global fetch guard, wired via setupFiles
+├── setup/blockLiveFetch.test.ts                          # proves the guard works
+├── helpers/fixtures.ts                                  # loader for .claude/context/fixtures/ (fail-fast on missing file)
+├── fixtures/README.md                                   # fixture inventory + the YouTube/Instagram gaps
+├── fixtures/synthetic/instagramMedia.ts                 # hand-built adapter inputs — NOT captures
 ├── server/scrapecreators/youtubeFixtures.test.ts
-├── server/scrapecreators/client.test.ts       # includes fake-timer retry/backoff tests
-└── server/analysis/fetcher/adapter.test.ts
+├── server/scrapecreators/client.test.ts                 # includes fake-timer retry/backoff tests
+├── server/analysis/fetcher/adapter.test.ts
+├── server/analysis/parser/validation.test.ts            # parser + validation rewrite: loud failure, no fabricated scores (#68)
+├── server/analysis/media/prepareParts.test.ts           # MAX_TOTAL_MEDIA_BYTES/MAX_MEDIA_PARTS caps and partial-failure temp-file cleanup
+├── server/analysis/media/resolveMediaParts.test.ts      # carousel/non-carousel enumeration, kind discrimination by __typename/is_video, MAX_MEDIA_PARTS truncation
+├── server/analysis/media/prepareParts.mimeType.test.ts  # real-URL mime resolution — regression test for the carousel mime-type bug fixed in #71
+├── server/analysis/pipeline/viewCountBinding.test.ts    # view_count binds from video_view_count, never video_play_count; also covers coauthor_producers / like_and_view_counts_disabled persistence (#71)
+├── server/analysis/prompts/user.slideManifest.test.ts   # slide manifest "N of M" truncation signal (#71)
+└── server/db/migrations.schema.test.ts                  # full 001→009 migration chain schema assertion (#71)
 ```
 
 **Known gaps:**
