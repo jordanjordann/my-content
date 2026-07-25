@@ -20,3 +20,22 @@ export const MIN_ANALYSES_FOR_FINGERPRINT = 5;
  * computation rules.
  */
 export const FINGERPRINT_VERSION = 1;
+
+/**
+ * Row-level identity/provenance fields. Never legitimately human-overridable
+ * — overriding `profileId`/`fingerprintVersion`/`schemaVersion`/`createdAt`/
+ * `updatedAt` would let a human corrupt what row this even is or when it was
+ * written, which is a different kind of thing than correcting a computed
+ * content field like `consistencyIndex` or a style distribution.
+ *
+ * Used both to reject these keys at write time (`setFingerprintOverrides`)
+ * and to keep `getFingerprint`'s `overriddenKeys` honest — a key that can
+ * never take effect must never be reported as overridden.
+ */
+export const PROVENANCE_FIELDS = [
+  "profileId",
+  "fingerprintVersion",
+  "schemaVersion",
+  "createdAt",
+  "updatedAt",
+] as const;

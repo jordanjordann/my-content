@@ -188,6 +188,54 @@ describe("recomputeFingerprint — override-safe recompute (Step 2)", () => {
     expect(merged!.audienceCalloutRate).toBe(0.99); // override wins at read time
     expect(merged!.overriddenKeys).toEqual(["audienceCalloutRate"]);
   });
+
+  it("an override on consistencyIndex genuinely wins at read time (regression: read-merge previously clobbered it)", async () => {
+    const { recomputeFingerprint, setFingerprintOverrides, getFingerprint, getFingerprintRow } = await import(
+      "@/lib/server/fingerprint"
+    );
+    const profileId = randomUUID();
+    await insertProfile(db, profileId);
+    for (let i = 0; i < 5; i++) {
+      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+    }
+
+    const computedResult = await recomputeFingerprint(profileId);
+    const computedConsistencyIndex = computedResult!.consistencyIndex;
+    const overriddenConsistencyIndex = computedConsistencyIndex === 0.8 ? 0.42 : 0.8;
+    await setFingerprintOverrides(profileId, { consistencyIndex: overriddenConsistencyIndex });
+
+    // A 6th analysis lands; recompute runs again and rewrites `computed`/
+    // `consistency_index` underneath the override — the override column
+    // itself is never touched.
+    await insertAnalysis(db, { profileId, schemaVersion: 2 });
+    await recomputeFingerprint(profileId);
+
+    const row = await getFingerprintRow(profileId);
+    expect(row!.overrides).toEqual({ consistencyIndex: overriddenConsistencyIndex });
+
+    const merged = await getFingerprint(profileId);
+    // The bug: the read-path merge hardcoded `consistencyIndex:
+    // row.consistencyIndex` AFTER spreading `overrides`, so this assertion
+    // would previously fail — it returned the computed value, not the
+    // override.
+    expect(merged!.consistencyIndex).toBe(overriddenConsistencyIndex);
+    expect(merged!.consistencyIndex).not.toBe(row!.consistencyIndex);
+    expect(merged!.overriddenKeys).toEqual(["consistencyIndex"]);
+  });
+
+  it("rejects an override attempt on a provenance field", async () => {
+    const { recomputeFingerprint, setFingerprintOverrides } = await import("@/lib/server/fingerprint");
+    const profileId = randomUUID();
+    await insertProfile(db, profileId);
+    for (let i = 0; i < 5; i++) {
+      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+    }
+    await recomputeFingerprint(profileId);
+
+    await expect(setFingerprintOverrides(profileId, { profileId: "some-other-id" })).rejects.toThrow(
+      /provenance field/,
+    );
+  });
 });
 
 describe("recomputeFingerprint — co-authored posts count at equal weight (owner decision, 2026-07-24)", () => {

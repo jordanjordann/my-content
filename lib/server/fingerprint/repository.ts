@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { db } from "@/lib/server/db";
 import type { ContentAnalysis } from "@/lib/server/analysis/types";
+import { PROVENANCE_FIELDS } from "./constants";
 import type { ComputedFingerprint, FingerprintSourceAnalysis, StyleFingerprint } from "./types";
 
 /**
@@ -140,11 +141,28 @@ export async function upsertFingerprint(input: UpsertFingerprintInput): Promise<
  * fingerprint. Not wired to an API route by this ticket (Files Affected
  * lists no route) — exposed here as the primitive a future ticket's
  * endpoint and this ticket's own override-safety tests both call directly.
+ *
+ * Rejects an attempt to override a row-identity/provenance field (see
+ * `PROVENANCE_FIELDS`) — those aren't a computed value a human could
+ * plausibly correct, and `getFingerprint`'s read-time merge never lets
+ * them win regardless, so silently accepting the write would just be a
+ * write that can never actually take effect.
  */
 export async function setFingerprintOverrides(
   profileId: string,
   overrides: Record<string, unknown> | null,
 ): Promise<void> {
+  if (overrides) {
+    const rejected = Object.keys(overrides).filter((key) =>
+      (PROVENANCE_FIELDS as readonly string[]).includes(key),
+    );
+    if (rejected.length > 0) {
+      throw new Error(
+        `setFingerprintOverrides: cannot override provenance field(s): ${rejected.join(", ")}`,
+      );
+    }
+  }
+
   await db.execute({
     sql: `
       UPDATE profile_style_fingerprints
