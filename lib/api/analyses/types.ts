@@ -42,6 +42,10 @@ export type AnalysisListItem = {
   schemaVersion: number | null;
   thumbnailUrl: string | null;
   viewCount: number | null;
+  playCount: number | null;
+  likeCount: number | null;
+  /** `null` means "unknown" (not fetched / not yet backfilled) — never coerce to `false`. */
+  likeAndViewCountsDisabled: boolean | null;
   postDate: string | null;
   durationSec: number | null;
   caption: string | null;
@@ -122,6 +126,10 @@ export type AnalysisDetail = {
   username: string;
   thumbnailUrl: string | null;
   viewCount: number | null;
+  playCount: number | null;
+  likeCount: number | null;
+  /** `null` means "unknown" (not fetched / not yet backfilled) — never coerce to `false`. */
+  likeAndViewCountsDisabled: boolean | null;
   postDate: string | null;
   caption: string | null;
   durationSec: number | null;

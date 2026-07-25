@@ -7,6 +7,19 @@ export const db = createClient({
   authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
+/**
+ * Preserves "unknown" end to end: a NULL column stays `null`, never
+ * silently coerced to `false`. Only a stored `1` is `true`; anything else
+ * that isn't NULL (i.e. `0`) is `false`. Mirrors
+ * `toNullableBoolean` in `lib/server/profiles/repository.ts`.
+ */
+function toNullableBoolean(value: unknown): boolean | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return Number(value) === 1;
+}
+
 export async function getSetting(key: string) {
   const result = await db.execute({
     sql: "SELECT value FROM settings WHERE key = ? LIMIT 1",
@@ -56,6 +69,9 @@ export async function getAnalysesList() {
         a.username,
         a.thumbnail_url,
         a.view_count,
+        a.play_count,
+        a.like_count,
+        a.like_and_view_counts_disabled,
         a.post_date,
         a.caption,
         a.duration_sec,
@@ -80,6 +96,9 @@ export async function getAnalysesList() {
     username: row.username as string,
     thumbnailUrl: (row.thumbnail_url as string) ?? null,
     viewCount: row.view_count == null ? null : Number(row.view_count),
+    playCount: row.play_count == null ? null : Number(row.play_count),
+    likeCount: row.like_count == null ? null : Number(row.like_count),
+    likeAndViewCountsDisabled: toNullableBoolean(row.like_and_view_counts_disabled),
     postDate: (row.post_date as string) ?? null,
     caption: (row.caption as string) ?? null,
     durationSec: row.duration_sec == null ? null : Number(row.duration_sec),
@@ -103,7 +122,8 @@ export async function getAnalysisDetail(analysisId: string) {
   const analysisResult = await db.execute({
     sql: `
       SELECT id, prompt, status, title, url, platform, media_type, username,
-             thumbnail_url, view_count, post_date, caption, duration_sec,
+             thumbnail_url, view_count, play_count, like_count,
+             like_and_view_counts_disabled, post_date, caption, duration_sec,
              result_content, schema_version, created_at
       FROM analyses
       WHERE id = ?
@@ -128,6 +148,9 @@ export async function getAnalysisDetail(analysisId: string) {
     username: analysisRow.username as string,
     thumbnailUrl: (analysisRow.thumbnail_url as string) ?? null,
     viewCount: analysisRow.view_count == null ? null : Number(analysisRow.view_count),
+    playCount: analysisRow.play_count == null ? null : Number(analysisRow.play_count),
+    likeCount: analysisRow.like_count == null ? null : Number(analysisRow.like_count),
+    likeAndViewCountsDisabled: toNullableBoolean(analysisRow.like_and_view_counts_disabled),
     postDate: (analysisRow.post_date as string) ?? null,
     caption: (analysisRow.caption as string) ?? null,
     durationSec: analysisRow.duration_sec == null ? null : Number(analysisRow.duration_sec),
