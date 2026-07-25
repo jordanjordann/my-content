@@ -25,13 +25,15 @@
   body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
   .num { font-variant-numeric: tabular-nums; }
 
-  /* Neutral info icon — a circled lowercase "i". Deliberately NOT red/amber/alert.
-     Slate/muted so it reads as "here's context", not "something is wrong". */
+  /* Info icon — a circled lowercase "i", rendered in INFO-BLUE (owner-confirmed).
+     Blue is the conventional "here's some context" signal and is deliberately
+     NOT red/amber/alert. Verified safe against the app's color grammar: red =
+     error, amber/yellow = warning/pending, blue = unused for status. */
   .info-i {
     display: inline-flex; align-items: center; justify-content: center;
     width: 15px; height: 15px; border-radius: 9999px;
     font-size: 10px; line-height: 1; font-style: italic; font-weight: 700;
-    color: #64748b; border: 1.5px solid #94a3b8; background: #f8fafc;
+    color: #2563eb; border: 1.5px solid #3b82f6; background: #eff6ff;
     cursor: help; user-select: none;
   }
   .info-i:focus-visible { outline: 2px solid #4338ca; outline-offset: 2px; }
@@ -64,10 +66,10 @@
 
   <!-- Meta controls: NOT part of the app, just for reviewing this mockup -->
   <div class="sticky top-0 z-50 border-b bg-white/95 backdrop-blur px-6 py-3 flex flex-wrap items-center gap-3 shadow-sm">
-    <span class="text-sm font-semibold">Design review — Ticket #96:</span>
-    <button onclick="showDir('a')" id="btn-a" class="px-3 py-1.5 rounded-md text-sm font-medium bg-primary text-white">Direction A — Quiet inline label</button>
-    <button onclick="showDir('b')" id="btn-b" class="px-3 py-1.5 rounded-md text-sm font-medium bg-slate-200 text-slate-700">Direction B — Explicit "plays" tag</button>
-    <span class="text-xs text-mutedfg ml-auto">Four states: Hidden · 0 · — (unknown) · plays-not-views</span>
+    <span class="text-sm font-semibold">Ticket #96 — <span class="text-emerald-700">FINAL</span>:</span>
+    <button onclick="showDir('a')" id="btn-a" class="px-3 py-1.5 rounded-md text-sm font-medium bg-primary text-white">Direction A — Quiet inline label ✓ SHIPPED</button>
+    <button onclick="showDir('b')" id="btn-b" class="px-3 py-1.5 rounded-md text-sm font-medium bg-slate-200 text-slate-500 line-through">Direction B — "plays" tag (REJECTED)</button>
+    <span class="text-xs text-mutedfg ml-auto">Direction A is final on all surfaces. B shown for history only.</span>
   </div>
 
   <div class="mx-auto max-w-6xl p-6 space-y-8">
@@ -301,13 +303,13 @@
     </section>
 
     <!-- ============================================================ -->
-    <!-- OPEN QUESTION -->
+    <!-- SETTLED: carousels & State 4 -->
     <!-- ============================================================ -->
-    <section class="rounded-2xl border-2 border-dashed border-accent bg-orange-50/40 p-6">
-      <h2 class="font-semibold text-accent">⚑ Open question for owner — carousels &amp; State 4</h2>
+    <section class="rounded-2xl border border-emerald-300 bg-emerald-50/50 p-6">
+      <h2 class="font-semibold text-emerald-700">✓ Settled — State 4 is Reels-only (structural, not a preference)</h2>
       <p class="text-sm text-slate-700 mt-2 leading-relaxed">
-        Carousel children carry <code class="text-xs bg-white px-1 rounded border">play_count = null</code>. Should State 4 (plays-not-views) be <b>Reels-only</b>, with carousels simply falling through to "0" (State 2) or "—" (State 3)?
-        This mockup assumes <b>yes — carousels never show a plays label</b> (see "Draft Carousel" rows, which use "—"). <b>Not a settled decision</b> — needs owner confirmation before build.
+        Instagram's API <b>never returns a play count for carousel children</b> — <code class="text-xs bg-white px-1 rounded border">video_play_count</code> comes back <code class="text-xs bg-white px-1 rounded border">null</code> (not <code class="text-xs bg-white px-1 rounded border">0</code>) on every captured carousel child, so there is nothing to fall back to. Reels reliably carry a real play count when views is 0.
+        Therefore State 4 (plays-labelled-as-plays) is <b>structurally Reels-only</b>: a carousel with <code class="text-xs bg-white px-1 rounded border">view_count = 0</code> can only render "0" (State 2) or "—" (State 3), never a plays label. The "Draft Carousel" rows above reflect this confidently. No open decision remains.
       </p>
     </section>
 
@@ -318,7 +320,8 @@
       document.querySelectorAll('[data-a]').forEach(el => el.classList.toggle('hidden', d !== 'a'));
       document.querySelectorAll('[data-b]').forEach(el => el.classList.toggle('hidden', d !== 'b'));
       document.getElementById('btn-a').className = 'px-3 py-1.5 rounded-md text-sm font-medium ' + (d==='a' ? 'bg-primary text-white' : 'bg-slate-200 text-slate-700');
-      document.getElementById('btn-b').className = 'px-3 py-1.5 rounded-md text-sm font-medium ' + (d==='b' ? 'bg-primary text-white' : 'bg-slate-200 text-slate-700');
+      // Direction B is REJECTED — always keep it struck through, even while previewing it.
+      document.getElementById('btn-b').className = 'px-3 py-1.5 rounded-md text-sm font-medium line-through ' + (d==='b' ? 'bg-amber-200 text-amber-800' : 'bg-slate-200 text-slate-500');
     }
     showDir('a');
   </script>
