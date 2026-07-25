@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Engagement Count Display States — Mockup (Direction A vs B)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          primary: '#4338ca',
+          accent: '#ea7e2e',
+          muted: '#f1f2f6',
+          mutedfg: '#6b7280',
+          card: '#ffffff',
+          border: '#e2e4ea',
+        }
+      }
+    }
+  }
+</script>
+<style>
+  body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* Neutral info icon — a circled lowercase "i". Deliberately NOT red/amber/alert.
+     Slate/muted so it reads as "here's context", not "something is wrong". */
+  .info-i {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 15px; height: 15px; border-radius: 9999px;
+    font-size: 10px; line-height: 1; font-style: italic; font-weight: 700;
+    color: #64748b; border: 1.5px solid #94a3b8; background: #f8fafc;
+    cursor: help; user-select: none;
+  }
+  .info-i:focus-visible { outline: 2px solid #4338ca; outline-offset: 2px; }
+
+  /* Tooltip: mirrors the ticket #70 scorecard-rubric tooltip interaction —
+     appears on hover AND keyboard focus, role="tooltip" + aria-describedby. */
+  .tip-wrap { position: relative; display: inline-flex; align-items: center; }
+  .tip {
+    position: absolute; bottom: calc(100% + 8px); right: 0;
+    width: 240px; padding: 8px 10px; border-radius: 8px;
+    background: #1e293b; color: #f8fafc; font-size: 11.5px; line-height: 1.45;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18); z-index: 40;
+    opacity: 0; visibility: hidden; transition: opacity .12s ease;
+    text-align: left; font-weight: 400;
+  }
+  .tip-wrap:hover .tip,
+  .info-i:focus-visible + .tip,
+  .info-i:focus + .tip { opacity: 1; visibility: visible; }
+
+  /* "plays" tag (Direction B) */
+  .tag-plays {
+    font-size: 9.5px; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: #b45309; background: #fef3c7;
+    padding: 1px 5px; border-radius: 4px;
+  }
+  .emdash { color: #94a3b8; }
+</style>
+</head>
+<body class="bg-slate-100 text-slate-900">
+
+  <!-- Meta controls: NOT part of the app, just for reviewing this mockup -->
+  <div class="sticky top-0 z-50 border-b bg-white/95 backdrop-blur px-6 py-3 flex flex-wrap items-center gap-3 shadow-sm">
+    <span class="text-sm font-semibold">Design review — Ticket #96:</span>
+    <button onclick="showDir('a')" id="btn-a" class="px-3 py-1.5 rounded-md text-sm font-medium bg-primary text-white">Direction A — Quiet inline label</button>
+    <button onclick="showDir('b')" id="btn-b" class="px-3 py-1.5 rounded-md text-sm font-medium bg-slate-200 text-slate-700">Direction B — Explicit "plays" tag</button>
+    <span class="text-xs text-mutedfg ml-auto">Four states: Hidden · 0 · — (unknown) · plays-not-views</span>
+  </div>
+
+  <div class="mx-auto max-w-6xl p-6 space-y-8">
+
+    <!-- ============================================================ -->
+    <!-- 0. THE FOUR STATES — LEGEND -->
+    <!-- ============================================================ -->
+    <section class="rounded-2xl border border-border bg-card shadow-sm p-6">
+      <h1 class="text-lg font-semibold">The four engagement-count states</h1>
+      <p class="text-sm text-mutedfg mt-1">The same treatment is used everywhere a view / play / like count appears. Distinguishable by <b>icon + text</b>, never color alone.</p>
+
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-5">
+        <!-- State 1 -->
+        <div class="rounded-xl border border-border p-4">
+          <div class="text-[11px] uppercase tracking-wide text-mutedfg font-semibold">State 1 · Disabled by creator</div>
+          <div class="mt-2 text-xl font-semibold flex items-center gap-1.5">
+            <span class="tip-wrap">
+              <span class="text-slate-500">Hidden</span>
+              <span class="info-i" tabindex="0" role="button" aria-label="Why is this hidden?" aria-describedby="tip-legend">i</span>
+              <span class="tip" id="tip-legend" role="tooltip">The creator turned off view and like counts on this post. This is a creator setting — not zero, and not missing data.</span>
+            </span>
+          </div>
+          <p class="text-xs text-mutedfg mt-2">Neutral info icon + tooltip. Hover <b>or</b> keyboard-focus the icon.</p>
+        </div>
+        <!-- State 2 -->
+        <div class="rounded-xl border border-border p-4">
+          <div class="text-[11px] uppercase tracking-wide text-mutedfg font-semibold">State 2 · Genuine zero</div>
+          <div class="mt-2 text-xl font-semibold num">0</div>
+          <p class="text-xs text-mutedfg mt-2">A real, measured zero. Full-strength text — it's trustworthy data.</p>
+        </div>
+        <!-- State 3 -->
+        <div class="rounded-xl border border-border p-4">
+          <div class="text-[11px] uppercase tracking-wide text-mutedfg font-semibold">State 3 · Unknown / never fetched</div>
+          <div class="mt-2 text-xl font-semibold"><span class="emdash">&mdash;</span></div>
+          <p class="text-xs text-mutedfg mt-2">Em dash, muted. No icon. "We don't have this," distinct from "it was zero."</p>
+        </div>
+        <!-- State 4 -->
+        <div class="rounded-xl border border-border p-4">
+          <div class="text-[11px] uppercase tracking-wide text-mutedfg font-semibold">State 4 · Views 0, plays exist</div>
+          <div class="mt-2 text-xl font-semibold num flex items-baseline gap-1.5">
+            <span data-a>116.3K <span class="text-xs font-normal text-mutedfg">plays</span></span>
+            <span data-b class="hidden">116.3K <span class="tag-plays align-middle">plays</span></span>
+          </div>
+          <p class="text-xs text-mutedfg mt-2">Show the real play count, explicitly labelled <b>plays</b> — never the false "0 views".</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- SURFACE 1 — LIST / TABLE -->
+    <!-- ============================================================ -->
+    <section class="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b">
+        <h2 class="font-semibold">Surface 1 — Analyses list / table</h2>
+        <p class="text-xs text-mutedfg mt-0.5">Count columns are right-aligned (numeric convention). Non-numeric states ("Hidden", "—") stay right-aligned in-column and sort to the BOTTOM.</p>
+      </div>
+      <table class="w-full text-sm">
+        <thead class="bg-muted text-mutedfg text-xs uppercase tracking-wide">
+          <tr>
+            <th class="text-left font-semibold px-6 py-2.5">Content</th>
+            <th class="text-left font-semibold px-4 py-2.5">Type</th>
+            <th class="text-right font-semibold px-4 py-2.5">Views ▼</th>
+            <th class="text-right font-semibold px-6 py-2.5">Likes</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border">
+          <!-- normal, unchanged -->
+          <tr>
+            <td class="px-6 py-3">Nasi Goreng Kampung 5 Menit</td>
+            <td class="px-4 py-3 text-mutedfg">Reel</td>
+            <td class="px-4 py-3 text-right num">482.1K</td>
+            <td class="px-6 py-3 text-right num">31.4K</td>
+          </tr>
+          <!-- State 4: plays not views -->
+          <tr>
+            <td class="px-6 py-3">Tutorial Sambal Matah <span class="text-[10px] text-mutedfg">(0 views, 116K plays)</span></td>
+            <td class="px-4 py-3 text-mutedfg">Reel</td>
+            <td class="px-4 py-3 text-right num">
+              <span data-a>116.3K <span class="text-[11px] font-normal text-mutedfg">plays</span></span>
+              <span data-b class="hidden">116.3K <span class="tag-plays">plays</span></span>
+            </td>
+            <td class="px-6 py-3 text-right num">4.8K</td>
+          </tr>
+          <!-- State 2: genuine zero -->
+          <tr>
+            <td class="px-6 py-3">Behind the Scenes Dapur</td>
+            <td class="px-4 py-3 text-mutedfg">Reel</td>
+            <td class="px-4 py-3 text-right num">0</td>
+            <td class="px-6 py-3 text-right num">0</td>
+          </tr>
+          <!-- === sort boundary: non-numeric states below === -->
+          <!-- State 1: hidden -->
+          <tr>
+            <td class="px-6 py-3">Kolaborasi Brand X</td>
+            <td class="px-4 py-3 text-mutedfg">Reel</td>
+            <td class="px-4 py-3 text-right">
+              <span class="tip-wrap justify-end">
+                <span class="text-slate-500">Hidden</span>
+                <span class="info-i" tabindex="0" role="button" aria-label="Why is the view count hidden?" aria-describedby="tip-t-v">i</span>
+                <span class="tip" id="tip-t-v" role="tooltip">The creator turned off view and like counts on this post. This is a creator setting — not zero, and not missing data.</span>
+              </span>
+            </td>
+            <td class="px-6 py-3 text-right">
+              <span class="tip-wrap justify-end">
+                <span class="text-slate-500">Hidden</span>
+                <span class="info-i" tabindex="0" role="button" aria-label="Why is the like count hidden?" aria-describedby="tip-t-l">i</span>
+                <span class="tip" id="tip-t-l" role="tooltip">The creator turned off view and like counts on this post. This is a creator setting — not zero, and not missing data.</span>
+              </span>
+            </td>
+          </tr>
+          <!-- State 3: unknown -->
+          <tr>
+            <td class="px-6 py-3">Draft Carousel (belum di-scrape)</td>
+            <td class="px-4 py-3 text-mutedfg">Carousel</td>
+            <td class="px-4 py-3 text-right"><span class="emdash">&mdash;</span></td>
+            <td class="px-6 py-3 text-right"><span class="emdash">&mdash;</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="px-6 py-2 bg-muted/50 text-[11px] text-mutedfg border-t">Rows above the last two are numeric and sort by value; "Hidden" and "—" always sink to the bottom regardless of sort direction.</div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- SURFACE 2 — CARDS -->
+    <!-- ============================================================ -->
+    <section class="rounded-2xl border border-border bg-card shadow-sm p-6">
+      <h2 class="font-semibold">Surface 2 — Analysis cards</h2>
+      <p class="text-xs text-mutedfg mt-0.5">Same treatments, compact. Icon glyphs (👁 ❤️) label the metric; the state treatment sits in the value slot.</p>
+
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-5">
+        <!-- State 4 card -->
+        <div class="rounded-xl border border-border overflow-hidden">
+          <div class="aspect-video bg-slate-100 flex items-center justify-center text-3xl">🎬</div>
+          <div class="p-3">
+            <div class="text-sm font-medium truncate">Tutorial Sambal Matah</div>
+            <div class="mt-2 flex items-center justify-between text-sm num">
+              <span class="flex items-center gap-1 text-slate-700">👁
+                <span data-a>116.3K <span class="text-[11px] text-mutedfg font-normal">plays</span></span>
+                <span data-b class="hidden">116.3K <span class="tag-plays">plays</span></span>
+              </span>
+              <span class="flex items-center gap-1 text-slate-700">❤️ 4.8K</span>
+            </div>
+          </div>
+        </div>
+        <!-- State 1 card -->
+        <div class="rounded-xl border border-border overflow-hidden">
+          <div class="aspect-video bg-slate-100 flex items-center justify-center text-3xl">🎬</div>
+          <div class="p-3">
+            <div class="text-sm font-medium truncate">Kolaborasi Brand X</div>
+            <div class="mt-2 flex items-center justify-between text-sm">
+              <span class="tip-wrap gap-1 text-slate-500">👁 Hidden
+                <span class="info-i" tabindex="0" role="button" aria-label="Why is this hidden?" aria-describedby="tip-c1">i</span>
+                <span class="tip" id="tip-c1" role="tooltip" style="left:0; right:auto;">The creator turned off view and like counts on this post. This is a creator setting — not zero, and not missing data.</span>
+              </span>
+              <span class="text-slate-500 text-sm">❤️ Hidden</span>
+            </div>
+          </div>
+        </div>
+        <!-- State 2 card -->
+        <div class="rounded-xl border border-border overflow-hidden">
+          <div class="aspect-video bg-slate-100 flex items-center justify-center text-3xl">🎬</div>
+          <div class="p-3">
+            <div class="text-sm font-medium truncate">Behind the Scenes Dapur</div>
+            <div class="mt-2 flex items-center justify-between text-sm num text-slate-700">
+              <span class="flex items-center gap-1">👁 0</span>
+              <span class="flex items-center gap-1">❤️ 0</span>
+            </div>
+          </div>
+        </div>
+        <!-- State 3 card -->
+        <div class="rounded-xl border border-border overflow-hidden">
+          <div class="aspect-video bg-slate-100 flex items-center justify-center text-3xl">🎬</div>
+          <div class="p-3">
+            <div class="text-sm font-medium truncate">Draft Carousel</div>
+            <div class="mt-2 flex items-center justify-between text-sm">
+              <span class="flex items-center gap-1 text-slate-700">👁 <span class="emdash">&mdash;</span></span>
+              <span class="flex items-center gap-1 text-slate-700">❤️ <span class="emdash">&mdash;</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- SURFACE 3 — DETAIL MODAL SIDEBAR -->
+    <!-- ============================================================ -->
+    <section class="rounded-2xl border border-border bg-card shadow-sm p-6">
+      <h2 class="font-semibold">Surface 3 — Analysis detail modal (sidebar meta block)</h2>
+      <p class="text-xs text-mutedfg mt-0.5">The counts live in the modal's left meta sidebar (same slot as "482K views · 3 Jul 2026" today). More vertical room, so counts stack.</p>
+
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-5">
+        <!-- 4 mini-sidebars showing each state -->
+        <div class="rounded-xl border border-border p-4 bg-slate-50">
+          <div class="text-[11px] uppercase tracking-wide text-mutedfg font-semibold mb-2">Plays-not-views</div>
+          <div class="flex flex-col gap-2 text-sm text-slate-700 num">
+            <div class="flex items-center gap-2">👁
+              <span data-a>116.3K <span class="text-xs text-mutedfg font-normal">plays</span></span>
+              <span data-b class="hidden">116.3K <span class="tag-plays">plays</span></span>
+            </div>
+            <div class="flex items-center gap-2">❤️ 4.8K likes</div>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-border p-4 bg-slate-50">
+          <div class="text-[11px] uppercase tracking-wide text-mutedfg font-semibold mb-2">Hidden by creator</div>
+          <div class="flex flex-col gap-2 text-sm text-slate-500">
+            <div class="tip-wrap gap-2">👁 Hidden
+              <span class="info-i" tabindex="0" role="button" aria-label="Why is this hidden?" aria-describedby="tip-m1">i</span>
+              <span class="tip" id="tip-m1" role="tooltip" style="left:0; right:auto;">The creator turned off view and like counts on this post. This is a creator setting — not zero, and not missing data.</span>
+            </div>
+            <div class="flex items-center gap-2">❤️ Hidden</div>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-border p-4 bg-slate-50">
+          <div class="text-[11px] uppercase tracking-wide text-mutedfg font-semibold mb-2">Genuine zero</div>
+          <div class="flex flex-col gap-2 text-sm text-slate-700 num">
+            <div class="flex items-center gap-2">👁 0 views</div>
+            <div class="flex items-center gap-2">❤️ 0 likes</div>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-border p-4 bg-slate-50">
+          <div class="text-[11px] uppercase tracking-wide text-mutedfg font-semibold mb-2">Unknown</div>
+          <div class="flex flex-col gap-2 text-sm text-slate-700">
+            <div class="flex items-center gap-2">👁 <span class="emdash">&mdash;</span> views</div>
+            <div class="flex items-center gap-2">❤️ <span class="emdash">&mdash;</span> likes</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- OPEN QUESTION -->
+    <!-- ============================================================ -->
+    <section class="rounded-2xl border-2 border-dashed border-accent bg-orange-50/40 p-6">
+      <h2 class="font-semibold text-accent">⚑ Open question for owner — carousels &amp; State 4</h2>
+      <p class="text-sm text-slate-700 mt-2 leading-relaxed">
+        Carousel children carry <code class="text-xs bg-white px-1 rounded border">play_count = null</code>. Should State 4 (plays-not-views) be <b>Reels-only</b>, with carousels simply falling through to "0" (State 2) or "—" (State 3)?
+        This mockup assumes <b>yes — carousels never show a plays label</b> (see "Draft Carousel" rows, which use "—"). <b>Not a settled decision</b> — needs owner confirmation before build.
+      </p>
+    </section>
+
+  </div>
+
+  <script>
+    function showDir(d) {
+      document.querySelectorAll('[data-a]').forEach(el => el.classList.toggle('hidden', d !== 'a'));
+      document.querySelectorAll('[data-b]').forEach(el => el.classList.toggle('hidden', d !== 'b'));
+      document.getElementById('btn-a').className = 'px-3 py-1.5 rounded-md text-sm font-medium ' + (d==='a' ? 'bg-primary text-white' : 'bg-slate-200 text-slate-700');
+      document.getElementById('btn-b').className = 'px-3 py-1.5 rounded-md text-sm font-medium ' + (d==='b' ? 'bg-primary text-white' : 'bg-slate-200 text-slate-700');
+    }
+    showDir('a');
+  </script>
+</body>
+</html>
