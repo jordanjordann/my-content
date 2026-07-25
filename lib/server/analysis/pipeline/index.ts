@@ -15,6 +15,7 @@ import { summarizeCaptionToTitle } from "@/lib/server/ollama";
 import { resolveProfile, computeEngagementRate } from "@/lib/server/profiles";
 import type { Profile, ProfileInput } from "@/lib/server/profiles";
 import type { OwnerProfileHint } from "@/lib/server/analysis/types";
+import { recomputeFingerprint } from "@/lib/server/fingerprint";
 
 /**
  * OwnerProfileHint.username is `string | null` (extracted from a payload
@@ -315,6 +316,18 @@ export async function runAnalysis({
     });
 
     report("complete", 1, "Analysis complete");
+
+    // Step 7 (ticket #72): recompute the profile's style fingerprint after
+    // the analysis result is persisted, inside a try/catch that logs and
+    // swallows — the same convention resolveProfile() already uses above.
+    // A fingerprint failure must never fail an analysis.
+    if (profile?.id) {
+      try {
+        await recomputeFingerprint(profile.id);
+      } catch (error) {
+        console.error("[PIPELINE] Fingerprint recompute failed:", error);
+      }
+    }
 
     return {
       analysisId,
