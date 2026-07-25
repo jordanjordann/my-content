@@ -89,10 +89,13 @@ export function makeImageChild(
 }
 
 /**
- * A video-typed carousel slide. The video fields on this shape are
- * **modelled, not confirmed** (`ScrapeCreatorsCarouselChildNode`'s own doc
- * comment says so). This builder therefore exists to drive the adapter's
- * branches, not to assert the API returns these keys.
+ * A video-typed carousel slide. Shape matches the REAL video-bearing
+ * carousel capture confirmed by PR #84/#71 (`video_duration`,
+ * `clips_music_attribution_info`, `thumbnail_src` all confirmed ABSENT on
+ * every one of 7 real video children — see
+ * `.claude/context/verified-facts.md`, "Video carousel child — CONFIRMED
+ * shape"): `video_play_count` is present but always `null`, while
+ * `video_view_count` is the field that's actually populated (C4 reversal).
  */
 export function makeVideoChild(
   overrides: Partial<ScrapeCreatorsCarouselChildNode> = {},
@@ -102,17 +105,11 @@ export function makeVideoChild(
     id: "child-video",
     is_video: true,
     video_url: "https://cdn.example/child-video.mp4",
-    video_duration: 7.25,
-    has_audio: true,
+    video_view_count: 50_000,
+    video_play_count: null,
+    has_audio: false,
     display_url: "https://cdn.example/child-video-display.jpg",
-    thumbnail_src: "https://cdn.example/child-video-thumb.jpg",
     dimensions: { width: 1080, height: 1080 },
-    clips_music_attribution_info: {
-      song_name: "Child Song",
-      artist_name: "Child Artist",
-      audio_id: "child-audio",
-      uses_original_audio: true,
-    },
     ...overrides,
   };
 }

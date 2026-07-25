@@ -1,18 +1,21 @@
-import { GoogleGenAI, FinishReason, createPartFromUri, type Part } from "@google/genai";
+import { GoogleGenAI, FinishReason, type Part } from "@google/genai";
 
 import { ANALYSIS_RESPONSE_SCHEMA } from "@/lib/server/analysis/schema";
+import type { PreparedGeminiPart } from "@/lib/server/analysis/media";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
 
+/**
+ * Ticket #71 Step 4: `analyzeContent(fileUri, prompt)` -> `analyzeContent(parts,
+ * prompt)`. Media parts (videos via the File API, images inline as base64)
+ * precede the text prompt, in slide order — a carousel's N media parts all
+ * go to Gemini in ONE call, not one call per slide.
+ */
 export async function analyzeContent(
-  fileUri: string | null,
+  mediaParts: PreparedGeminiPart[],
   prompt: string,
 ): Promise<{ text: string; raw: string }> {
-  const parts: Part[] = [];
-
-  if (fileUri) {
-    parts.push(createPartFromUri(fileUri, "video/mp4"));
-  }
+  const parts: Part[] = [...mediaParts];
 
   parts.push({ text: prompt });
 

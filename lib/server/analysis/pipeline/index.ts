@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import { db } from "@/lib/server/db";
 import { classifyUrl } from "@/lib/server/analysis/classifier";
 import { fetchMetadata } from "@/lib/server/analysis/fetcher";
-import { downloadVideo, deleteTempFile } from "@/lib/server/analysis/downloader";
-import { uploadToGemini, pollUntilReady, analyzeContent } from "@/lib/server/analysis/gemini";
+import { deleteTempFile } from "@/lib/server/analysis/downloader";
+import { analyzeContent } from "@/lib/server/analysis/gemini";
+import { prepareParts, PreparePartsError } from "@/lib/server/analysis/media";
 import { buildSystemInstruction, buildUserPrompt } from "@/lib/server/analysis/prompts";
 import { parseContentAnalysis } from "@/lib/server/analysis/parser";
 import type { AnalyzeResult } from "@/lib/server/analysis/types";
@@ -71,7 +72,7 @@ export async function runAnalysis({
     onProgress?.(progress);
   };
 
-  let videoPath: string | null = null;
+  let tempFilePaths: string[] = [];
 
   try {
     if (isReAnalyze) {
@@ -136,73 +137,123 @@ export async function runAnalysis({
     const generatedTitle = await summarizeCaptionToTitle(metadata.caption ?? "");
     const finalTitle = generatedTitle ?? metadata.caption ?? null;
 
-    if ((metadata.durationSec ?? 0) > MAX_VIDEO_SECONDS) {
-      throw new Error(
-        `Video duration (${metadata.durationSec}s) exceeds limit (${MAX_VIDEO_SECONDS}s)`,
-      );
+    // Q1=(a)/C3: `durationSec` is `null` for every carousel video part —
+    // the guard SKIPS a null duration rather than coercing it to `0` (which
+    // would happen to pass here anyway, but that's incidental, not the
+    // rule). The guard still applies to a non-null duration on any media
+    // type, so a >900s reel/post video is still rejected.
+    if (metadata.durationSec !== null && metadata.durationSec !== undefined) {
+      if (metadata.durationSec > MAX_VIDEO_SECONDS) {
+        throw new Error(
+          `Video duration (${metadata.durationSec}s) exceeds limit (${MAX_VIDEO_SECONDS}s)`,
+        );
+      }
     }
 
     let fileUri: string | null = null;
     let fileExpiresAt: string | null = null;
-    // A video was expected iff metadata.videoUrl resolved non-null (video
-    // post/reel, or a carousel with a video child). NULL videoUrl is not
-    // an error — that's a legitimate image post/carousel and must still
-    // succeed as 'metadata_only'. If a video WAS expected but we cannot
-    // get it in front of Gemini (download or upload failure), the
-    // analysis must fail loudly rather than silently persist a
-    // caption-only result that looks identical to a real video analysis.
-    // No retry: first failure errors out (see catch block below, which
-    // follows the same delete/preserve-for-re-analysis convention as the
-    // existing "content not found" failure path).
-    let analysisMode: "full_video" | "metadata_only" = "metadata_only";
+    // Step 5 (ticket #71): any video part -> 'full_video'; no video but
+    // >=1 image part -> 'images_only' (pairs with the CAROUSEL_STATIC
+    // format archetype — an all-image carousel that actually reaches
+    // Gemini is neither of the other two values); no media at all ->
+    // 'metadata_only'. Media was expected iff mediaParts is non-empty. If
+    // media WAS expected but preparing it for Gemini fails (download or
+    // upload failure on any part), the analysis fails loudly rather than
+    // silently persisting a caption-only result that looks identical to a
+    // real media analysis. No retry: first failure errors out (see catch
+    // block below, which follows the existing delete/preserve-for-
+    // re-analysis convention).
+    let analysisMode: "full_video" | "images_only" | "metadata_only" = "metadata_only";
+    // Instagram (fetcher/adapter.ts, via resolveMediaParts()) populates
+    // metadata.mediaParts directly. YouTube (fetcher/youtube.ts) is
+    // untouched by this ticket and only ever sets metadata.videoUrl — fall
+    // back to a single synthetic video part built from it so the YouTube
+    // path keeps working unchanged through the now-shared prepareParts().
+    const mediaParts =
+      metadata.mediaParts && metadata.mediaParts.length > 0
+        ? metadata.mediaParts
+        : metadata.videoUrl
+          ? [
+              {
+                index: 0,
+                kind: "video" as const,
+                url: metadata.videoUrl,
+                durationSec: metadata.durationSec ?? null,
+                width: metadata.originalWidth ?? null,
+                height: metadata.originalHeight ?? null,
+                playCount: metadata.playCount ?? null,
+                viewCount: metadata.viewCount ?? null,
+                displayedCountIsPlayCount: metadata.displayedCountIsPlayCount ?? false,
+              },
+            ]
+          : [];
+    const hasVideoPart = mediaParts.some((part) => part.kind === "video");
 
-    if (metadata.videoUrl) {
-      report("downloading", 1, "Downloading video...");
-      let downloadedPath: string;
+    let geminiParts: Awaited<ReturnType<typeof prepareParts>>["geminiParts"] = [];
+
+    if (mediaParts.length > 0) {
+      const label =
+        mediaParts.length > 1 ? `Downloading ${mediaParts.length} media parts...` : "Downloading video...";
+      report("downloading", 1, label);
+      let prepared: Awaited<ReturnType<typeof prepareParts>>;
       try {
-        downloadedPath = await downloadVideo(metadata.videoUrl);
+        prepared = await prepareParts(mediaParts);
       } catch (error) {
+        // A PreparePartsError carries every temp file written BEFORE the
+        // failure (e.g. slide 3 of 7's upload failing after slides 1-2
+        // already downloaded to /tmp) — capture it here so the `finally`
+        // block below still deletes all of them, not zero.
+        if (error instanceof PreparePartsError) {
+          tempFilePaths = error.tempFilePaths;
+        }
         const reason = error instanceof Error ? error.message : String(error);
         const statusMatch = reason.match(/status (\d+)/);
         const status = statusMatch ? Number(statusMatch[1]) : null;
         const expiredHint =
           status === 403 || status === 404
-            ? " The video URL has likely expired — re-running the analysis will fetch a fresh one."
+            ? " A media URL has likely expired — re-running the analysis will fetch a fresh one."
             : "";
-        throw new Error(`Video download failed: ${reason}.${expiredHint}`);
+        throw new Error(`Media download/upload failed: ${reason}.${expiredHint}`);
       }
-      videoPath = downloadedPath;
 
-      report("uploading", 1, "Uploading video...");
-      try {
-        const uploadedFile = await uploadToGemini(videoPath);
-        // Gemini processes uploads asynchronously — the file isn't
-        // guaranteed usable the instant uploadFile() resolves. Without
-        // this wait, analyzeContent() can race Gemini and fail with
-        // "File is not in an ACTIVE state", which — if left uncaught
-        // here — would be indistinguishable from a genuine analysis
-        // failure downstream instead of a delivery failure.
-        await pollUntilReady(uploadedFile.uri);
-        fileUri = uploadedFile.uri;
-        fileExpiresAt = uploadedFile.expiresAt;
-        analysisMode = "full_video";
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        throw new Error(`Video upload to Gemini failed: ${reason}`);
+      tempFilePaths = prepared.tempFilePaths;
+      geminiParts = prepared.geminiParts;
+      fileUri = prepared.videoFileUris[0]?.uri ?? null;
+      fileExpiresAt = prepared.videoFileUris[0]?.expiresAt ?? null;
+      analysisMode = hasVideoPart ? "full_video" : "images_only";
+
+      // Q3: MAX_TOTAL_MEDIA_BYTES can drop trailing parts independently of
+      // the MAX_MEDIA_PARTS cap already applied when metadata.mediaParts
+      // was built. Reconcile metadata.mediaParts to what was ACTUALLY sent
+      // before the slide manifest is rendered (prompts/user.ts), so the
+      // manifest never claims a slide that never reached Gemini.
+      if (prepared.truncatedForBytes) {
+        metadata.mediaParts = mediaParts.slice(0, prepared.preparedCount);
+        metadata.mediaPartsTruncated = true;
       }
     }
+
+    // Migration 009 (PR #95 fix-round, review items 4 and 9/(b)):
+    // `coauthor_producers` is a JSON array of usernames — the natural
+    // representation for `resolveCoauthorUsernames()`'s `string[]` output.
+    // `like_and_view_counts_disabled` follows the repo's established
+    // nullable-boolean convention (`toDbBool`, same as `has_audio`/
+    // `audio_is_original` above) — NULL means "unknown", never coerced to
+    // false, so the UI can tell "creator hid the counts" apart from
+    // "never fetched".
+    const coauthorProducersJson = JSON.stringify(metadata.coauthorUsernames ?? []);
 
     await db.execute({
       sql: `
         UPDATE analyses
         SET username = ?, thumbnail_url = ?, video_url = ?, duration_sec = ?,
-            view_count = ?, post_date = ?, caption = ?, gemini_file_uri = ?,
+            view_count = ?, play_count = ?, post_date = ?, caption = ?, gemini_file_uri = ?,
             gemini_file_expires_at = ?, title = ?, media_type = ?,
             like_count = ?, comment_count = ?, has_audio = ?, audio_title = ?,
             audio_artist = ?, audio_id = ?, audio_is_original = ?,
             original_width = ?, original_height = ?, carousel_item_count = ?,
             profile_id = ?, follower_count = ?, engagement_rate = ?,
-            analysis_mode = ?,
+            analysis_mode = ?, coauthor_producers = ?, like_and_view_counts_disabled = ?,
             updated_at = datetime('now')
         WHERE id = ?
       `,
@@ -212,6 +263,7 @@ export async function runAnalysis({
         metadata.videoUrl,
         metadata.durationSec,
         metadata.viewCount,
+        metadata.playCount ?? null,
         metadata.postDate,
         metadata.caption,
         fileUri,
@@ -232,6 +284,8 @@ export async function runAnalysis({
         followerCount,
         engagementRate,
         analysisMode,
+        coauthorProducersJson,
+        toDbBool(metadata.likeAndViewCountsDisabled),
         analysisId,
       ],
     });
@@ -242,7 +296,7 @@ export async function runAnalysis({
     const userPrompt = buildUserPrompt(metadata, prompt);
     const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
 
-    const geminiResult = await analyzeContent(fileUri, fullPrompt);
+    const geminiResult = await analyzeContent(geminiParts, fullPrompt);
     const content = parseContentAnalysis(geminiResult.text);
 
     console.log("[PIPELINE] Parsed analysis:");
@@ -282,8 +336,9 @@ export async function runAnalysis({
     }
     throw error;
   } finally {
-    if (videoPath) {
-      await deleteTempFile(videoPath);
-    }
+    // Every temp file written during prepareParts() — not just one
+    // videoPath — including any downloaded before a later slide's
+    // download/upload failed (a mid-carousel partial failure).
+    await Promise.all(tempFilePaths.map((path) => deleteTempFile(path)));
   }
 }

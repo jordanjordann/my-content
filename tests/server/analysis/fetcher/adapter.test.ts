@@ -1,6 +1,9 @@
+import fs from "node:fs";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { adaptPostResponse, extractOwnerProfile } from "@/lib/server/analysis/fetcher/adapter";
+import type { ScrapeCreatorsMedia } from "@/lib/server/scrapecreators";
 import {
   IG_POST_URL,
   IG_REEL_URL,
@@ -143,18 +146,18 @@ describe("adaptPostResponse — resolveThumbnailUrl fallback chain", () => {
     );
   });
 
-  it("falls back to the FIRST carousel child's thumbnail_src", () => {
+  it("ignores a carousel child's thumbnail_src (review item 10 — C1 confirms the field is absent on real children; dead read removed) and uses display_url instead", () => {
     const media = makeCarousel([
       makeImageChild({ thumbnail_src: "https://cdn.example/first-child-thumb.jpg" }),
       makeVideoChild(),
     ]);
 
     expect(adaptPostResponse(media, IG_POST_URL).thumbnailUrl).toBe(
-      "https://cdn.example/first-child-thumb.jpg",
+      "https://cdn.example/child-image-display.jpg",
     );
   });
 
-  it("falls back to the first carousel child's display_url when it has no thumbnail_src", () => {
+  it("falls back to the first carousel child's display_url when there's nothing else", () => {
     const media = makeCarousel([makeImageChild(), makeVideoChild()]);
 
     expect(adaptPostResponse(media, IG_POST_URL).thumbnailUrl).toBe(
@@ -197,8 +200,9 @@ describe("adaptPostResponse — resolveAudio", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("warns (but does not throw) when a resolved video child has neither audio field", () => {
+  it("logs at debug (not warn) — not a throw, not an alarm — when a resolved video child has neither audio field (C5)", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
     const media = makeCarousel([
       makeVideoChild({ has_audio: undefined, clips_music_attribution_info: undefined }),
     ]);
@@ -206,8 +210,9 @@ describe("adaptPostResponse — resolveAudio", () => {
     const result = adaptPostResponse(media, IG_POST_URL);
 
     expect(result.hasAudio).toBeNull();
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(String(warn.mock.calls[0]?.[0])).toContain("[ADAPTER] Carousel video child resolved");
+    expect(warn).not.toHaveBeenCalled();
+    expect(debug).toHaveBeenCalledTimes(1);
+    expect(String(debug.mock.calls[0]?.[0])).toContain("[ADAPTER] Carousel video child resolved");
   });
 
   it("does not warn when the video child carries has_audio but no music info", () => {
@@ -264,7 +269,7 @@ describe("adaptPostResponse — counts, dates, dimensions, duration", () => {
   it("maps the scalar fields of a reel end to end", () => {
     const result = adaptPostResponse(makeReel(), IG_REEL_URL);
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       url: IG_REEL_URL,
       shortcode: "ABC123def",
       mediaType: "reel",
@@ -286,7 +291,11 @@ describe("adaptPostResponse — counts, dates, dimensions, duration", () => {
       originalHeight: 1920,
       carouselItemCount: null,
       externalId: "owner-1",
+      playCount: null,
+      displayedCountIsPlayCount: false,
+      coauthorUsernames: [],
     });
+    expect(result.mediaParts).toHaveLength(1);
   });
 
   it("returns a null duration for an all-image carousel", () => {
@@ -421,26 +430,8 @@ describe("extractOwnerProfile", () => {
   });
 });
 
-/**
- * FALSIFIED — pins a carousel video-child shape that PR #84's real capture has disproven.
- *
- * `ScrapeCreatorsCarouselChildNode`'s video fields (`video_url`, `video_duration`, `has_audio`,
- * `clips_music_attribution_info`, `thumbnail_src`) were originally modelled by analogy with the
- * top-level `XDTGraphVideo` shape, never observed on a real carousel child. PR #84 closed that
- * gap with a real video-bearing carousel capture
- * (`.claude/context/fixtures/scrapecreators-instagram/ig_carousel_mixed_video_and_image_10_slides.json`,
- * 7 real video children) and it disproves this shape: `video_duration`,
- * `clips_music_attribution_info`, and `thumbnail_src` are **absent on all 7** real video
- * children (see `.claude/context/verified-facts.md`, "Video carousel child — CONFIRMED shape").
- * `makeVideoChild()` below still synthesizes those fields, so the tests in this block exercise a
- * shape known not to match the real API, not merely an unconfirmed one. They are deliberately
- * kept (not deleted) so they fail loudly and visibly the moment #71 rewrites the adapter against
- * the real (thinner) shape — that failure is the point, not a bug. Do not "fix" this block by
- * quietly updating `makeVideoChild()` to match reality without also updating the adapter; that
- * would silently smuggle a wrong shape back into a green suite.
- */
-describe("FALSIFIED — carousel video-child shape disproven by the real capture (PR #84)", () => {
-  it("uses the video child's video_url for a carousel", () => {
+describe("adaptPostResponse — carousel video child (real shape, PR #84)", () => {
+  it("uses the FIRST video child's video_url for a carousel", () => {
     const media = makeCarousel([makeImageChild(), makeVideoChild()]);
 
     expect(adaptPostResponse(media, IG_POST_URL).videoUrl).toBe(
@@ -448,36 +439,189 @@ describe("FALSIFIED — carousel video-child shape disproven by the real capture
     );
   });
 
+  it("returns a null durationSec for a carousel video child — no duration exists on a carousel payload (C3/Q1=(a))", () => {
+    const media = makeCarousel([
+      makeImageChild(),
+      makeVideoChild(),
+      makeVideoChild({ id: "later-video" }),
+    ]);
+
+    expect(adaptPostResponse(media, IG_POST_URL).durationSec).toBeNull();
+  });
+
   it("sources carousel audio from the video child, not the sidecar top level", () => {
-    const media = makeCarousel([makeImageChild(), makeVideoChild()], {
+    const media = makeCarousel([makeImageChild(), makeVideoChild({ has_audio: true })], {
       // A sidecar top level never carries these; prove they are not read even if present.
       has_audio: false,
-      clips_music_attribution_info: {
-        song_name: "Top Level Song",
-        artist_name: "Top Level Artist",
-        audio_id: "top-level-audio",
-        uses_original_audio: false,
-      },
     });
 
     const result = adaptPostResponse(media, IG_POST_URL);
 
-    expect(result).toMatchObject({
-      hasAudio: true,
-      audioTitle: "Child Song",
-      audioArtist: "Child Artist",
-      audioId: "child-audio",
-      audioIsOriginal: true,
-    });
+    expect(result.hasAudio).toBe(true);
+  });
+});
+
+/**
+ * Fixture-pinned tests against the REAL committed captures (ticket #71). No
+ * live API calls — reads `.claude/context/fixtures/scrapecreators-instagram/`
+ * only.
+ */
+describe("adaptPostResponse — real fixtures (ticket #71)", () => {
+  const fixturesDir = path.join(process.cwd(), ".claude/context/fixtures/scrapecreators-instagram");
+
+  function loadMedia(fixtureName: string): ScrapeCreatorsMedia {
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(fixturesDir, fixtureName), "utf8"),
+    ) as { data: { xdt_shortcode_media: ScrapeCreatorsMedia } };
+    return raw.data.xdt_shortcode_media;
+  }
+
+  it("C4 branch (a) — a top-level reel: viewCount stays the RAW (known-bad-0) video_view_count, playCount holds the trustworthy video_play_count, and the fallback is RECORDED via displayedCountIsPlayCount rather than silently swapped", () => {
+    const media = loadMedia("ig_reel_1_zero_view_count.json");
+    const result = adaptPostResponse(media, "https://www.instagram.com/reel/Da4TFq_pKvM/");
+
+    expect(result.playCount).toBe(116_333);
+    expect(result.viewCount).toBe(0);
+    expect(result.displayedCountIsPlayCount).toBe(true);
   });
 
-  it("sources a carousel's duration from the same child the video URL came from", () => {
-    const media = makeCarousel([
-      makeImageChild(),
-      makeVideoChild({ video_duration: 7.25 }),
-      makeVideoChild({ id: "later-video", video_duration: 90 }),
+  it("C4 branch (b) — carousel video children resolve their view count from video_view_count, NOT video_play_count (always null there)", () => {
+    const media = loadMedia("ig_carousel_mixed_video_and_image_10_slides.json");
+    const videoParts = (media.edge_sidecar_to_children?.edges ?? [])
+      .map((e) => e.node)
+      .filter((n): n is NonNullable<typeof n> => !!n && n.is_video === true);
+
+    expect(videoParts).toHaveLength(7);
+    expect(videoParts.every((c) => c.video_play_count == null)).toBe(true);
+    expect(videoParts.map((c) => c.video_view_count)).toEqual([
+      234_050, 163_868, 133_813, 117_523, 102_061, 60_537, 42_947,
     ]);
 
-    expect(adaptPostResponse(media, IG_POST_URL).durationSec).toBe(7.25);
+    const result = adaptPostResponse(media, "https://www.instagram.com/p/DZCPPJTjKVy/");
+    expect(result.playCount).toBeNull();
+    expect(result.viewCount).toBe(234_050);
+    expect(result.displayedCountIsPlayCount).toBe(false);
+  });
+
+  it("Q4 — both counts are persisted, never discarded, and materially diverge on a reel (ig_reel_2)", () => {
+    const media = loadMedia("ig_reel_2.json");
+    const result = adaptPostResponse(media, "https://www.instagram.com/reel/DEC1qiWsmYm/");
+
+    expect(result.playCount).toBe(721_558);
+    expect(result.viewCount).toBe(305_044);
+    expect(result.displayedCountIsPlayCount).toBe(false);
+  });
+
+  it("Q4 — both counts are persisted on a second reel (ig_reel_3)", () => {
+    const media = loadMedia("ig_reel_3.json");
+    const result = adaptPostResponse(media, "https://www.instagram.com/reel/DWgcxq2CaCZ/");
+
+    expect(result.playCount).toBe(279_641);
+    expect(result.viewCount).toBe(150_780);
+  });
+
+  it("C7 — discriminates by __typename/is_video, not video_url presence: the all-image carousel yields 0 video parts, 10 image parts", () => {
+    const media = loadMedia("ig_carousel_all_images_10_slides.json");
+    const result = adaptPostResponse(media, "https://www.instagram.com/p/DVtNQtmCQnO/");
+
+    expect(result.mediaParts).toHaveLength(10);
+    expect(result.mediaParts?.every((p) => p.kind === "image")).toBe(true);
+    expect(result.videoUrl).toBeNull();
+    expect(result.durationSec).toBeNull();
+  });
+
+  it("a 10-slide mixed carousel produces all 10 media parts (7 video + 3 image), uncapped at MAX_MEDIA_PARTS=20", () => {
+    const media = loadMedia("ig_carousel_mixed_video_and_image_10_slides.json");
+    const result = adaptPostResponse(media, "https://www.instagram.com/p/DZCPPJTjKVy/");
+
+    expect(result.mediaParts).toHaveLength(10);
+    expect(result.mediaParts?.filter((p) => p.kind === "video")).toHaveLength(7);
+    expect(result.mediaParts?.filter((p) => p.kind === "image")).toHaveLength(3);
+    expect(result.mediaPartsTruncated).toBe(false);
+  });
+
+  it("C6 — a non-empty envelope errors array alongside success:true does not fail the fetch (this adapter never inspects success/errors)", () => {
+    // The mixed carousel fixture's envelope carries `errors` alongside
+    // `success: true` (C6). adaptPostResponse operates on the already-
+    // unwrapped xdt_shortcode_media and never reads success/errors at all,
+    // so simply succeeding here (no throw) is the assertion.
+    const media = loadMedia("ig_carousel_mixed_video_and_image_10_slides.json");
+    expect(() => adaptPostResponse(media, "https://www.instagram.com/p/DZCPPJTjKVy/")).not.toThrow();
+  });
+
+  it("C8 — like_and_view_counts_disabled ABSENT (the all-image carousel) is not coerced to false", () => {
+    const media = loadMedia("ig_carousel_all_images_10_slides.json");
+    expect(media.like_and_view_counts_disabled).toBeUndefined();
+
+    const result = adaptPostResponse(media, "https://www.instagram.com/p/DVtNQtmCQnO/");
+    expect(result.likeAndViewCountsDisabled).toBeUndefined();
+    expect(result.likeAndViewCountsDisabled).not.toBe(false);
+  });
+
+  it("C8 — a genuine 0 (flag false/absent) still persists as 0, not NULL", () => {
+    const media = loadMedia("ig_reel_1_zero_view_count.json");
+    // This fixture's flag is false; its comment_count/like_count are genuine values.
+    const result = adaptPostResponse(media, "https://www.instagram.com/reel/Da4TFq_pKvM/");
+    expect(result.likeCount).not.toBeNull();
+  });
+
+  it("C8 — SYNTHETIC (flag has never been observed true in any capture): when true, affected counts persist as NULL, never 0", () => {
+    const media = loadMedia("ig_reel_1_zero_view_count.json");
+    const synthetic: ScrapeCreatorsMedia = { ...media, like_and_view_counts_disabled: true };
+
+    const result = adaptPostResponse(synthetic, "https://www.instagram.com/reel/Da4TFq_pKvM/");
+    expect(result.viewCount).toBeNull();
+    expect(result.likeCount).toBeNull();
+    expect(result.likeAndViewCountsDisabled).toBe(true);
+  });
+
+  it("C9 — coauthor_producers is persisted for a co-authored post (ig_reel_3), owner is unchanged", () => {
+    const media = loadMedia("ig_reel_3.json");
+    const result = adaptPostResponse(media, "https://www.instagram.com/reel/DWgcxq2CaCZ/");
+
+    expect(result.coauthorUsernames).toEqual(["sandiuno"]);
+    expect(result.username).toBe("giorrando");
+  });
+
+  it("C9 — absent and empty coauthor_producers are handled identically ([])", () => {
+    const withEmpty = loadMedia("ig_reel_2.json");
+    expect(withEmpty.coauthor_producers).toEqual([]);
+    const resultEmpty = adaptPostResponse(withEmpty, "https://www.instagram.com/reel/DEC1qiWsmYm/");
+    expect(resultEmpty.coauthorUsernames).toEqual([]);
+
+    const withoutKey: ScrapeCreatorsMedia = { ...withEmpty };
+    delete withoutKey.coauthor_producers;
+    const resultAbsent = adaptPostResponse(withoutKey, "https://www.instagram.com/reel/DEC1qiWsmYm/");
+    expect(resultAbsent.coauthorUsernames).toEqual([]);
+  });
+
+  it("review item 7 — mediaPartsTotalBeforeCap threads the pre-cap total through to metadata", () => {
+    const children = Array.from({ length: 34 }, (_, i) =>
+      makeImageChild({ id: `slide-${i}`, display_url: `https://cdn.example/slide-${i}.jpg` }),
+    );
+    const media = makeCarousel(children);
+
+    const result = adaptPostResponse(media, "https://www.instagram.com/p/xyz/");
+
+    expect(result.mediaParts).toHaveLength(20);
+    expect(result.mediaPartsTruncated).toBe(true);
+    expect(result.mediaPartsTotalBeforeCap).toBe(34);
+  });
+
+  it("C9 — coauthorUsernames is never read by any prompt builder (grep-level guard)", () => {
+    // Static guard: prompts/user.ts and prompts/system.ts must never
+    // reference coauthorUsernames/coauthor_producers. Enforced by grep, not
+    // by asserting adapter output (adapter output already keeps it separate
+    // from ContentAnalysis/prompt-building — see prompts/user.ts).
+    const promptsUser = fs.readFileSync(
+      path.join(process.cwd(), "lib/server/analysis/prompts/user.ts"),
+      "utf8",
+    );
+    const promptsSystem = fs.readFileSync(
+      path.join(process.cwd(), "lib/server/analysis/prompts/system.ts"),
+      "utf8",
+    );
+    expect(promptsUser).not.toMatch(/coauthor/i);
+    expect(promptsSystem).not.toMatch(/coauthor/i);
   });
 });
