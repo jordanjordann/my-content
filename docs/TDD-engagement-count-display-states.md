@@ -82,7 +82,13 @@ export function classifyViewCount(input: {
   likeAndViewCountsDisabled: boolean | null;
 }): CountState {
   if (input.likeAndViewCountsDisabled === true) return { kind: "hidden" };
-  if (input.viewCount === 0 && input.playCount != null && input.playCount > 0)
+  // State 4 — REVISED 2026-07-28 (decision D1, §8): `viewCount == null` is
+  // admitted here alongside `viewCount === 0`. See §8/D1 for why.
+  if (
+    (input.viewCount === 0 || input.viewCount == null) &&
+    input.playCount != null &&
+    input.playCount > 0
+  )
     return { kind: "plays", value: input.playCount };      // State 4
   if (input.viewCount === 0) return { kind: "zero" };
   if (input.viewCount == null) return { kind: "unknown" };
@@ -100,7 +106,7 @@ export function classifyLikeCount(input: {
 }
 ```
 
-**Ordering rationale (do not reorder):** `hidden` wins first (the flag overrides everything). State 4 is checked before `zero`/`unknown` so a false-zero view with real plays becomes `plays`, never `0`. Carousels need no special-casing: `playCount` is structurally `null` on carousel children (design §8), so the State-4 branch simply cannot fire for them — they fall through to `zero` or `unknown` for free. Do not branch on `mediaType`.
+**Ordering rationale (do not reorder):** `hidden` wins first (the flag overrides everything). State 4 is checked before `zero`/`unknown` so a false-zero **or absent** view with real plays becomes `plays`, never `0` and never `—`. Carousels need no special-casing: `playCount` is structurally `null` on carousel children (design §8), so the State-4 branch simply cannot fire for them — they fall through to `zero` or `unknown` for free. Do not branch on `mediaType`.
 
 ### 4.3 Wiring into `select`
 
@@ -157,7 +163,7 @@ Design §2/§6/§7 and PRD §5 mandate reusing the `DimensionScoreRow` (#70) too
 
 Tooltip copy (English, design §3): _"The creator turned off view and like counts on this post. This is a creator setting — not zero, and not missing data."_ Owner may swap for the shorter fallback in design §3; keep it in `constants.ts` as a single source.
 
-Tooltip positioning: default above/right, flip near a viewport/container edge (top table rows, top of cards) — design §6.
+Tooltip positioning: default above/right, flip near a viewport/container edge (top table rows, top of cards) — design §6. **[TL] REVISED 2026-07-28 (decision D2, §8):** hand-rolled `absolute right-0 top-full` is acceptable for T1 (component not mounted anywhere yet) but **must not survive into the table**. `components/ui/table.tsx` wraps every table in `<div className="relative w-full overflow-auto">`, so an absolutely-positioned popup inside a `<TableCell>` is clipped/scroll-jailed by that ancestor — this is a containment bug, not just a missing flip. Fix it **once, in the shared `CountInfoTooltip`**, by rendering through the repo's existing Base UI popover primitive (`components/ui/popover.tsx`, `@base-ui/react/popover` — `Portal` escapes the overflow ancestor and `Positioner` does collision-aware side/align flipping natively). **Owned by T3 (#103); T2 (#102) inherits it and only verifies.** Do not implement edge detection by hand and do not duplicate the logic per surface.
 
 ### 5.4 Surface wiring
 
@@ -172,6 +178,7 @@ Tooltip positioning: default above/right, flip near a viewport/container edge (t
 - **Unit (helpers):** table-driven tests for `classifyViewCount` / `classifyLikeCount` covering all branches: disabled→hidden (views & likes); `view=0,play>0`→plays; `view=0,play=null`→zero; `view=0,play=0`→zero; `view=null`→unknown; `view=5`→count; likes null→unknown, 0→zero, 42→count; and disabled overriding a present count. Confirms State 4 cannot fire for carousels (`play=null`).
 - **Component:** `EngagementCount` renders the correct glyph/label/icon per `kind`; `plays` shows the inline "plays" word; `hidden` exposes a focusable `role="tooltip"` reachable by keyboard and dismissible on `Escape`; `zero` is full-strength, `unknown` is muted "—".
 - **Integration/QA (manual):** one fixture row per state on each of the three surfaces; verify no surface shows a bare `0` for hidden/unknown/false-zero; greyscale check (WCAG 1.4.1); verify likes switch to Hidden under the disabled flag.
+- **[TL] ADDED 2026-07-28 — mandatory on-surface visual QA (decision D3, §8).** Automated tooling cannot catch this class of defect: jsdom does not compute colour or contrast, so testing-library assertions pass on unreadable output. #101 review found light-mode slate values shipped into an app hard-locked to dark mode (~1.9:1 on the primary number, and the prominence hierarchy **inverted** — `unknown` louder than a real `zero`). Root cause: the approved mockup was authored on a white page, so design §2's slate values are **mockup-surface** values, not app-surface values. Therefore T2 and T3 each carry a blocking AC: render all four states on the **real running app** (dark surface), against **both `--background` and `--card`**, take a greyscale pass (WCAG 1.4.1 — state must not be conveyed by hue alone), measure contrast with a real tool, require **≥4.5:1** for every count value and label, confirm `zero` reads at least as prominent as `unknown`, and attach the measured numbers + screenshots to the ticket. Reviewer-visible evidence, not a self-certified checkbox.
 
 ---
 
@@ -185,3 +192,39 @@ Tooltip positioning: default above/right, flip near a viewport/container edge (t
 | T3 | [FE] | T1 | Wire table (add Views/Likes columns, right-aligned; no sorting) |
 
 T2 and T3 are independent of each other and can run in parallel once T1 lands.
+
+**Sequencing hazard (recorded 2026-07-28):** T2 is **not** deprioritisable. Since #100 (T0) merged, `AnalysisDetailModal.tsx` (~L195–202) still renders the raw `{data.viewCount != null && … {formatAbbrev(data.viewCount)} views}` block, so a reel arriving as `viewCount: 0, playCount: 116333` now displays **"0 views"** to the user — the exact defect epic #96 exists to fix. T1 (#101) does not introduce this and correctly leaves the modal unwired, but the live surface stays wrong until T2 lands. Ship T2 immediately behind T1.
+
+---
+
+## 8. Decision log — questions escalated from the #101 review (2026-07-28)
+
+### D1 — `viewCount === null` alongside a real `playCount` (review finding N9): **widen State 4**
+
+The original §4.2 required `viewCount === 0` exactly, so `viewCount: null, playCount: 116333` classified as `unknown` and rendered `—` while a real, usable number sat in the payload. The implementation on #101 matched the TDD exactly; the TDD was wrong. Widened to `(viewCount === 0 || viewCount == null) && playCount > 0`.
+
+**Is the state reachable? Evidence, with confidence stated rather than blurred.**
+
+There are exactly two code paths that produce `viewCount == null` in `lib/server/analysis/fetcher/adapter.ts` (~L251–252):
+
+```
+const viewCount = countsDisabled ? null : (firstVideoPart?.viewCount ?? null);
+const playCount = firstVideoPart?.playCount ?? null;   // NOT gated on countsDisabled
+```
+
+1. **`countsDisabled === true`.** `viewCount` is forced to `null` while `playCount` passes through ungated, so `{viewCount: null, playCount: > 0}` genuinely occurs. This one is **harmless by structural guarantee**: the same expression `raw.like_and_view_counts_disabled === true` that nulls `viewCount` also sets `likeAndViewCountsDisabled: true` in the same returned object, and `hidden` is checked first in the classifier. The user sees "Hidden", correctly. No change needed for this path.
+2. **`firstVideoPart.viewCount === null` with counts enabled.** `resolveCounts()` (`lib/server/analysis/media/resolveMediaParts.ts` ~L38–39) sets `viewCount = num(node.video_view_count)`, and `num()` returns `null` for an absent, non-numeric or non-finite value. On the wire type, `video_view_count?: number` is **optional** (`lib/server/scrapecreators/types.ts` L112/L137) while `video_play_count` is a separate optional field. Nothing in the adapter, the resolver, or the type couples their presence. So a reel node that omits `video_view_count` but carries `video_play_count: 116333` produces `{viewCount: null, playCount: 116333}` with `likeAndViewCountsDisabled` falsy — and the un-widened classifier rendered `—`.
+
+**Confidence, explicitly:** path 2 is **not unreachable-by-construction — it is merely unobserved.** All three committed reel fixtures (`.claude/context/fixtures/scrapecreators-instagram/ig_reel_{1_zero_view_count,2,3}.json`) happen to carry a numeric `video_view_count`, so we have *no counterexample*, which is a far weaker claim than a *guarantee*. The binding is optional at the type level and the adapter has no invariant enforcing it. Absence of a counterexample in three fixtures is not a structural guarantee, and the TDD will not pretend otherwise. Settled from committed fixtures + source only; no live API call was made.
+
+**Why widening is safe (it cannot create a false "plays"):** the branch only fires when `playCount > 0`. `playCount` is `null` by structure for carousel children (verified-facts: `video_play_count` is present-but-always-`null` on all 7 carousel video children — the reel/carousel semantics invert by type and must never be merged into one field), and the YouTube fetcher (`fetcher/youtube.ts` L118) sets `viewCount` only and never populates `playCount`. So the widened arm is reachable only for the exact case it is meant to serve: an Instagram reel with a real play count and no trustworthy view count. The reel-vs-carousel field inversion is preserved untouched.
+
+**Related observation, not in scope here:** the adapter's own `displayedCountIsPlayCount` (resolveMediaParts ~L48) uses the same narrow `viewCount === 0` test, so the server-side prompt fallback (`prompts/user.ts` L19) has the identical blind spot. Display is fixed by D1; the prompt-side equivalent is a separate, lower-stakes call and is **not** being folded in silently.
+
+### D2 — tooltip edge-flip (review finding N3): **required, owned by T3 (#103)**
+
+`CountInfoTooltip`'s hard-coded `absolute right-0 top-full` is a faithful copy of #70 and is fine for #101, where the component is mounted on no surface. It must not survive into the table. See §5.3: the problem on the table is not aesthetic — `components/ui/table.tsx` renders `<div className="relative w-full overflow-auto">` around every table, which clips and scroll-jails an absolutely-positioned popup in a `<TableCell>`. The fix is a component-level swap to the existing Base UI popover primitive (portal + collision-aware positioner), which resolves clipping and flipping together and costs far less than hand-rolled edge detection. Assigned to **T3 (#103)** because that is the surface that structurally breaks; **T2 (#102) inherits and verifies only**, so the behaviour is implemented once. If T2 merges first it may ship the current positioning unchanged. The design §6 requirement is **met, not dropped**.
+
+### D3 — on-surface contrast QA: added as a blocking AC on T2 and T3
+
+See §6. Also raised to the designer: design §2's slate values need restating in **app-surface (dark)** terms, since they were authored against a white mockup page and will otherwise be copied verbatim into a future ticket and reproduce the #101 defect.
