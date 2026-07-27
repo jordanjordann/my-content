@@ -22,6 +22,26 @@ export type AnalysisPlatform = "instagram" | "youtube";
 
 export type AnalysisStatus = "pending" | "completed" | "failed";
 
+/**
+ * Classified engagement-count state (TDD §4.1, docs/TDD-engagement-count-display-states.md).
+ * Derived once in the query-hook `select` layer from raw `viewCount`/`playCount`/
+ * `likeCount`/`likeAndViewCountsDisabled` — components must never branch on the raw
+ * fields, only on `state.kind`.
+ *
+ * - `hidden` — creator disabled view/like counts on this post (State 1).
+ * - `zero` — a genuine measured `0` (State 2).
+ * - `unknown` — value is `null` / never fetched (State 3).
+ * - `count` — a normal non-zero value (views or likes).
+ * - `plays` — `viewCount === 0` but a real `playCount` exists; Reels-only, structural
+ *   (carousel children have `playCount === null`, not `0`) (State 4).
+ */
+export type CountState =
+  | { kind: "hidden" }
+  | { kind: "zero" }
+  | { kind: "unknown" }
+  | { kind: "count"; value: number }
+  | { kind: "plays"; value: number };
+
 export type AnalysisListItem = {
   id: string;
   prompt: string | null;
@@ -53,9 +73,14 @@ export type AnalysisListItem = {
   createdAt: string;
 };
 
-/** `AnalysisListItem` with a precomputed, normalized search index over title/caption/prompt. */
+/**
+ * `AnalysisListItem` with a precomputed, normalized search index over title/caption/prompt,
+ * plus the classified `CountState` for views and likes (derived once in `select`, TDD §4.3).
+ */
 export type AnalysisListItemIndexed = AnalysisListItem & {
   searchText: string;
+  viewCountState: CountState;
+  likeCountState: CountState;
 };
 
 /**
@@ -135,6 +160,12 @@ export type AnalysisDetail = {
   durationSec: number | null;
   results: ContentAnalysis | null;
   createdAt: string;
+};
+
+/** `AnalysisDetail` plus the classified `CountState` for views and likes (TDD §4.3). */
+export type AnalysisDetailClassified = AnalysisDetail & {
+  viewCountState: CountState;
+  likeCountState: CountState;
 };
 
 export type AnalysesListResponse = {
