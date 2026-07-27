@@ -81,6 +81,18 @@ describe("classifyViewCount", () => {
       classifyViewCount({ viewCount: 42, playCount: null, likeAndViewCountsDisabled: false }),
     ).toEqual({ kind: "count", value: 42 });
   });
+
+  it("State 4 fires even when likeAndViewCountsDisabled is null (unknown flag must not suppress plays)", () => {
+    expect(
+      classifyViewCount({ viewCount: 0, playCount: 116_333, likeAndViewCountsDisabled: null }),
+    ).toEqual({ kind: "plays", value: 116_333 });
+  });
+
+  it("viewCount=null classifies as unknown even when a real playCount is present — documents current intended behavior; not being changed in this round (escalated to tech lead separately)", () => {
+    expect(
+      classifyViewCount({ viewCount: null, playCount: 116_333, likeAndViewCountsDisabled: false }),
+    ).toEqual({ kind: "unknown" });
+  });
 });
 
 describe("classifyLikeCount", () => {

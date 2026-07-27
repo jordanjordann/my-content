@@ -26,7 +26,7 @@ import { AnalysisScorecardSection } from "@/app/app/analyses/components/sections
 import { AnalysisRedFlagsSection } from "@/app/app/analyses/components/sections/AnalysisRedFlagsSection";
 import { AnalysisSuggestionsSection } from "@/app/app/analyses/components/sections/AnalysisSuggestionsSection";
 import { PatternBlock } from "@/app/app/analyses/components/sections/PatternBlock";
-import { formatAbbrev } from "@/app/app/analyses/components/counts/EngagementCount/helpers";
+import { formatAbbrev } from "@/app/app/analyses/components/counts/EngagementCount";
 import { AnalysisDetailTabList } from "./components/tabs/AnalysisDetailTabList";
 import type { AnalysisDetailModalProps, AnalysisDetailTab } from "./types";
 import { formatDate } from "./helpers";

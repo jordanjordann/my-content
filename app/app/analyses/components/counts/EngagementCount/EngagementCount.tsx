@@ -1,8 +1,9 @@
-import { CountInfoTooltip } from "@/app/app/analyses/components/counts/EngagementCount/components/CountInfoTooltip";
+import { CountInfoTooltip } from "@/app/app/analyses/components/counts/EngagementCount/components/tooltips/CountInfoTooltip";
 import {
   ENGAGEMENT_FULL_STRENGTH_CLASSNAME,
   ENGAGEMENT_METRIC_LABEL,
   ENGAGEMENT_MUTED_CLASSNAME,
+  ENGAGEMENT_PLAYS_LABEL,
   ENGAGEMENT_UNKNOWN_CLASSNAME,
 } from "@/app/app/analyses/components/counts/EngagementCount/constants";
 import { formatAbbrev } from "@/app/app/analyses/components/counts/EngagementCount/helpers";
@@ -41,10 +42,14 @@ export function EngagementCount({
   }
 
   if (state.kind === "unknown") {
-    // Accessible name overrides the visually-shown em dash, which screen readers can
-    // render ambiguously or skip — "views unknown" / "likes unknown" reads clearly.
+    // `role="img"` is required here: a bare `<span>` maps to the `generic` accessibility
+    // role, and `generic` does not support naming from author content — browsers drop a
+    // plain `aria-label` on it, silently no-op-ing the accessible name. `role="img"`
+    // accepts author naming, so "views unknown" / "likes unknown" reliably overrides the
+    // visually-shown em dash instead of a screen reader announcing "dash" or nothing.
     return (
       <span
+        role="img"
         className={cn(ENGAGEMENT_UNKNOWN_CLASSNAME, className)}
         aria-label={`${metricWord} unknown`}
       >
@@ -57,7 +62,8 @@ export function EngagementCount({
   if (state.kind === "plays") {
     return (
       <span className={cn(ENGAGEMENT_FULL_STRENGTH_CLASSNAME, className)}>
-        {formatAbbrev(state.value)} <span className={ENGAGEMENT_MUTED_CLASSNAME}>plays</span>
+        {formatAbbrev(state.value)}{" "}
+        <span className={ENGAGEMENT_MUTED_CLASSNAME}>{ENGAGEMENT_PLAYS_LABEL}</span>
       </span>
     );
   }
