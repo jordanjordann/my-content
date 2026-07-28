@@ -33,12 +33,13 @@ export function toProxiedThumbnail(
  *
  * 1. `likeAndViewCountsDisabled === true` always wins first (creator setting overrides
  *    everything else, including a present `viewCount`).
- * 2. State 4 (`viewCount === 0 && playCount > 0`) is checked before `zero`/`unknown` so
- *    a false-zero view with a real play count renders as `plays`, never `0`. This branch
- *    is structurally unreachable for carousel children, whose `playCount` is `null`
- *    (not `0`) — do not special-case `mediaType`.
+ * 2. State 4 (`(viewCount === 0 || viewCount == null) && playCount > 0`) is checked before
+ *    `zero`/`unknown` so a false-zero or missing view count with a real play count renders
+ *    as `plays`, never `0` or `—` (TDD §4.2, decision D1 in §8). This branch is structurally
+ *    unreachable for carousel children, whose `playCount` is `null` (not `0`) — do not
+ *    special-case `mediaType`.
  * 3. `viewCount === 0` (with no usable play count) is a genuine measured zero.
- * 4. `viewCount == null` is unknown / never fetched.
+ * 4. `viewCount == null` (with no usable play count) is unknown / never fetched.
  * 5. Otherwise it is a normal non-zero count.
  */
 export function classifyViewCount(input: {
@@ -47,7 +48,11 @@ export function classifyViewCount(input: {
   likeAndViewCountsDisabled: boolean | null;
 }): CountState {
   if (input.likeAndViewCountsDisabled === true) return { kind: "hidden" };
-  if (input.viewCount === 0 && input.playCount != null && input.playCount > 0) {
+  if (
+    (input.viewCount === 0 || input.viewCount == null) &&
+    input.playCount != null &&
+    input.playCount > 0
+  ) {
     return { kind: "plays", value: input.playCount };
   }
   if (input.viewCount === 0) return { kind: "zero" };

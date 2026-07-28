@@ -88,9 +88,27 @@ describe("classifyViewCount", () => {
     ).toEqual({ kind: "plays", value: 116_333 });
   });
 
-  it("viewCount=null classifies as unknown even when a real playCount is present — documents current intended behavior; not being changed in this round (escalated to tech lead separately)", () => {
+  it("viewCount=null with a real playCount>0 now classifies as plays, not unknown (TDD §4.2 D1, #109)", () => {
     expect(
       classifyViewCount({ viewCount: null, playCount: 116_333, likeAndViewCountsDisabled: false }),
+    ).toEqual({ kind: "plays", value: 116_333 });
+  });
+
+  it("hidden still wins over the widened State 4 when viewCount=null and a real playCount is present (#109)", () => {
+    expect(
+      classifyViewCount({ viewCount: null, playCount: 116_333, likeAndViewCountsDisabled: true }),
+    ).toEqual({ kind: "hidden" });
+  });
+
+  it("viewCount=null with playCount=0 stays unknown — the playCount>0 guard still holds (#109)", () => {
+    expect(
+      classifyViewCount({ viewCount: null, playCount: 0, likeAndViewCountsDisabled: false }),
+    ).toEqual({ kind: "unknown" });
+  });
+
+  it("viewCount=null with playCount=null stays unknown (#109, confirms unchanged)", () => {
+    expect(
+      classifyViewCount({ viewCount: null, playCount: null, likeAndViewCountsDisabled: false }),
     ).toEqual({ kind: "unknown" });
   });
 });
