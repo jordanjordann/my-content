@@ -7,9 +7,15 @@ import { ANALYSIS_KEYS } from "@/lib/api/analyses/constants";
 import type {
   AnalysesListResponse,
   AnalysisDetail,
+  AnalysisDetailClassified,
   AnalysisListItemIndexed,
 } from "@/lib/api/analyses/types";
-import { normalize, toProxiedThumbnail } from "@/lib/api/analyses/helpers";
+import {
+  classifyLikeCount,
+  classifyViewCount,
+  normalize,
+  toProxiedThumbnail,
+} from "@/lib/api/analyses/helpers";
 
 /**
  * Precomputes the keyword search index (`searchText`) for each analysis. Only title/caption/
@@ -27,16 +33,38 @@ function selectIndexedAnalyses(
       searchText: normalize(
         [analysis.title, analysis.caption, analysis.prompt].filter(Boolean).join(" "),
       ),
+      viewCountState: classifyViewCount({
+        viewCount: analysis.viewCount,
+        playCount: analysis.playCount,
+        likeAndViewCountsDisabled: analysis.likeAndViewCountsDisabled,
+      }),
+      likeCountState: classifyLikeCount({
+        likeCount: analysis.likeCount,
+        likeAndViewCountsDisabled: analysis.likeAndViewCountsDisabled,
+      }),
     })),
     accounts: data.accounts,
   };
 }
 
-/** Routes `thumbnailUrl` through the image proxy for Instagram content. */
-function selectProxiedAnalysisDetail(data: AnalysisDetail): AnalysisDetail {
+/**
+ * Routes `thumbnailUrl` through the image proxy for Instagram content and attaches the
+ * classified `viewCountState`/`likeCountState` (TDD §4.3) so the detail modal never
+ * branches on raw counts.
+ */
+function selectProxiedAnalysisDetail(data: AnalysisDetail): AnalysisDetailClassified {
   return {
     ...data,
     thumbnailUrl: toProxiedThumbnail(data.thumbnailUrl, data.platform),
+    viewCountState: classifyViewCount({
+      viewCount: data.viewCount,
+      playCount: data.playCount,
+      likeAndViewCountsDisabled: data.likeAndViewCountsDisabled,
+    }),
+    likeCountState: classifyLikeCount({
+      likeCount: data.likeCount,
+      likeAndViewCountsDisabled: data.likeAndViewCountsDisabled,
+    }),
   };
 }
 

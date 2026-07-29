@@ -26,9 +26,10 @@ import { AnalysisScorecardSection } from "@/app/app/analyses/components/sections
 import { AnalysisRedFlagsSection } from "@/app/app/analyses/components/sections/AnalysisRedFlagsSection";
 import { AnalysisSuggestionsSection } from "@/app/app/analyses/components/sections/AnalysisSuggestionsSection";
 import { PatternBlock } from "@/app/app/analyses/components/sections/PatternBlock";
+import { formatAbbrev } from "@/app/app/analyses/components/counts/EngagementCount";
 import { AnalysisDetailTabList } from "./components/tabs/AnalysisDetailTabList";
 import type { AnalysisDetailModalProps, AnalysisDetailTab } from "./types";
-import { formatViews, formatDate } from "./helpers";
+import { formatDate } from "./helpers";
 
 export function AnalysisDetailModal({ id, onClose }: AnalysisDetailModalProps) {
   const queryClient = useQueryClient();
@@ -198,7 +199,7 @@ export function AnalysisDetailModal({ id, onClose }: AnalysisDetailModalProps) {
                             className="size-4 shrink-0 text-accent"
                             aria-hidden="true"
                           />
-                          <span>{formatViews(data.viewCount)} views</span>
+                          <span>{formatAbbrev(data.viewCount)} views</span>
                         </div>
                       )}
                       {data.postDate && (
