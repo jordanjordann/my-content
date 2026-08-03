@@ -9,17 +9,33 @@ berkinerja relatif terhadap ukuran audiens kreator.`;
 /**
  * Q4=(c): display and rank on VIEWS, consistently, across reels and
  * carousel slides. `metadata.viewCount` is stored RAW (video_view_count,
- * even when it's a known-bad `0`) so the two raw metrics stay queryable and
- * `analyses.view_count`'s meaning never changes — this is the presentation-
- * layer fallback: a reel with a known-bad `viewCount: 0` alongside a
- * populated `playCount` displays the play count instead, and
- * `displayedCountIsPlayCount` records that a plays number is what's shown.
+ * even when it's a known-bad `0` or absent) so the two raw metrics stay
+ * queryable and `analyses.view_count`'s meaning never changes — this is the
+ * presentation-layer fallback: a reel with a known-bad `viewCount: 0` (or an
+ * ABSENT `viewCount`, widened by D1/#110) alongside a populated `playCount`
+ * displays the play count instead, and `isPlayCount` records that a plays
+ * number is what's shown. `likeAndViewCountsDisabled` is checked FIRST,
+ * mirroring the client classifier's documented branch order
+ * (`lib/api/analyses/helpers.ts`'s `classifyViewCount`, #101) — a
+ * counts-disabled post never falls through to the plays fallback, even
+ * though the adapter already nulls `viewCount`/`displayedCountIsPlayCount`
+ * one layer down (belt-and-suspenders parity, PR #111 review N3).
+ *
+ * PR #111 review N4: this is the SINGLE SOURCE OF TRUTH for the
+ * value/label pairing — both call sites below (`buildContextBlock`,
+ * `buildUserPrompt`) MUST consume `isPlayCount` from this return value,
+ * never re-derive `displayedCountIsPlayCount && playCount != null`
+ * themselves. Re-deriving it at each site is how the "silently emit a play
+ * count labelled Views" bug this PR fixes would come back.
  */
-function resolveDisplayedViewCount(metadata: MediaMetadata): number | null {
-  if (metadata.displayedCountIsPlayCount && metadata.playCount != null) {
-    return metadata.playCount;
+function resolveDisplayedViewCount(metadata: MediaMetadata): { value: number | null; isPlayCount: boolean } {
+  if (metadata.likeAndViewCountsDisabled === true) {
+    return { value: null, isPlayCount: false };
   }
-  return metadata.viewCount;
+  if (metadata.displayedCountIsPlayCount && metadata.playCount != null) {
+    return { value: metadata.playCount, isPlayCount: true };
+  }
+  return { value: metadata.viewCount, isPlayCount: false };
 }
 
 function formatMediaType(metadata: MediaMetadata): string {
@@ -74,10 +90,10 @@ function buildSlideManifest(metadata: MediaMetadata): string | null {
  */
 function buildContextBlock(metadata: MediaMetadata): string | null {
   const lines: string[] = [];
-  const displayedViewCount = resolveDisplayedViewCount(metadata);
+  const { value: displayedViewCount, isPlayCount } = resolveDisplayedViewCount(metadata);
 
   if (displayedViewCount != null) {
-    lines.push(`- Views: ${formatCount(displayedViewCount)}`);
+    lines.push(`- ${isPlayCount ? "Plays" : "Views"}: ${formatCount(displayedViewCount)}`);
   }
 
   if (metadata.likeCount != null) {
@@ -102,7 +118,12 @@ function buildContextBlock(metadata: MediaMetadata): string | null {
     metadata.followerCount != null &&
     metadata.followerCount > 0
   ) {
-    lines.push(`- View rate: ${formatPercent(displayedViewCount / metadata.followerCount)}`);
+    // D1: labelled by what the numerator actually is (plays vs. views),
+    // same isPlayCount condition as the count line above — the value never
+    // changes, only the label.
+    lines.push(
+      `- ${isPlayCount ? "Play rate" : "View rate"}: ${formatPercent(displayedViewCount / metadata.followerCount)}`,
+    );
   }
 
   const audioLine = formatAudioLine(metadata);
@@ -124,14 +145,14 @@ function buildContextBlock(metadata: MediaMetadata): string | null {
 export function buildUserPrompt(metadata: MediaMetadata, userPrompt: string): string {
   const contextBlock = buildContextBlock(metadata);
   const slideManifest = buildSlideManifest(metadata);
-  const displayedViewCount = resolveDisplayedViewCount(metadata);
+  const { value: displayedViewCount, isPlayCount } = resolveDisplayedViewCount(metadata);
 
   return `Analyze the following content:
 
 - URL: ${metadata.url}
 - Type: ${formatMediaType(metadata)}
 - Username: ${metadata.username}
-- Views: ${displayedViewCount ?? "N/A"}
+- ${isPlayCount ? "Plays" : "Views"}: ${displayedViewCount ?? "N/A"}
 - Duration: ${metadata.durationSec ? `${metadata.durationSec}s` : "N/A"}
 - Post Date: ${metadata.postDate ?? "N/A"}
 - Caption: ${metadata.caption ?? "N/A"}

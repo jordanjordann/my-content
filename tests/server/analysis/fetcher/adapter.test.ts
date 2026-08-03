@@ -608,6 +608,21 @@ describe("adaptPostResponse — real fixtures (ticket #71)", () => {
     expect(result.mediaPartsTotalBeforeCap).toBe(34);
   });
 
+  it("D1/#110 — the hidden-wins-first guard survives the widened plays fallback: like_and_view_counts_disabled=true with an ABSENT view count and a real play count still yields displayedCountIsPlayCount=false and viewCount=null", () => {
+    const media = loadMedia("ig_reel_1_zero_view_count.json");
+    const synthetic: ScrapeCreatorsMedia = {
+      ...media,
+      like_and_view_counts_disabled: true,
+      video_view_count: undefined,
+    };
+
+    const result = adaptPostResponse(synthetic, "https://www.instagram.com/reel/Da4TFq_pKvM/");
+
+    expect(result.playCount).toBe(116_333);
+    expect(result.viewCount).toBeNull();
+    expect(result.displayedCountIsPlayCount).toBe(false);
+  });
+
   it("C9 — coauthorUsernames is never read by any prompt builder (grep-level guard)", () => {
     // Static guard: prompts/user.ts and prompts/system.ts must never
     // reference coauthorUsernames/coauthor_producers. Enforced by grep, not
