@@ -1,18 +1,18 @@
 import type {
-  AnalysisListItem,
+  AnalysisListItemIndexed,
   AnalysisPlatform,
   AnalysisStatus,
 } from "@/lib/api/analyses/types";
 
 export type AnalysisCardProps = {
-  analysis: AnalysisListItem;
+  analysis: AnalysisListItemIndexed;
   onClick: (id: string) => void;
   onDelete?: (id: string) => void;
   isDeleting?: boolean;
 };
 
 export type AnalysisGridProps = {
-  analyses: AnalysisListItem[];
+  analyses: AnalysisListItemIndexed[];
   onAnalysisClick: (id: string) => void;
   onDelete?: (id: string) => void;
   isDeleting?: boolean;

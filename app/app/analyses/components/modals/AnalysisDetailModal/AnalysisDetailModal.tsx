@@ -7,6 +7,7 @@ import {
   LoaderCircleIcon,
   CalendarIcon,
   EyeIcon,
+  HeartIcon,
   FilmIcon,
   ImageIcon,
   LayersIcon,
@@ -26,7 +27,7 @@ import { AnalysisScorecardSection } from "@/app/app/analyses/components/sections
 import { AnalysisRedFlagsSection } from "@/app/app/analyses/components/sections/AnalysisRedFlagsSection";
 import { AnalysisSuggestionsSection } from "@/app/app/analyses/components/sections/AnalysisSuggestionsSection";
 import { PatternBlock } from "@/app/app/analyses/components/sections/PatternBlock";
-import { formatAbbrev } from "@/app/app/analyses/components/counts/EngagementCount";
+import { EngagementCount } from "@/app/app/analyses/components/counts/EngagementCount";
 import { AnalysisDetailTabList } from "./components/tabs/AnalysisDetailTabList";
 import type { AnalysisDetailModalProps, AnalysisDetailTab } from "./types";
 import { formatDate } from "./helpers";
@@ -193,15 +194,28 @@ export function AnalysisDetailModal({ id, onClose }: AnalysisDetailModalProps) {
                     </div>
 
                     <div className="mt-3 flex flex-col gap-2 text-sm text-muted-foreground">
-                      {data.viewCount != null && (
-                        <div className="flex items-center gap-2">
-                          <EyeIcon
-                            className="size-4 shrink-0 text-accent"
-                            aria-hidden="true"
-                          />
-                          <span>{formatAbbrev(data.viewCount)} views</span>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-2">
+                        <EyeIcon
+                          className="size-4 shrink-0 text-accent"
+                          aria-hidden="true"
+                        />
+                        <EngagementCount
+                          metric="views"
+                          state={data.viewCountState}
+                          showMetricWord
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <HeartIcon
+                          className="size-4 shrink-0 text-accent"
+                          aria-hidden="true"
+                        />
+                        <EngagementCount
+                          metric="likes"
+                          state={data.likeCountState}
+                          showMetricWord
+                        />
+                      </div>
                       {data.postDate && (
                         <div className="flex items-center gap-2">
                           <CalendarIcon
