@@ -27,7 +27,7 @@ export function AnalysisCard({
 
   return (
     <Card
-      className="group flex items-center gap-4 p-4 transition-colors hover:border-primary/50 hover:bg-accent/50"
+      className="group flex items-center gap-4 p-4 transition-colors hover:border-primary/50 hover:bg-muted/50"
     >
       <div
         className="flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center"
@@ -49,10 +49,18 @@ export function AnalysisCard({
         <div className="mt-1 flex items-center gap-3 text-xs">
           <span className="inline-flex items-center gap-1">
             <Eye className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            {(analysis.viewCountState.kind === "zero" ||
+              analysis.viewCountState.kind === "count") && (
+              <span className="sr-only">Views </span>
+            )}
             <EngagementCount metric="views" state={analysis.viewCountState} />
           </span>
           <span className="inline-flex items-center gap-1">
             <Heart className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            {(analysis.likeCountState.kind === "zero" ||
+              analysis.likeCountState.kind === "count") && (
+              <span className="sr-only">Likes </span>
+            )}
             <EngagementCount metric="likes" state={analysis.likeCountState} />
           </span>
         </div>
