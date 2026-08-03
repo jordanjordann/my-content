@@ -42,9 +42,13 @@ export interface MediaMetadata {
    */
   playCount?: number | null;
   /**
-   * `true` when `viewCount` is a known-bad `0` and the persisted/displayed
-   * number instead came from `playCount` (Q4) — set so a reel's zero-view
-   * trap is recorded rather than silently swapped.
+   * `true` when `viewCount` is a known-bad `0` OR genuinely absent (widened
+   * by decision D1 / ticket #110) and the persisted/displayed number instead
+   * came from `playCount` (Q4) — set so a reel's zero-view/no-view trap is
+   * recorded rather than silently swapped. The adapter (`fetcher/adapter.ts`)
+   * forces this to `false` and nulls `viewCount` when
+   * `likeAndViewCountsDisabled` is `true`, so on `MediaMetadata` this flag is
+   * always post-guard and safe to read directly.
    */
   displayedCountIsPlayCount?: boolean;
 

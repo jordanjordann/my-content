@@ -54,6 +54,20 @@ function resolveCounts(node: ScrapeCreatorsMedia | ScrapeCreatorsCarouselChildNo
   return { playCount, viewCount, displayedCountIsPlayCount };
 }
 
+/**
+ * PR #111 review N1: `displayedCountIsPlayCount` above is computed from the
+ * RAW node, BEFORE `like_and_view_counts_disabled` is applied anywhere in the
+ * pipeline (that guard lives one layer up, in fetcher/adapter.ts's `viewCount`/
+ * `displayedCountIsPlayCount` nulling for `MediaMetadata`). A counts-disabled
+ * post is a plausible candidate for having `video_view_count` absent while
+ * `video_play_count` is still populated, so this per-part flag can legitimately
+ * be `true` for a slide whose counts are actually supposed to be hidden.
+ * NOTHING reads `MediaPart.displayedCountIsPlayCount` today (`prepareParts.ts`
+ * doesn't touch it; `pipeline/index.ts` only writes it onto `mediaParts`) — but
+ * any FUTURE per-part consumer of this flag MUST re-apply the counts-disabled
+ * check itself before trusting it. Do not consume this flag directly.
+ */
+
 // C7: discriminate on __typename/is_video, NEVER on video_url presence — an
 // all-image carousel's image children carry `video_url: null` (key present,
 // value null), not absent.

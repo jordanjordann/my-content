@@ -30,10 +30,15 @@ export interface MediaPart {
    */
   viewCount: number | null;
   /**
-   * `true` when `viewCount` is a known-bad `0` and display fell back to
+   * `true` when `viewCount` is a known-bad `0` OR genuinely absent
+   * (widened by decision D1 / ticket #110) and display fell back to
    * `playCount` instead — set so the mixed case is visible, not silent
    * (Q4). Always `false` when there was nothing to fall back to (e.g. every
-   * carousel video child, where `playCount` is always `null`).
+   * carousel video child, where `playCount` is always `null`). Computed
+   * from the RAW node, BEFORE `like_and_view_counts_disabled` is applied —
+   * see the comment above `resolveCounts()` in `resolveMediaParts.ts`
+   * (PR #111 review N1). Do not consume this flag without re-checking that
+   * guard.
    */
   displayedCountIsPlayCount: boolean;
 }

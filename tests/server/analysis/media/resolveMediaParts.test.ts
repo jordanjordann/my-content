@@ -94,19 +94,29 @@ describe("resolveMediaParts — resolveCounts / displayedCountIsPlayCount (D1, t
     return raw.data.xdt_shortcode_media;
   }
 
-  it.each([
+  // N5 (PR #111 review): honestly typed as `number | null | undefined` — the
+  // real payload shape ScrapeCreators can send (a key present with an
+  // explicit `null`, or a key present with `undefined`) is wider than
+  // `ScrapeCreatorsMedia`'s declared `number | undefined` field types, so a
+  // single cast to `Partial<ScrapeCreatorsMedia>` at the object-literal
+  // boundary is used instead of the previous double `as unknown as number`
+  // roundtrip, which erased the type information entirely.
+  const rows: { view: number | null | undefined; play: number | null | undefined; expected: boolean; label: string }[] = [
     { view: 0, play: 116_333, expected: true, label: "view=0, play=116333 (known-bad-0 regression)" },
-    { view: null, play: 116_333, expected: true, label: "view=null (key absent), play=116333 — the new D1 case" },
+    { view: null, play: 116_333, expected: true, label: "view=null (explicit null), play=116333 — the new D1 case" },
     { view: undefined, play: 116_333, expected: true, label: "view=undefined, play=116333" },
     { view: 0, play: null, expected: false, label: "view=0, play=null" },
     { view: 0, play: 0, expected: false, label: "view=0, play=0" },
     { view: null, play: null, expected: false, label: "view=null, play=null" },
     { view: 150_780, play: 279_641, expected: false, label: "view=150780, play=279641 — real view wins" },
-  ] as const)("$label -> displayedCountIsPlayCount === $expected", ({ view, play, expected }) => {
-    const media = makeReel({
-      video_view_count: view as unknown as number,
-      video_play_count: play as unknown as number,
-    });
+  ];
+
+  it.each(rows)("$label -> displayedCountIsPlayCount === $expected", ({ view, play, expected }) => {
+    const overrides = {
+      video_view_count: view,
+      video_play_count: play,
+    } as Partial<ScrapeCreatorsMedia>;
+    const media = makeReel(overrides);
 
     const { parts } = resolveMediaParts(media);
 
@@ -114,6 +124,25 @@ describe("resolveMediaParts — resolveCounts / displayedCountIsPlayCount (D1, t
     expect(parts[0].viewCount).toBe(view ?? null);
     expect(parts[0].playCount).toBe(play ?? null);
     expect(parts[0].displayedCountIsPlayCount).toBe(expected);
+  });
+
+  it("N5 — video_view_count key GENUINELY ABSENT (not merely undefined-valued) still resolves the D1 fallback", () => {
+    // Ticket #110 asked for a node where the key itself is missing from the
+    // object, not just a key present with an `undefined` value — spreading
+    // `{ video_view_count: undefined, ...overrides }` in `makeReel()` still
+    // leaves the key present (with value `undefined`) on the resulting
+    // object, which is not the same shape a real payload produces when the
+    // field is truly never sent. This constructs that case explicitly.
+    const media = makeReel({ video_play_count: 116_333 });
+    expect("video_view_count" in media).toBe(true); // sanity: makeReel's own default is present
+    delete (media as { video_view_count?: number }).video_view_count;
+    expect("video_view_count" in media).toBe(false);
+
+    const { parts } = resolveMediaParts(media);
+
+    expect(parts[0].viewCount).toBeNull();
+    expect(parts[0].playCount).toBe(116_333);
+    expect(parts[0].displayedCountIsPlayCount).toBe(true);
   });
 
   it("pins the real trap fixture — ig_reel_1_zero_view_count.json (view=0, play=116333) -> true", () => {
