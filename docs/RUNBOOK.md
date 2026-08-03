@@ -1,9 +1,11 @@
 # RUNBOOK
 
-Operational reference card. Migration section (§4) and test count (§7) re-verified against
-`be-71-carousel-media-migration-009` at `12e37db` (2026-07-24, PR #95 fix-round) — the rest of this
-document is unchanged from the `f181f53` (2026-07-22, session 2) verification and may be stale
-outside the areas §4/§7 touch.
+Operational reference card. Migration section (§4), test counts and layout (§7), and the new
+troubleshooting section (§8) re-verified against `main` at `3e58c32` (2026-08-03, post-PR #113) by
+running the suite and reading the migration/test sources directly. §5's ScrapeCreators credit
+balance was **explicitly NOT re-measured** — checking it costs real credits — and is flagged inline
+as stale. The rest of this document is unchanged from the `f181f53` (2026-07-22, session 2)
+verification and may be stale outside the areas §4/§7/§8 touch.
 
 ---
 
@@ -180,7 +182,7 @@ essentially no production data to preserve as of the redesign's start. Do not bu
   a new forward migration.
 - Run with `npm run db:migrate`.
 
-**Current chain (001 → 009, as of PR #95):**
+**Current chain (001 → 010, as of PR #99; unchanged by the #96 chain through PR #113):**
 
 | # | File | What it does |
 |---|---|---|
@@ -193,19 +195,38 @@ essentially no production data to preserve as of the redesign's start. Do not bu
 | 007 | `007_add_schema_version.sql` | `+ analyses.schema_version` |
 | 008 | `008_delete_legacy_pre_redesign_analyses.sql` | Data-only: deletes pre-redesign rows (no schema change) |
 | 009 | `009_analysis_mode_images_only.sql` | Full rebuild (ticket #71 + PR #95 fix-round): widens `analysis_mode` CHECK to include `'images_only'`; adds `play_count`, `coauthor_producers` (JSON array of usernames), `like_and_view_counts_disabled` (nullable boolean). **37 → 39 columns on `analyses`**, no drops — see the migration file's own header comment and the `PRAGMA table_info`/`index_list` assertion test (§7) for the full before/after. |
+| 010 | `010_profile_style_fingerprints.sql` | Ticket #72 / PR #99. **New table only — `analyses` untouched.** `+ profile_style_fingerprints` (11 cols: `id`, `profile_id` → `profiles(id)`, `fingerprint_version`, `schema_version`, `sample_size`, `source_analysis_ids`, `computed`, `overrides`, `consistency_index`, `created_at`, `updated_at`) + `idx_profile_style_fingerprints_profile_id` (UNIQUE). Deliberately separate from `profiles` — that table holds scraped **facts**, this one holds **inference**. `computed` and `overrides` are two separate JSON columns on purpose so a recompute can never clobber a human correction; read-time merge is `{...computed, ...overrides}` per top-level key. No `is_stale` flag by design (`sample_size` + `source_analysis_ids` already answer it). |
 
-`analyses` currently has **39 named columns** and **6 explicitly-created indexes**
+`analyses` has **39 named columns** and **6 explicitly-created indexes**
 (`idx_analyses_updated_at`, `idx_analyses_title`, `idx_analyses_username`, `idx_analyses_platform`,
 `idx_analyses_profile_id`, `idx_analyses_schema_version`) — asserted by
-`tests/server/db/migrations.schema.test.ts`, which runs the full 001→009 chain against a fresh
-in-memory database rather than relying on hand-verification of each rebuild.
+`tests/server/db/migrations.schema.test.ts`, which runs the **full 001→latest chain** (it globs
+`migrations/*.sql` and sorts, so it picks up new migrations automatically) against a fresh in-memory
+database rather than relying on hand-verification of each rebuild.
+
+**Re-derived 2026-08-03 against migration 010:** these two numbers are **still 39 and 6** — 010 is
+purely additive of a *new* table and does not touch `analyses`. `EXPECTED_ANALYSES_COLUMNS` in that
+test file lists exactly 39 entries and `EXPECTED_ANALYSES_INDEXES` exactly 6, and a third assertion
+independently checks that 009's `INSERT...SELECT` column lists are positionally aligned at 39 each.
+So the figure is correct, but the reason is "010 added a table, not columns" — not "the figure was
+re-confirmed to have changed."
+
+`profile_style_fingerprints` (010) has **11 columns** and **1 explicitly-created index**
+(`idx_profile_style_fingerprints_profile_id`, UNIQUE on `profile_id` — one fingerprint row per
+profile). It is **not** covered by the `analyses` assertions above.
 
 ---
 
 ## 5. API cost discipline
 
-ScrapeCreators is **credit-based**, **31,994 credits remaining** as of 2026-07-22 (the account was
-topped up since the 2026-07-21 measurement of ~25,000 — don't trust older numbers).
+ScrapeCreators is **credit-based**.
+
+> ⚠️ **STALE, UNVERIFIED FIGURE — do not treat as current.** The last actual measurement was
+> **31,994 credits remaining on 2026-07-22**. As of 2026-08-03 that is ~12 days old and has **not**
+> been re-measured, because re-measuring costs real credits. Analysis runs have happened since, so
+> the true balance is **lower by an unknown amount**. Treat the number as a historical data point
+> only. If you genuinely need the current balance, read `credits_remaining` off the response body of
+> a call you were already going to make (see below) — do **not** make a call purely to check it.
 
 | Endpoint | Cost |
 |---|---|
@@ -288,10 +309,12 @@ read from `.claude/context/fixtures/` via `tests/helpers/fixtures.ts`, which thr
 path-naming error if a fixture file is missing. See §5 for why this matters (credits, and
 `/v1/youtube/channel` charging even on a miss).
 
-**Current state: 11 test files, 138 tests** (confirmed via `npm run test -- --run` as of PR #95 /
-ticket #71).
+**Current state: 18 test files, 214 tests** — re-measured 2026-08-03 via `npm run test` on `main` at
+`3e58c32`. (For reference: the previous main `eef8ffa` measured 14 files / 160 tests, so the #96
+chain added 4 files and 54 tests. The "11 files / 138 tests" figure this section used to carry was
+two sessions stale.)
 
-Layout:
+Layout — regenerated 2026-08-03 from `git ls-files`, not from the previous edition of this tree:
 
 ```
 tests/
@@ -300,6 +323,12 @@ tests/
 ├── helpers/fixtures.ts                                  # loader for .claude/context/fixtures/ (fail-fast on missing file)
 ├── fixtures/README.md                                   # fixture inventory + the YouTube/Instagram gaps
 ├── fixtures/synthetic/instagramMedia.ts                 # hand-built adapter inputs — NOT captures
+├── repo/duplicateFileArtifacts.test.ts                  # CI guard: no tracked macOS `<name> <n>.<ext>` duplicates — see §8.3
+├── app/app/analyses/components/counts/EngagementCount/helpers.test.ts
+│                                                        # formatAbbrev — abbreviated count rendering ("116.3K") (#101)
+├── lib/api/analyses/helpers.test.ts                     # classifyViewCount / classifyLikeCount — the CountState discriminated
+│                                                        #   union (hidden/zero/unknown/count/plays), incl. a real-fixture trap case
+│                                                        #   against ig_reel_1_zero_view_count.json (#101, widened by #109/#110)
 ├── server/scrapecreators/youtubeFixtures.test.ts
 ├── server/scrapecreators/client.test.ts                 # includes fake-timer retry/backoff tests
 ├── server/analysis/fetcher/adapter.test.ts
@@ -308,8 +337,14 @@ tests/
 ├── server/analysis/media/resolveMediaParts.test.ts      # carousel/non-carousel enumeration, kind discrimination by __typename/is_video, MAX_MEDIA_PARTS truncation
 ├── server/analysis/media/prepareParts.mimeType.test.ts  # real-URL mime resolution — regression test for the carousel mime-type bug fixed in #71
 ├── server/analysis/pipeline/viewCountBinding.test.ts    # view_count binds from video_view_count, never video_play_count; also covers coauthor_producers / like_and_view_counts_disabled persistence (#71)
+├── server/analysis/pipeline/fingerprintRecompute.test.ts # a fingerprint-recompute failure must never fail the analysis (#72, Step 7)
 ├── server/analysis/prompts/user.slideManifest.test.ts   # slide manifest "N of M" truncation signal (#71)
-└── server/db/migrations.schema.test.ts                  # full 001→009 migration chain schema assertion (#71)
+├── server/analysis/prompts/user.engagementLabel.test.ts  # the prompt labels a play count as PLAYS, never as "Views" (#110, TDD D1)
+├── server/fingerprint/aggregate.test.ts                 # aggregateStyleFingerprint — pure aggregation (#72)
+├── server/fingerprint/service.test.ts                   # recomputeFingerprint: cold start, schema_version filtering,
+│                                                        #   override-safe recompute, co-authored posts at equal weight (#72)
+└── server/db/migrations.schema.test.ts                  # full 001→latest migration chain schema assertion (#71); globs
+                                                         #   migrations/*.sql so new migrations are picked up automatically
 ```
 
 **Known gaps:**
@@ -342,3 +377,151 @@ no-live-API-calls guarantee has two independent layers:
    `.next/cache` is cached for build speed; the tracked-but-gitignored `my-content.db` (§4) is never
    checked for cleanliness and the workflow has no write permissions, so it can't drift or commit
    it.
+
+---
+
+## 8. Traps that look like something else
+
+Added 2026-08-03. Every entry below cost real debugging time in a session because the symptom
+pointed somewhere other than the cause. Read this section **before** debugging anything that
+"makes no sense".
+
+### 8.1 A stale local DB surfaces as an opaque React error
+
+**Symptom.** In the browser, with no obvious trigger:
+
+```
+Can't perform a React state update on a component that hasn't mounted yet.
+```
+
+It reads like a component lifecycle bug — a missing cleanup, a stray `setState` in an async
+callback, a race in a `useEffect`. It is not. You will waste the whole session in component code.
+
+**Cause.** Un-applied migrations. The local `my-content.db` is behind `migrations/`, a query fails
+on a column that doesn't exist yet, and the failure surfaces through the query layer as this
+unrelated-looking React warning instead of a legible "no such column" error.
+
+**Fix.**
+
+```bash
+npm run db:migrate
+```
+
+**Make this your first check, not your last**, any time the UI misbehaves right after you pull,
+switch branches, or check out a worktree. Confirm with:
+
+```bash
+sqlite3 my-content.db "select name from _migrations order by name;"
+ls migrations/
+```
+
+If the two lists differ, that's your bug. Note that every worktree under `.claude/worktrees/` has
+its own `my-content.db` — migrating one does not migrate the others.
+
+### 8.2 A stale `.next` cache produces fake `tsc` errors
+
+**Symptom.** `npx tsc --noEmit` / `npm run typecheck` fails on files you never wrote:
+
+```
+.next/types/cache-life.d 2.ts
+.next/types/routes.d 2.ts
+```
+
+**Cause.** These are macOS duplicate-file artifacts ("keep both files") inside the **build cache**,
+not source. `tsconfig.json`'s `**/*.ts` include picks them up and typechecks them. They are not
+errors in your code and no amount of reading your diff will explain them.
+
+**Fix.**
+
+```bash
+rm -rf .next
+npm run typecheck
+```
+
+Do this before you believe any typecheck failure that names a path under `.next/`. Conversely, a
+duplicate artifact under a **tracked** path is a real problem — see §8.3.
+
+### 8.3 A CI guard blocks macOS duplicate-file artifacts
+
+`tests/repo/duplicateFileArtifacts.test.ts` runs `git ls-files` and fails if **any tracked** path
+matches the ` <n>.<ext>` suffix pattern (`foo 2.ts`, `bar 3.json`). It deliberately only inspects
+tracked files, so the gitignored `.next/` duplicates from §8.2 do **not** trip it.
+
+**Why it exists.** `tests/server/analysis/prompts/user.engagementLabel.test 2.ts` — a byte-identical
+duplicate of its real twin — was committed during crash recovery (a broad `git add -A`). It was
+**never collected by vitest**, because `vitest.config.ts`'s `include: ["tests/**/*.test.ts"]` does
+not match a filename ending `.test 2.ts`. But `tsconfig.json`'s `**/*.ts` include **did** typecheck
+it. Net effect: 95 lines of permanently dead, silently driftable test code, with a fully green
+suite. Nothing in the toolchain complained.
+
+The guard also self-checks that its own pattern matches that exact historical filename, so it can't
+rot into a vacuous assertion.
+
+**If it fails:** `git rm` the offending file (it is a duplicate, not content) and prefer narrow,
+explicit `git add <path>` over `git add -A` when recovering work.
+
+### 8.4 Contrast must be computed in GAMMA-encoded sRGB, not linear
+
+**This one shipped non-compliant code through two tickets. Read it before doing any contrast QA.**
+
+**The app is hard-locked to dark mode.** `app/layout.tsx` puts `dark` on `<html>`
+(`className={...} dark h-full antialiased`). There is **no theme toggle** and no light surface
+anywhere. Consequence: the design mockup
+(`docs/design/engagement-count-display-states-mockup.html`) was authored on a **white** surface, so
+its `slate-*` values are WHITE-surface values. **Do not transplant them literally** — they are
+illegible here. Map onto the app's semantic tokens (`--muted-foreground`, `--background`, `--card`)
+instead. `ENGAGEMENT_MUTED_CLASSNAME` in
+`app/app/analyses/components/counts/EngagementCount/constants.ts` documents this precedent.
+
+**The actual method error.** When a colour carries alpha (a Tailwind `/70`-style opacity), you must
+composite it against its backdrop **before** computing luminance — and that compositing happens in
+**gamma-encoded sRGB**, which is what browsers do. Compositing in **linear** light gives a
+materially different, wrongly-optimistic answer.
+
+Worked example from this codebase: `text-muted-foreground/70`.
+
+| Method | Ratio vs `--background` | Verdict |
+|---|---|---|
+| Alpha composited in **linear** sRGB (WRONG) | **6.11:1** | passes — but is fiction |
+| Alpha composited in **gamma-encoded** sRGB (CORRECT, matches the browser) | **4.42:1** | **fails** WCAG 1.4.3 (≥4.5:1) |
+
+It shipped at `/70` and was live and non-compliant across tickets #101 and #102. Fixed in #103 /
+PR #113 by widening to `/80` (~5.53:1). Measured on every surface the state actually renders on, not
+just one: at `/70` it was 4.42:1 vs `--background`, 4.37:1 vs `--card`, and 4.31:1 vs the table
+row's hover surface (`bg-muted/50` over `--card`) — all three below the floor.
+
+**Correct procedure:**
+
+1. Resolve both colours to sRGB (the tokens here are OKLCH → convert).
+2. If either has alpha, composite it over its **actual** backdrop **in gamma-encoded sRGB**:
+   `out = α·fg + (1−α)·bg`, per channel, on the **0–255 / 0–1 gamma-encoded** values.
+3. Only **now** linearise each composited colour and apply the WCAG relative-luminance formula.
+4. `(L_lighter + 0.05) / (L_darker + 0.05)`.
+5. Repeat for **every** backdrop the element renders against — background, card, and row-hover are
+   three different answers here, and the tightest one governs.
+
+**Process warning.** Two independent agents both reported 6.11:1 and their agreement was treated as
+increased confidence. They had used the same wrong method, so the agreement was worth nothing.
+**Agreement between parties sharing a method is not verification** — cross-check with a *different*
+method (e.g. browser DevTools' own contrast readout, which composites the way the browser does).
+
+### 8.5 `AnalysisGrid` / `AnalysisCard` are dead code — don't maintain or debug them
+
+`AnalysesContent` (`app/app/analyses/components/AnalysesContent/AnalysesContent.tsx`) renders **only**
+`AnalysisDataTable`, plus `AnalysisGridSkeleton` while loading. Verified 2026-08-03 by grep:
+**nothing imports `AnalysisGrid`**, and `AnalysisCard` is imported *only* by `AnalysisGrid` itself.
+The whole subtree is unreachable at runtime.
+
+Note the near-miss: `AnalysisGridSkeleton` **is** live and **is** imported — it is a separate module
+from `AnalysisGrid` despite the similar name. Don't delete it by association.
+
+Unreachable modules:
+
+- `app/app/analyses/components/grids/AnalysisGrid/`
+- `app/app/analyses/components/cards/AnalysisCard/`
+- plus `AnalysisGridProps` / `AnalysisCardProps` in `app/app/analyses/types.ts`
+
+Issue **#23** (Cards/Table `ViewToggle`) was closed **won't-do** on 2026-08-03: the table is the sole
+intended view, so a toggle is moot. The owner has decided to **delete** these modules, but the
+deletion is **DEFERRED, not done**. Until then: they still typecheck, still lint, and will still
+show up in greps — do not spend time fixing bugs in them or updating them to match new contracts.
