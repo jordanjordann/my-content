@@ -17,16 +17,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { AnalysisListItem } from "@/lib/api/analyses/types";
+import type { AnalysisListItemIndexed } from "@/lib/api/analyses/types";
 import { getScoreBgClass, getScoreColorClass } from "@/app/app/analyses/helpers";
+import { EngagementCount } from "@/app/app/analyses/components/counts/EngagementCount";
 
 // --- TYPE DEFINITIONS ---
 interface AnalysisTableProps {
-  analyses: AnalysisListItem[];
+  analyses: AnalysisListItemIndexed[];
   onAnalysisClick: (id: string) => void;
   onDelete?: (id: string) => void;
   isDeleting?: boolean;
 }
+
+// Table column count, kept in sync with the empty-state row's `colSpan` below.
+const TABLE_COLUMN_COUNT = 14;
 
 // --- DIMENSION SCORE CELL ---
 // Threshold logic lives once, in `@/app/app/analyses/helpers`, shared with
@@ -76,6 +80,24 @@ export const AnalysisDataTable = ({
               <TableHead className="text-center">Message</TableHead>
               <TableHead className="text-center">Original.</TableHead>
               <TableHead className="text-center">Emotion</TableHead>
+              {/*
+                Views/Likes are headed columns, so the metric word is redundant on every
+                cell (unlike `AnalysisCard`, which has no column header and needs an
+                `sr-only` word for screen-reader users) — `showMetricWord` is left at its
+                default `false` below. `scope="col"` makes the header-to-cell association
+                explicit for screen readers rather than relying on default `<th>`
+                heuristics (TDD §5.4/§8, a11y note).
+
+                NOT sortable today (design's "non-numeric states sort to bottom" is a
+                forward-looking spec note for whoever adds column sorting later — do not
+                build a sort mechanism here).
+              */}
+              <TableHead scope="col" className="text-right">
+                Views
+              </TableHead>
+              <TableHead scope="col" className="text-right">
+                Likes
+              </TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -185,6 +207,14 @@ export const AnalysisDataTable = ({
                     />
                   </TableCell>
 
+                  {/* Views / Likes */}
+                  <TableCell className="text-right">
+                    <EngagementCount metric="views" state={analysis.viewCountState} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <EngagementCount metric="likes" state={analysis.likeCountState} />
+                  </TableCell>
+
                   {/* Actions */}
                   <TableCell className="text-right">
                     <DropdownMenu>
@@ -216,7 +246,7 @@ export const AnalysisDataTable = ({
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={12} className="h-24 text-center">
+                <TableCell colSpan={TABLE_COLUMN_COUNT} className="h-24 text-center">
                   No results.
                 </TableCell>
               </TableRow>
