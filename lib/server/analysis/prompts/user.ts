@@ -9,11 +9,13 @@ berkinerja relatif terhadap ukuran audiens kreator.`;
 /**
  * Q4=(c): display and rank on VIEWS, consistently, across reels and
  * carousel slides. `metadata.viewCount` is stored RAW (video_view_count,
- * even when it's a known-bad `0`) so the two raw metrics stay queryable and
- * `analyses.view_count`'s meaning never changes — this is the presentation-
- * layer fallback: a reel with a known-bad `viewCount: 0` alongside a
- * populated `playCount` displays the play count instead, and
- * `displayedCountIsPlayCount` records that a plays number is what's shown.
+ * even when it's a known-bad `0` or absent) so the two raw metrics stay
+ * queryable and `analyses.view_count`'s meaning never changes — this is the
+ * presentation-layer fallback: a reel with a known-bad `viewCount: 0` (or an
+ * ABSENT `viewCount`, widened by D1/#110) alongside a populated `playCount`
+ * displays the play count instead, and `displayedCountIsPlayCount` records
+ * that a plays number is what's shown. Callers that render this number MUST
+ * label it "Plays", not "Views" — see `isPlayCount` at each call site below.
  */
 function resolveDisplayedViewCount(metadata: MediaMetadata): number | null {
   if (metadata.displayedCountIsPlayCount && metadata.playCount != null) {
@@ -75,9 +77,10 @@ function buildSlideManifest(metadata: MediaMetadata): string | null {
 function buildContextBlock(metadata: MediaMetadata): string | null {
   const lines: string[] = [];
   const displayedViewCount = resolveDisplayedViewCount(metadata);
+  const isPlayCount = metadata.displayedCountIsPlayCount && metadata.playCount != null;
 
   if (displayedViewCount != null) {
-    lines.push(`- Views: ${formatCount(displayedViewCount)}`);
+    lines.push(`- ${isPlayCount ? "Plays" : "Views"}: ${formatCount(displayedViewCount)}`);
   }
 
   if (metadata.likeCount != null) {
@@ -102,7 +105,12 @@ function buildContextBlock(metadata: MediaMetadata): string | null {
     metadata.followerCount != null &&
     metadata.followerCount > 0
   ) {
-    lines.push(`- View rate: ${formatPercent(displayedViewCount / metadata.followerCount)}`);
+    // D1: labelled by what the numerator actually is (plays vs. views),
+    // same isPlayCount condition as the count line above — the value never
+    // changes, only the label.
+    lines.push(
+      `- ${isPlayCount ? "Play rate" : "View rate"}: ${formatPercent(displayedViewCount / metadata.followerCount)}`,
+    );
   }
 
   const audioLine = formatAudioLine(metadata);
@@ -125,13 +133,14 @@ export function buildUserPrompt(metadata: MediaMetadata, userPrompt: string): st
   const contextBlock = buildContextBlock(metadata);
   const slideManifest = buildSlideManifest(metadata);
   const displayedViewCount = resolveDisplayedViewCount(metadata);
+  const isPlayCount = metadata.displayedCountIsPlayCount && metadata.playCount != null;
 
   return `Analyze the following content:
 
 - URL: ${metadata.url}
 - Type: ${formatMediaType(metadata)}
 - Username: ${metadata.username}
-- Views: ${displayedViewCount ?? "N/A"}
+- ${isPlayCount ? "Plays" : "Views"}: ${displayedViewCount ?? "N/A"}
 - Duration: ${metadata.durationSec ? `${metadata.durationSec}s` : "N/A"}
 - Post Date: ${metadata.postDate ?? "N/A"}
 - Caption: ${metadata.caption ?? "N/A"}

@@ -38,13 +38,18 @@ function resolveCounts(node: ScrapeCreatorsMedia | ScrapeCreatorsCarouselChildNo
   const playCount = num(node.video_play_count);
   const viewCount = num(node.video_view_count);
 
-  // Q4: video_view_count === 0 is a known-bad value on some reels
+  // Q4/D1: video_view_count === 0 is a known-bad value on some reels
   // (ig_reel_1_zero_view_count.json: view=0, play=116333) — fall back to
   // playCount for display, but RECORD the fallback rather than silently
-  // swapping the number. Carousel video children never trigger this arm in
-  // practice: playCount is always null there (C4), so there is nothing to
-  // fall back to.
-  const displayedCountIsPlayCount = viewCount === 0 && playCount !== null && playCount > 0;
+  // swapping the number. D1 (epic #96, ticket #110) widens this to also
+  // admit an ABSENT video_view_count (viewCount == null, via num()'s
+  // null-for-missing behaviour) alongside the known-bad 0 — a reel that
+  // simply omits video_view_count while carrying a real video_play_count
+  // must not lose its reach metric from the prompt either. Carousel video
+  // children never trigger this arm in practice: playCount is always null
+  // there (C4), so there is nothing to fall back to.
+  const displayedCountIsPlayCount =
+    (viewCount === 0 || viewCount == null) && playCount !== null && playCount > 0;
 
   return { playCount, viewCount, displayedCountIsPlayCount };
 }

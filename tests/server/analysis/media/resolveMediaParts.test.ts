@@ -1,9 +1,11 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { resolveMediaParts } from "@/lib/server/analysis/media";
 import { MAX_MEDIA_PARTS } from "@/lib/server/analysis/media/constants";
 import type { ScrapeCreatorsCarouselChildNode, ScrapeCreatorsMedia } from "@/lib/server/scrapecreators";
-import { makeCarousel, makeImageChild, makeVideoChild } from "@/tests/fixtures/synthetic/instagramMedia";
+import { makeCarousel, makeImageChild, makeReel, makeVideoChild } from "@/tests/fixtures/synthetic/instagramMedia";
 
 describe("resolveMediaParts — enumeration", () => {
   it("produces a single-element array for a non-carousel video (reel/post convergence, Step 2)", () => {
@@ -72,5 +74,76 @@ describe("resolveMediaParts — enumeration", () => {
     const { parts, truncated } = resolveMediaParts(media);
     expect(parts).toHaveLength(10);
     expect(truncated).toBe(false);
+  });
+});
+
+/**
+ * D1 (ticket #110): table-driven coverage of `resolveCounts()`'s
+ * `displayedCountIsPlayCount` fallback, widened to admit an ABSENT
+ * `video_view_count` (not just a known-bad `0`) alongside a populated
+ * `video_play_count`. Every row below drives `resolveMediaParts()` through
+ * the same non-carousel `toPart()` path a reel/post takes.
+ */
+describe("resolveMediaParts — resolveCounts / displayedCountIsPlayCount (D1, ticket #110)", () => {
+  const fixturesDir = path.join(process.cwd(), ".claude/context/fixtures/scrapecreators-instagram");
+
+  function loadMedia(fixtureName: string): ScrapeCreatorsMedia {
+    const raw = JSON.parse(fs.readFileSync(path.join(fixturesDir, fixtureName), "utf8")) as {
+      data: { xdt_shortcode_media: ScrapeCreatorsMedia };
+    };
+    return raw.data.xdt_shortcode_media;
+  }
+
+  it.each([
+    { view: 0, play: 116_333, expected: true, label: "view=0, play=116333 (known-bad-0 regression)" },
+    { view: null, play: 116_333, expected: true, label: "view=null (key absent), play=116333 — the new D1 case" },
+    { view: undefined, play: 116_333, expected: true, label: "view=undefined, play=116333" },
+    { view: 0, play: null, expected: false, label: "view=0, play=null" },
+    { view: 0, play: 0, expected: false, label: "view=0, play=0" },
+    { view: null, play: null, expected: false, label: "view=null, play=null" },
+    { view: 150_780, play: 279_641, expected: false, label: "view=150780, play=279641 — real view wins" },
+  ] as const)("$label -> displayedCountIsPlayCount === $expected", ({ view, play, expected }) => {
+    const media = makeReel({
+      video_view_count: view as unknown as number,
+      video_play_count: play as unknown as number,
+    });
+
+    const { parts } = resolveMediaParts(media);
+
+    expect(parts).toHaveLength(1);
+    expect(parts[0].viewCount).toBe(view ?? null);
+    expect(parts[0].playCount).toBe(play ?? null);
+    expect(parts[0].displayedCountIsPlayCount).toBe(expected);
+  });
+
+  it("pins the real trap fixture — ig_reel_1_zero_view_count.json (view=0, play=116333) -> true", () => {
+    const media = loadMedia("ig_reel_1_zero_view_count.json");
+
+    const { parts } = resolveMediaParts(media);
+
+    expect(parts[0].viewCount).toBe(0);
+    expect(parts[0].playCount).toBe(116_333);
+    expect(parts[0].displayedCountIsPlayCount).toBe(true);
+  });
+
+  it("pins a real fixture with a genuine view count — ig_reel_3.json (view=150780, play=279641) -> false", () => {
+    const media = loadMedia("ig_reel_3.json");
+
+    const { parts } = resolveMediaParts(media);
+
+    expect(parts[0].viewCount).toBe(150_780);
+    expect(parts[0].playCount).toBe(279_641);
+    expect(parts[0].displayedCountIsPlayCount).toBe(false);
+  });
+
+  it("the fallback structurally cannot fire for carousel video children — every video child in the real mixed carousel fixture resolves to false, playCount always null (C4)", () => {
+    const media = loadMedia("ig_carousel_mixed_video_and_image_10_slides.json");
+
+    const { parts } = resolveMediaParts(media);
+    const videoParts = parts.filter((p) => p.kind === "video");
+
+    expect(videoParts).toHaveLength(7);
+    expect(videoParts.every((p) => p.playCount === null)).toBe(true);
+    expect(videoParts.every((p) => p.displayedCountIsPlayCount === false)).toBe(true);
   });
 });
