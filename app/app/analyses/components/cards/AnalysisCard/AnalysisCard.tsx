@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock, Trash2, MoreVertical } from "lucide-react";
+import { Clock, Trash2, MoreVertical, Eye, Heart } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { EngagementCount } from "@/app/app/analyses/components/counts/EngagementCount";
 import type { AnalysisCardProps } from "@/app/app/analyses/types";
 import { getScoreColorClass } from "@/app/app/analyses/helpers";
 
@@ -26,7 +27,7 @@ export function AnalysisCard({
 
   return (
     <Card
-      className="group flex items-center gap-4 p-4 transition-colors hover:border-primary/50 hover:bg-accent/50"
+      className="group flex items-center gap-4 p-4 transition-colors hover:border-primary/50 hover:bg-muted/50"
     >
       <div
         className="flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center"
@@ -44,6 +45,24 @@ export function AnalysisCard({
           <span>{dateStr}</span>
           <span>·</span>
           <span className="capitalize">{analysis.mediaType}</span>
+        </div>
+        <div className="mt-1 flex items-center gap-3 text-xs">
+          <span className="inline-flex items-center gap-1">
+            <Eye className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            {(analysis.viewCountState.kind === "zero" ||
+              analysis.viewCountState.kind === "count") && (
+              <span className="sr-only">Views </span>
+            )}
+            <EngagementCount metric="views" state={analysis.viewCountState} />
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <Heart className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            {(analysis.likeCountState.kind === "zero" ||
+              analysis.likeCountState.kind === "count") && (
+              <span className="sr-only">Likes </span>
+            )}
+            <EngagementCount metric="likes" state={analysis.likeCountState} />
+          </span>
         </div>
       </div>
 
