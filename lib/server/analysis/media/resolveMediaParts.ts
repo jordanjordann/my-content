@@ -38,16 +38,35 @@ function resolveCounts(node: ScrapeCreatorsMedia | ScrapeCreatorsCarouselChildNo
   const playCount = num(node.video_play_count);
   const viewCount = num(node.video_view_count);
 
-  // Q4: video_view_count === 0 is a known-bad value on some reels
+  // Q4/D1: video_view_count === 0 is a known-bad value on some reels
   // (ig_reel_1_zero_view_count.json: view=0, play=116333) — fall back to
   // playCount for display, but RECORD the fallback rather than silently
-  // swapping the number. Carousel video children never trigger this arm in
-  // practice: playCount is always null there (C4), so there is nothing to
-  // fall back to.
-  const displayedCountIsPlayCount = viewCount === 0 && playCount !== null && playCount > 0;
+  // swapping the number. D1 (epic #96, ticket #110) widens this to also
+  // admit an ABSENT video_view_count (viewCount == null, via num()'s
+  // null-for-missing behaviour) alongside the known-bad 0 — a reel that
+  // simply omits video_view_count while carrying a real video_play_count
+  // must not lose its reach metric from the prompt either. Carousel video
+  // children never trigger this arm in practice: playCount is always null
+  // there (C4), so there is nothing to fall back to.
+  const displayedCountIsPlayCount =
+    (viewCount === 0 || viewCount == null) && playCount !== null && playCount > 0;
 
   return { playCount, viewCount, displayedCountIsPlayCount };
 }
+
+/**
+ * PR #111 review N1: `displayedCountIsPlayCount` above is computed from the
+ * RAW node, BEFORE `like_and_view_counts_disabled` is applied anywhere in the
+ * pipeline (that guard lives one layer up, in fetcher/adapter.ts's `viewCount`/
+ * `displayedCountIsPlayCount` nulling for `MediaMetadata`). A counts-disabled
+ * post is a plausible candidate for having `video_view_count` absent while
+ * `video_play_count` is still populated, so this per-part flag can legitimately
+ * be `true` for a slide whose counts are actually supposed to be hidden.
+ * NOTHING reads `MediaPart.displayedCountIsPlayCount` today (`prepareParts.ts`
+ * doesn't touch it; `pipeline/index.ts` only writes it onto `mediaParts`) — but
+ * any FUTURE per-part consumer of this flag MUST re-apply the counts-disabled
+ * check itself before trusting it. Do not consume this flag directly.
+ */
 
 // C7: discriminate on __typename/is_video, NEVER on video_url presence — an
 // all-image carousel's image children carry `video_url: null` (key present,

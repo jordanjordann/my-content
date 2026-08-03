@@ -1028,3 +1028,34 @@ typeof response.text === "string", length 1148
   `response.usageMetadata`, JSON-Schema `nullable`/array/enum acceptance) that `generate.ts`'s new
   config relies on. `ANALYSIS_RESPONSE_SCHEMA` itself is verified by typecheck/build only, not by
   a live call — see #66's PR description for the schema-only-vs-live-verified breakdown.
+
+---
+
+## ScrapeCreators — `/v1/instagram/post` — `like_and_view_counts_disabled` — OPEN / UNVERIFIED GAP
+
+- **Status: NOT independently verified against a live capture.** Flagged during PR #111
+  (ticket #110) code review (finding N1) — recorded here per the "stop and flag it" rule in
+  AGENTS.md's "External API Verification" section rather than guessed at or live-called.
+- **What IS verified:** the field name `like_and_view_counts_disabled` exists on the top-level
+  `ScrapeCreatorsMedia` node (see `lib/server/scrapecreators/types.ts`) and is read as
+  `raw.like_and_view_counts_disabled === true` (`lib/server/analysis/fetcher/adapter.ts`, C8) —
+  strict `=== true`, never a truthy/falsy coercion, so `undefined`/absent is deliberately NOT
+  treated as `false`.
+  All five committed fixtures under `.claude/context/fixtures/scrapecreators-instagram/` have
+  this field set to `false`. **None of the committed fixtures represent a genuinely
+  counts-disabled post.** This means:
+  - The shape of a real counts-disabled payload (does `edge_media_preview_like` still carry a
+    `count` object, or is the whole edge omitted? does `video_view_count`/`video_play_count`
+    still appear, populated, or does ScrapeCreators itself null/omit them upstream?) is
+    UNVERIFIED. Everything in the codebase that branches on this flag (adapter.ts's nulling of
+    `viewCount`/`likeCount`/`displayedCountIsPlayCount`, and the client's `classifyViewCount`/
+    `classifyLikeCount` in `lib/api/analyses/helpers.ts`) is built to be defensive regardless of
+    the raw payload shape underneath the flag — it does not depend on knowing the exact shape —
+    but the shape itself has not been confirmed against a real API response.
+  - Do NOT assume the counts-disabled payload nulls the underlying count fields itself upstream
+    of our adapter, and do NOT assume it doesn't. Both are currently unverified.
+- **Do not close this gap with a live API call speculatively** — per the ticket's explicit
+  instruction, that costs real ScrapeCreators credits and was out of scope for this review-fix
+  round. Capture a genuine counts-disabled fixture live (and add it under
+  `.claude/context/fixtures/scrapecreators-instagram/`) before writing any code that depends on
+  the shape of that payload beyond the boolean flag itself.
