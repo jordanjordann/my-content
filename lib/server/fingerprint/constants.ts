@@ -39,3 +39,23 @@ export const PROVENANCE_FIELDS = [
   "createdAt",
   "updatedAt",
 ] as const;
+
+/**
+ * Ticket #73 sub-ticket A (TDD §3 D1). `sampleSize` and `sourceAnalysisIds`
+ * are the provenance of the "based on N videos" confidence indicator
+ * (PRD §6.1) — a count of rows and the ids behind it, not a "read of the
+ * creator" a human could plausibly correct. They currently live inside
+ * `ComputedFingerprint`, so they are spread BEFORE `...overrides` in
+ * `getFingerprint`'s read-time merge — an override on either of them would
+ * otherwise win at read time, which is the exact bug class already fixed
+ * for `consistencyIndex` (`service.test.ts:192`), pointed the other way.
+ *
+ * `NON_OVERRIDABLE_FIELDS` is used in all three places that guard override
+ * safety: write-time rejection (`patchFingerprintOverrides`/
+ * `setFingerprintOverrides`), `getFingerprint`'s `overriddenKeys` filter, and
+ * a defensive strip of these keys from `overrides` before the read-time
+ * merge spread (belt-and-suspenders for any legacy blob written before this
+ * guard existed). `consistencyIndex` deliberately stays OUT of this list —
+ * #72's decision that it remains overridable is unchanged.
+ */
+export const NON_OVERRIDABLE_FIELDS = [...PROVENANCE_FIELDS, "sampleSize", "sourceAnalysisIds"] as const;

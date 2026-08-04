@@ -233,7 +233,7 @@ describe("recomputeFingerprint — override-safe recompute (Step 2)", () => {
     await recomputeFingerprint(profileId);
 
     await expect(setFingerprintOverrides(profileId, { profileId: "some-other-id" })).rejects.toThrow(
-      /provenance field/,
+      /non-overridable field/,
     );
   });
 });

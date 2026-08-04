@@ -82,6 +82,14 @@ export interface StyleFingerprint {
   /** Human corrections. Null until an operator writes one. Never touched by a recompute. */
   overrides: Record<string, unknown> | null;
   consistencyIndex: number;
+  /**
+   * When `computed`/`consistencyIndex` were last (re)computed by
+   * `upsertFingerprint` — distinct from `updatedAt`, which also moves on a
+   * human-only `PATCH` (migration 011, TDD §3 D2). `mapRow` guarantees this
+   * is never `null` even for a pre-migration row (falls back to `updatedAt`
+   * at read time), so the type stays non-nullable here.
+   */
+  computedAt: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -96,7 +104,45 @@ export type FingerprintView = ComputedFingerprint & {
   fingerprintVersion: number;
   schemaVersion: number;
   consistencyIndex: number;
+  computedAt: string;
   createdAt: string;
   updatedAt: string;
   overriddenKeys: string[];
 };
+
+/**
+ * A `PATCH` request body against `overrides` (TDD §3 D3). Shallow,
+ * top-level-only: each key either sets that key's override or, if the value
+ * is `null`, deletes it (reverting that key to `computed`). Never nested —
+ * `dateRange`'s override, if present, always replaces the whole
+ * `{earliest, latest}` object, never merges into it.
+ */
+export type FingerprintPatch = Record<string, unknown>;
+
+/**
+ * `validateOverridePatch`'s result (TDD §3 D4/D5). Never throws; `invalidKeys`
+ * names every offending top-level key so a `400` caller can report all of
+ * them at once rather than one-at-a-time trial and error.
+ */
+export type FingerprintValidationResult = { ok: true } | { ok: false; invalidKeys: string[] };
+
+/**
+ * `patchFingerprintOverrides`'s (repository-level) result. `reason:
+ * "NOT_FOUND"` is the honest not-found (TDD §3 D6) for a `PATCH` against a
+ * profile with no fingerprint row — today's bare UPDATE affects 0 rows and
+ * resolves successfully, which is the bug this type exists to make
+ * impossible to reproduce.
+ */
+export type PatchOverridesResult = { ok: true; row: StyleFingerprint } | { ok: false; reason: "NOT_FOUND" };
+
+/**
+ * `applyFingerprintOverridePatch`'s (service-level orchestration) result —
+ * validates against `computed` first (nothing is written on `INVALID`, TDD
+ * §4), then delegates to `patchFingerprintOverrides`, then re-reads the
+ * merged view so a caller (the future route ticket) needs no second
+ * round-trip.
+ */
+export type ApplyOverridePatchResult =
+  | { ok: true; view: FingerprintView }
+  | { ok: false; reason: "NOT_FOUND" }
+  | { ok: false; reason: "INVALID"; invalidKeys: string[] };
