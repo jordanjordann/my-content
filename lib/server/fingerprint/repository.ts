@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { InValue } from "@libsql/client";
 import { db } from "@/lib/server/db";
 import type { ContentAnalysis } from "@/lib/server/analysis/types";
 import { NON_OVERRIDABLE_FIELDS } from "./constants";
@@ -204,6 +205,55 @@ export async function setFingerprintOverrides(
 }
 
 /**
+ * Escapes a JSON key for use inside a SQLite `json1` path expression's
+ * double-quoted object-member segment (`$."<key>"`) — doubles any embedded
+ * `"` per the json1 path grammar. The escaped key is only ever used as
+ * literal text folded into a bound `?` parameter (never concatenated into
+ * the SQL string itself), so this is a correctness escape for the path
+ * grammar, not a SQL-injection concern.
+ */
+function jsonPath(key: string): string {
+  return `$."${key.replace(/"/g, '""')}"`;
+}
+
+/**
+ * Builds a SQL expression (plus its positional bind args, in application
+ * order) that computes the merged `overrides` JSON blob entirely inside
+ * SQLite, starting from the CURRENT `overrides` column value of the row
+ * being updated. Used by `patchFingerprintOverrides` so the whole
+ * read-modify-write collapses into a single atomic `UPDATE` statement — see
+ * that function's doc comment for why.
+ *
+ * Mirrors the semantics the old in-JS merge had: `NON_OVERRIDABLE_FIELDS`
+ * are defensively stripped from whatever `overrides` currently holds
+ * (legacy-blob belt-and-suspenders, D1c), then each patch key with a
+ * non-`null` value is `json_set`, and each patch key with a `null` value is
+ * `json_remove`d (both are no-ops for an already-absent path, matching the
+ * old `delete merged[key]` on a key that was never present).
+ */
+function buildMergedOverridesExpr(patch: Record<string, unknown>): { sql: string; args: InValue[] } {
+  let expr = "coalesce(overrides, '{}')";
+  const args: InValue[] = [];
+
+  for (const field of NON_OVERRIDABLE_FIELDS) {
+    expr = `json_remove(${expr}, ?)`;
+    args.push(jsonPath(field));
+  }
+
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) {
+      expr = `json_remove(${expr}, ?)`;
+      args.push(jsonPath(key));
+    } else {
+      expr = `json_set(${expr}, ?, json(?))`;
+      args.push(jsonPath(key), JSON.stringify(value));
+    }
+  }
+
+  return { sql: expr, args };
+}
+
+/**
  * Ticket #73 sub-ticket A (TDD §3 D3/D6). Partial, shallow, top-level-only
  * merge into `overrides`: a patch key with a non-`null` value replaces that
  * top-level key; a `null` value DELETES that key (never stores a literal
@@ -216,10 +266,32 @@ export async function setFingerprintOverrides(
  * nested objects (wrong for `dateRange`) and leaves `'{}'` rather than SQL
  * `NULL` on full deletion.
  *
- * Read-modify-write inside `db.transaction("write")` — the row's existence
- * is checked *inside* the transaction, and a missing row returns a typed
- * `{ok:false, reason:"NOT_FOUND"}` (D6) rather than the bare-UPDATE-affects-
- * 0-rows silent success `setFingerprintOverrides` has today.
+ * Deliberately NOT `db.transaction()` (fixing a bug found in code review,
+ * post-merge of the original TDD): `@libsql/client`'s local sqlite3 driver
+ * steals the client's underlying native connection for the lifetime of a
+ * `db.transaction()` call (`Sqlite3Client.transaction`,
+ * `node_modules/@libsql/client/lib-esm/sqlite3.js` — it nulls its own `#db`
+ * field the moment `transaction()` returns, "a new connection will be
+ * lazily created on next use"), and `Sqlite3Transaction.close()` NEVER
+ * closes the native handle it was given — on the success path it only
+ * issues `ROLLBACK` when `inTransaction` is still true, which is false
+ * after a successful `commit()`, so `close()` is a no-op; the underlying
+ * native `Database` object is simply abandoned with no reachable reference
+ * anywhere (it lives in a private class field the driver never exposes).
+ * Every call leaked one native SQLite connection.
+ *
+ * The read-modify-write this function needs is instead expressed as a
+ * SINGLE atomic `UPDATE ... RETURNING *` statement: the merge (legacy-field
+ * strip + patch apply) is computed entirely inside SQLite via `json_set`/
+ * `json_remove` over the row's own current `overrides` column value (see
+ * `buildMergedOverridesExpr`), so there is no separate SELECT, no JS-side
+ * read-then-write window, and no `db.transaction()` call at all — just a
+ * normal `db.execute()` on the client's ordinarily-owned, never-stolen
+ * connection. A single UPDATE statement is already atomic in SQLite, so
+ * this is at least as concurrency-safe as the transaction it replaces, not
+ * less. A missing row is detected the same way the old NOT_FOUND check
+ * was, just after the fact: `RETURNING *` yields no row when the `WHERE
+ * profile_id = ?` predicate matches nothing.
  *
  * Rejects (throws) any patch attempt on a `NON_OVERRIDABLE_FIELDS` key,
  * same as `setFingerprintOverrides` — callers are expected to run
@@ -235,57 +307,26 @@ export async function patchFingerprintOverrides(
     throw new Error(`patchFingerprintOverrides: cannot override non-overridable field(s): ${rejected.join(", ")}`);
   }
 
-  const tx = await db.transaction("write");
-  try {
-    const existing = await tx.execute({
-      sql: "SELECT * FROM profile_style_fingerprints WHERE profile_id = ? LIMIT 1",
-      args: [profileId],
-    });
-    const existingRow = existing.rows[0] as unknown as Record<string, unknown> | undefined;
-    if (!existingRow) {
-      return { ok: false, reason: "NOT_FOUND" };
-    }
+  const { sql: mergedExpr, args: mergeArgs } = buildMergedOverridesExpr(patch);
 
-    const rawOverrides = existingRow.overrides as string | null;
-    const currentOverrides: Record<string, unknown> = rawOverrides == null ? {} : JSON.parse(rawOverrides);
+  const result = await db.execute({
+    sql: `
+      UPDATE profile_style_fingerprints
+      SET overrides = CASE
+          WHEN (SELECT count(*) FROM json_each(${mergedExpr})) = 0 THEN NULL
+          ELSE ${mergedExpr}
+        END,
+        updated_at = datetime('now')
+      WHERE profile_id = ?
+      RETURNING *
+    `,
+    args: [...mergeArgs, ...mergeArgs, profileId],
+  });
 
-    // Defensive strip (D1c): a legacy blob written before write-time
-    // rejection existed must never let a non-overridable key survive a
-    // merge into the stored column.
-    for (const key of NON_OVERRIDABLE_FIELDS) {
-      delete currentOverrides[key];
-    }
-
-    const merged: Record<string, unknown> = { ...currentOverrides };
-    for (const [key, value] of Object.entries(patch)) {
-      if (value === null) {
-        delete merged[key];
-      } else {
-        merged[key] = value;
-      }
-    }
-
-    const nextOverrides = Object.keys(merged).length === 0 ? null : JSON.stringify(merged);
-
-    const updated = await tx.execute({
-      sql: `
-        UPDATE profile_style_fingerprints
-        SET overrides = ?, updated_at = datetime('now')
-        WHERE profile_id = ?
-        RETURNING *
-      `,
-      args: [nextOverrides, profileId],
-    });
-
-    await tx.commit();
-
-    const updatedRow = updated.rows[0];
-    if (!updatedRow) {
-      throw new Error(`patchFingerprintOverrides: failed to read back profile ${profileId} after patch`);
-    }
-
-    return { ok: true, row: mapRow(updatedRow as unknown as Record<string, unknown>) };
-  } finally {
-    tx.close();
+  const updatedRow = result.rows[0];
+  if (!updatedRow) {
+    return { ok: false, reason: "NOT_FOUND" };
   }
+
+  return { ok: true, row: mapRow(updatedRow as unknown as Record<string, unknown>) };
 }
