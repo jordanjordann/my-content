@@ -1,8 +1,14 @@
 import { ANALYSIS_SCHEMA_VERSION } from "@/lib/server/analysis/schema";
 import { aggregateStyleFingerprint } from "./aggregate";
-import { MIN_ANALYSES_FOR_FINGERPRINT, FINGERPRINT_VERSION, PROVENANCE_FIELDS } from "./constants";
-import { getCompletedV2Analyses, getFingerprintRow, upsertFingerprint } from "./repository";
-import type { FingerprintView, StyleFingerprint } from "./types";
+import { MIN_ANALYSES_FOR_FINGERPRINT, FINGERPRINT_VERSION, NON_OVERRIDABLE_FIELDS } from "./constants";
+import {
+  getCompletedV2Analyses,
+  getFingerprintRow,
+  patchFingerprintOverrides,
+  upsertFingerprint,
+} from "./repository";
+import { validateOverridePatch } from "./validation";
+import type { ApplyOverridePatchResult, FingerprintView, StyleFingerprint } from "./types";
 
 /**
  * Recomputes a profile's style fingerprint from its current corpus of
@@ -54,10 +60,19 @@ export async function recomputeFingerprint(profileId: string): Promise<StyleFing
  * `schemaVersion`/`createdAt`/`updatedAt`) is spread in after that and is
  * never overridable — those are this row's identity, not a computed value a
  * human could plausibly correct. `overriddenKeys` is filtered to exclude
- * provenance fields so it only ever lists a key whose override actually
- * took effect (see `PROVENANCE_FIELDS`; `setFingerprintOverrides` also
- * rejects writes to these keys, so this filter is belt-and-suspenders for
- * any override written before that guard existed).
+ * `NON_OVERRIDABLE_FIELDS` so it only ever lists a key whose override
+ * actually took effect.
+ *
+ * `sampleSize`/`sourceAnalysisIds` (TDD §3 D1) get the SAME belt-and-
+ * suspenders treatment as provenance: `NON_OVERRIDABLE_FIELDS` keys are
+ * stripped from a local copy of `overrides` BEFORE the read-merge spread —
+ * they live inside `ComputedFingerprint`, so without this strip a legacy
+ * override on either of them would win at read time despite being spread
+ * before `computed`/`consistencyIndex`'s dedicated post-spread fields
+ * below, this is the exact bug class already fixed for `consistencyIndex`
+ * (`service.test.ts:192`), pointed the other way. `setFingerprintOverrides`
+ * / `patchFingerprintOverrides` also reject writes to these keys, so this
+ * strip only matters for a blob written before those guards existed.
  */
 export async function getFingerprint(profileId: string): Promise<FingerprintView | null> {
   const row = await getFingerprintRow(profileId);
@@ -65,10 +80,11 @@ export async function getFingerprint(profileId: string): Promise<FingerprintView
     return null;
   }
 
-  const overrides = row.overrides ?? {};
-  const overriddenKeys = Object.keys(overrides).filter(
-    (key) => !(PROVENANCE_FIELDS as readonly string[]).includes(key),
-  );
+  const overrides = { ...(row.overrides ?? {}) };
+  for (const key of NON_OVERRIDABLE_FIELDS) {
+    delete overrides[key];
+  }
+  const overriddenKeys = Object.keys(overrides);
 
   return {
     ...row.computed,
@@ -77,8 +93,45 @@ export async function getFingerprint(profileId: string): Promise<FingerprintView
     profileId: row.profileId,
     fingerprintVersion: row.fingerprintVersion,
     schemaVersion: row.schemaVersion,
+    sampleSize: row.sampleSize,
+    sourceAnalysisIds: row.sourceAnalysisIds,
+    computedAt: row.computedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     overriddenKeys,
   } as FingerprintView;
+}
+
+/**
+ * Ticket #73 sub-ticket A orchestrator (TDD §3 D4-D6, §5). Validates the
+ * whole patch against the CURRENT `computed` before writing anything
+ * (`INVALID` → nothing is written), delegates the actual merge to
+ * `patchFingerprintOverrides`, then re-reads the merged view so a caller
+ * (the route ticket, #116) needs no second round-trip.
+ */
+export async function applyFingerprintOverridePatch(
+  profileId: string,
+  patch: Record<string, unknown>,
+): Promise<ApplyOverridePatchResult> {
+  const row = await getFingerprintRow(profileId);
+  if (!row) {
+    return { ok: false, reason: "NOT_FOUND" };
+  }
+
+  const validation = validateOverridePatch(patch, row.computed);
+  if (!validation.ok) {
+    return { ok: false, reason: "INVALID", invalidKeys: validation.invalidKeys };
+  }
+
+  const result = await patchFingerprintOverrides(profileId, patch);
+  if (!result.ok) {
+    return { ok: false, reason: "NOT_FOUND" };
+  }
+
+  const view = await getFingerprint(profileId);
+  if (!view) {
+    throw new Error(`applyFingerprintOverridePatch: failed to re-read profile ${profileId} after patch`);
+  }
+
+  return { ok: true, view };
 }
