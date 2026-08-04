@@ -133,8 +133,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ error: "Profile not found.", reason: "PROFILE_NOT_FOUND" }, { status: 404 });
     }
 
+    const analysisCount = await countCompletedV2Analyses(id, ANALYSIS_SCHEMA_VERSION);
     return NextResponse.json(
-      { error: "No fingerprint available for this profile yet.", reason: "NO_FINGERPRINT" },
+      {
+        error: "No fingerprint available for this profile yet.",
+        reason: "NO_FINGERPRINT",
+        analysisCount,
+        required: MIN_ANALYSES_FOR_FINGERPRINT,
+      },
       { status: 404 },
     );
   } catch (error) {

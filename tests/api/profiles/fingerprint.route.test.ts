@@ -345,7 +345,15 @@ describe("PATCH /api/profiles/[id]/fingerprint — override write + read-back", 
     );
     expect(response.status).toBe(404);
     const body = await response.json();
-    expect(body.reason).toBe("NO_FINGERPRINT");
+    // PATCH's NO_FINGERPRINT body must match GET's shape (PR #121 review
+    // follow-up #2) — a client hitting "you need N more videos" from a PATCH
+    // has the same need for the count as it does from a GET.
+    expect(body).toEqual({
+      error: "No fingerprint available for this profile yet.",
+      reason: "NO_FINGERPRINT",
+      analysisCount: 4,
+      required: 5,
+    });
   });
 
   it("PATCH on an unknown profile id -> 404 PROFILE_NOT_FOUND", async () => {
