@@ -51,10 +51,16 @@ export async function analyzeContent(
   // output is not salvageable — throw here, BEFORE any caller (or this
   // function) attempts to parse the body. This is the PRD §5.4 "loud errors,
   // not invented data" rule applied at the generation boundary.
+  //
+  // Fail CLOSED: an absent finishReason (missing/empty `candidates`, or an
+  // SDK response shape that doesn't populate it) must NOT fall through to
+  // parsing. Only an explicit `FinishReason.STOP` passes the guard — every
+  // other value, including `undefined`, is a hard error (code review on
+  // ticket #66).
   const finishReason = response.candidates?.[0]?.finishReason;
-  if (finishReason !== undefined && finishReason !== FinishReason.STOP) {
+  if (finishReason !== FinishReason.STOP) {
     throw new Error(
-      `Gemini generation did not complete: finishReason=${finishReason}`,
+      `Gemini generation did not complete: finishReason=${finishReason ?? "undefined"}`,
     );
   }
 
