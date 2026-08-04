@@ -66,6 +66,25 @@ const EXPECTED_ANALYSES_INDEXES = [
   "idx_analyses_schema_version",
 ];
 
+// Migration 010 (11 cols) + migration 011's `+ computed_at` (ticket #115,
+// TDD §3 D2) = 12 columns.
+const EXPECTED_FINGERPRINT_COLUMNS = [
+  "id",
+  "profile_id",
+  "fingerprint_version",
+  "schema_version",
+  "sample_size",
+  "source_analysis_ids",
+  "computed",
+  "overrides",
+  "consistency_index",
+  "created_at",
+  "updated_at",
+  "computed_at",
+];
+
+const EXPECTED_FINGERPRINT_INDEXES = ["idx_profile_style_fingerprints_profile_id"];
+
 async function runMigrations(db: Client): Promise<void> {
   const migrationsDir = join(process.cwd(), "migrations");
   const files = readdirSync(migrationsDir)
@@ -132,5 +151,34 @@ describe("migration chain (001 -> latest) — analyses schema assertion", () => 
     expect(insertCols).toHaveLength(39);
     expect(selectVals).toHaveLength(39);
     expect(insertCols).toEqual(EXPECTED_ANALYSES_COLUMNS);
+  });
+});
+
+describe("migration chain (001 -> latest) — profile_style_fingerprints schema assertion (ticket #115)", () => {
+  let db: Client | undefined;
+
+  afterEach(() => {
+    db?.close();
+    db = undefined;
+  });
+
+  it("produces exactly the expected named columns on `profile_style_fingerprints`, 11 -> 12 with migration 011's computed_at", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    const result = await db.execute("PRAGMA table_info(profile_style_fingerprints)");
+    const columns = result.rows.map((row) => row.name as string);
+
+    expect(columns).toEqual(EXPECTED_FINGERPRINT_COLUMNS);
+  });
+
+  it("produces exactly the expected indexes on `profile_style_fingerprints`, with no drops", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    const result = await db.execute("PRAGMA index_list(profile_style_fingerprints)");
+    const indexes = result.rows.map((row) => row.name as string).filter((name) => name.startsWith("idx_"));
+
+    expect(indexes.sort()).toEqual([...EXPECTED_FINGERPRINT_INDEXES].sort());
   });
 });
