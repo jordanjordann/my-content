@@ -103,12 +103,32 @@ function isValidDateRange(value: unknown): boolean {
 /**
  * Exemplar overrides (D5): every element must already be present in the
  * corresponding `computed` array — pruning/reordering allowed, authoring
- * brand-new verbatim-creator-text is rejected.
+ * brand-new verbatim-creator-text is rejected. Count-aware (multiset), not
+ * mere membership: D5 authorises pruning/reordering ONLY, never
+ * duplication, so a patch cannot ask for more copies of a given exemplar
+ * string than `computed` actually has (e.g. `computed: ["a"]` must reject a
+ * patch of `["a","a"]` — plain `Set.has` membership would wrongly accept
+ * it, silently reweighting the verbatim corpus a brief generator consumes).
  */
 function isValidExemplarSubset(value: unknown, computedList: readonly string[]): boolean {
   if (!Array.isArray(value)) return false;
-  const allowed = new Set(computedList);
-  return value.every((entry) => typeof entry === "string" && allowed.has(entry));
+  if (!value.every((entry): entry is string => typeof entry === "string")) return false;
+
+  const availableCounts = new Map<string, number>();
+  for (const entry of computedList) {
+    availableCounts.set(entry, (availableCounts.get(entry) ?? 0) + 1);
+  }
+
+  const requestedCounts = new Map<string, number>();
+  for (const entry of value as string[]) {
+    requestedCounts.set(entry, (requestedCounts.get(entry) ?? 0) + 1);
+  }
+
+  for (const [entry, count] of requestedCounts) {
+    if (count > (availableCounts.get(entry) ?? 0)) return false;
+  }
+
+  return true;
 }
 
 type KeyValidator = (value: unknown, computed: ComputedFingerprint) => boolean;
