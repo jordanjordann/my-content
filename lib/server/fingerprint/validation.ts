@@ -160,11 +160,22 @@ export function validateOverridePatch(
   const invalidKeys: string[] = [];
 
   for (const key of Object.keys(patch)) {
-    const validator = KEY_VALIDATORS[key];
-    if (!validator) {
+    // `Object.hasOwn` guard is required here: `KEY_VALIDATORS` is a plain
+    // object literal, so a plain `KEY_VALIDATORS[key]` lookup walks the
+    // prototype chain. `JSON.parse` puts keys like `constructor`/
+    // `__proto__`/`toString`/`hasOwnProperty` on the parsed patch as regular
+    // own-enumerable keys, so without this guard those resolve to
+    // `Object.prototype` members instead of `undefined` — silently
+    // "validating" an unknown key (`constructor`) or throwing a raw
+    // `TypeError` when the resolved non-function value is invoked as a
+    // validator (`__proto__`, `valueOf`). Both violate the "unknown key ->
+    // 400, never silently accepted, never a 500" rule this function exists
+    // to enforce.
+    if (!Object.hasOwn(KEY_VALIDATORS, key)) {
       invalidKeys.push(key);
       continue;
     }
+    const validator = KEY_VALIDATORS[key];
 
     const value = patch[key];
     if (value === null) continue; // D3/D4: null always means "delete", valid for every known key.

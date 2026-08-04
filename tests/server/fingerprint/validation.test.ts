@@ -204,6 +204,54 @@ describe("validateOverridePatch — consistencyIndex range", () => {
   });
 });
 
+describe("validateOverridePatch — Object.prototype key names (PR #121 review follow-up)", () => {
+  // A patch is a `JSON.parse` result, so keys like `constructor`/`__proto__`/
+  // `toString`/`hasOwnProperty` land on the object as regular own-enumerable
+  // keys. A plain `KEY_VALIDATORS[key]` lookup (no own-property guard) walks
+  // the prototype chain for these instead of returning `undefined`, which
+  // either silently "validates" an unknown key or throws. Each must be
+  // rejected as an ordinary unknown key — never accepted, never thrown.
+
+  it("rejects a `constructor` key as invalid rather than resolving Object.prototype.constructor", () => {
+    const computed = baseComputed();
+    const result = validateOverridePatch({ constructor: "x" }, computed);
+    expect(result).toEqual({ ok: false, invalidKeys: ["constructor"] });
+  });
+
+  it("rejects a `__proto__` key as invalid without throwing", () => {
+    // `{ __proto__: "x" }` object-literal syntax sets the prototype itself
+    // rather than an own property, which would not reproduce the bug. Use
+    // `JSON.parse` — exactly how a real PATCH body arrives — so `__proto__`
+    // lands as a genuine own-enumerable key, matching the reported repro.
+    const computed = baseComputed();
+    const patch: Record<string, unknown> = JSON.parse('{"__proto__":"x"}');
+    expect(() => validateOverridePatch(patch, computed)).not.toThrow();
+    const result = validateOverridePatch(patch, computed);
+    expect(result).toEqual({ ok: false, invalidKeys: ["__proto__"] });
+  });
+
+  it("rejects a `toString` key as invalid rather than resolving Object.prototype.toString", () => {
+    const computed = baseComputed();
+    const result = validateOverridePatch({ toString: "x" }, computed);
+    expect(result).toEqual({ ok: false, invalidKeys: ["toString"] });
+  });
+
+  it("rejects a `hasOwnProperty` key as invalid rather than resolving Object.prototype.hasOwnProperty", () => {
+    const computed = baseComputed();
+    const result = validateOverridePatch({ hasOwnProperty: "x" }, computed);
+    expect(result).toEqual({ ok: false, invalidKeys: ["hasOwnProperty"] });
+  });
+
+  it("rejects a mix of a genuinely valid key and a prototype-name key, listing only the bad one", () => {
+    const computed = baseComputed();
+    const result = validateOverridePatch(
+      { medianCutsPerMinute: 12, constructor: "x" },
+      computed,
+    );
+    expect(result).toEqual({ ok: false, invalidKeys: ["constructor"] });
+  });
+});
+
 describe("validateOverridePatch — exemplar subset is multiset/count-aware (review follow-up)", () => {
   it("rejects a patch that duplicates a computed exemplar beyond its available count", () => {
     const computed = baseComputed({ hookTextExemplars: ["a"] });
