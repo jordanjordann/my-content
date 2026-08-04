@@ -426,4 +426,36 @@ describe("PATCH /api/profiles/[id]/fingerprint — override write + read-back", 
     const row = await getFingerprintRow(profileId);
     expect(row!.overrides).toBeNull();
   });
+
+  it("a patch mixing one valid key with one invalid key -> 400, and NEITHER key is written", async () => {
+    isAuthenticatedMock.mockResolvedValue(true);
+    const profileId = randomUUID();
+    await insertProfile(db, profileId);
+    for (let i = 0; i < 5; i++) {
+      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+    }
+    const { recomputeFingerprint, getFingerprintRow } = await import("@/lib/server/fingerprint");
+    await recomputeFingerprint(profileId);
+
+    const beforeResponse = await routeModule.GET(makeGetRequest(), makeParams(profileId));
+    const beforeBody = await beforeResponse.text();
+
+    const response = await routeModule.PATCH(
+      makePatchRequest({
+        verbalTonePatterns: [{ value: "santai", count: 1, share: 1 }],
+        pacingDistribution: [{ value: "NOT_A_REAL_PACING", count: 1, share: 1 }],
+      }),
+      makeParams(profileId),
+    );
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.invalidKeys).toEqual(["pacingDistribution"]);
+
+    const row = await getFingerprintRow(profileId);
+    expect(row!.overrides).toBeNull();
+
+    const afterResponse = await routeModule.GET(makeGetRequest(), makeParams(profileId));
+    const afterBody = await afterResponse.text();
+    expect(afterBody).toBe(beforeBody);
+  });
 });
