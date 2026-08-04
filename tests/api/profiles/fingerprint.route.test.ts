@@ -369,4 +369,53 @@ describe("PATCH /api/profiles/[id]/fingerprint — override write + read-back", 
     const response = await routeModule.PATCH(makePatchRequest(undefined, JSON.stringify([1, 2, 3])), makeParams(profileId));
     expect(response.status).toBe(400);
   });
+
+  it("PATCH {\"constructor\":\"x\"} -> 400, not 200, and nothing is written (PR #121 review follow-up)", async () => {
+    isAuthenticatedMock.mockResolvedValue(true);
+    const profileId = randomUUID();
+    await insertProfile(db, profileId);
+    for (let i = 0; i < 5; i++) {
+      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+    }
+    const { recomputeFingerprint, getFingerprintRow } = await import("@/lib/server/fingerprint");
+    await recomputeFingerprint(profileId);
+
+    const response = await routeModule.PATCH(
+      makePatchRequest(undefined, JSON.stringify({ constructor: "x" })),
+      makeParams(profileId),
+    );
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.invalidKeys).toEqual(["constructor"]);
+
+    const row = await getFingerprintRow(profileId);
+    expect(row!.overrides).toBeNull();
+  });
+
+  it("PATCH {\"__proto__\":\"x\"} -> 400, not 500, and nothing is written (PR #121 review follow-up)", async () => {
+    isAuthenticatedMock.mockResolvedValue(true);
+    const profileId = randomUUID();
+    await insertProfile(db, profileId);
+    for (let i = 0; i < 5; i++) {
+      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+    }
+    const { recomputeFingerprint, getFingerprintRow } = await import("@/lib/server/fingerprint");
+    await recomputeFingerprint(profileId);
+
+    // Raw JSON string, not an object literal: `{ __proto__: "x" }` as a JS
+    // object literal sets the prototype itself (so `JSON.stringify` would
+    // serialize it back to `{}`), whereas a real HTTP PATCH body parses
+    // `__proto__` as a genuine own-enumerable key via `JSON.parse` — this is
+    // the actual repro path.
+    const response = await routeModule.PATCH(
+      makePatchRequest(undefined, '{"__proto__":"x"}'),
+      makeParams(profileId),
+    );
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.invalidKeys).toEqual(["__proto__"]);
+
+    const row = await getFingerprintRow(profileId);
+    expect(row!.overrides).toBeNull();
+  });
 });
