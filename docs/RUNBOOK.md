@@ -182,7 +182,7 @@ essentially no production data to preserve as of the redesign's start. Do not bu
   a new forward migration.
 - Run with `npm run db:migrate`.
 
-**Current chain (001 → 010, as of PR #99; unchanged by the #96 chain through PR #113):**
+**Current chain (001 → 011, as of ticket #115):**
 
 | # | File | What it does |
 |---|---|---|
@@ -196,6 +196,7 @@ essentially no production data to preserve as of the redesign's start. Do not bu
 | 008 | `008_delete_legacy_pre_redesign_analyses.sql` | Data-only: deletes pre-redesign rows (no schema change) |
 | 009 | `009_analysis_mode_images_only.sql` | Full rebuild (ticket #71 + PR #95 fix-round): widens `analysis_mode` CHECK to include `'images_only'`; adds `play_count`, `coauthor_producers` (JSON array of usernames), `like_and_view_counts_disabled` (nullable boolean). **37 → 39 columns on `analyses`**, no drops — see the migration file's own header comment and the `PRAGMA table_info`/`index_list` assertion test (§7) for the full before/after. |
 | 010 | `010_profile_style_fingerprints.sql` | Ticket #72 / PR #99. **New table only — `analyses` untouched.** `+ profile_style_fingerprints` (11 cols: `id`, `profile_id` → `profiles(id)`, `fingerprint_version`, `schema_version`, `sample_size`, `source_analysis_ids`, `computed`, `overrides`, `consistency_index`, `created_at`, `updated_at`) + `idx_profile_style_fingerprints_profile_id` (UNIQUE). Deliberately separate from `profiles` — that table holds scraped **facts**, this one holds **inference**. `computed` and `overrides` are two separate JSON columns on purpose so a recompute can never clobber a human correction; read-time merge is `{...computed, ...overrides}` per top-level key. No `is_stale` flag by design (`sample_size` + `source_analysis_ids` already answer it). |
+| 011 | `011_fingerprint_computed_at.sql` | Ticket #115 (`docs/TDD-fingerprint-read-override-api.md` §3 D2). `+ profile_style_fingerprints.computed_at` (nullable `TEXT`, backfilled `= updated_at` for existing rows) — **11 → 12 columns**, `analyses` untouched. Written ONLY by `upsertFingerprint` (never by the overrides writer), so it stays "last recompute time" even after a human `PATCH` moves `updated_at`. Nullable because SQLite's `ALTER TABLE ... ADD COLUMN` can't take a non-constant default (`datetime('now')`) or `NOT NULL` without one; `mapRow` reads `row.computed_at ?? row.updated_at` so a legacy row can never surface `null`. |
 
 `analyses` has **39 named columns** and **6 explicitly-created indexes**
 (`idx_analyses_updated_at`, `idx_analyses_title`, `idx_analyses_username`, `idx_analyses_platform`,
@@ -211,9 +212,11 @@ independently checks that 009's `INSERT...SELECT` column lists are positionally 
 So the figure is correct, but the reason is "010 added a table, not columns" — not "the figure was
 re-confirmed to have changed."
 
-`profile_style_fingerprints` (010) has **11 columns** and **1 explicitly-created index**
+`profile_style_fingerprints` (010, +011) has **12 columns** and **1 explicitly-created index**
 (`idx_profile_style_fingerprints_profile_id`, UNIQUE on `profile_id` — one fingerprint row per
-profile). It is **not** covered by the `analyses` assertions above.
+profile) — asserted by its own `PRAGMA table_info`/`index_list` block in
+`tests/server/db/migrations.schema.test.ts` (added ticket #115; previously this table had no
+dedicated schema assertion, only the `analyses`-focused one above).
 
 ---
 
@@ -309,10 +312,9 @@ read from `.claude/context/fixtures/` via `tests/helpers/fixtures.ts`, which thr
 path-naming error if a fixture file is missing. See §5 for why this matters (credits, and
 `/v1/youtube/channel` charging even on a miss).
 
-**Current state: 18 test files, 214 tests** — re-measured 2026-08-03 via `npm run test` on `main` at
-`3e58c32`. (For reference: the previous main `eef8ffa` measured 14 files / 160 tests, so the #96
-chain added 4 files and 54 tests. The "11 files / 138 tests" figure this section used to carry was
-two sessions stale.)
+**Current state: 19 test files, 237 tests** — re-measured on ticket #115's branch (base `main` at
+`3e58c32`, 214 tests). Ticket #115 added `tests/server/fingerprint/overrides.test.ts` (21 tests) and
+two new cases in `tests/server/db/migrations.schema.test.ts` (+2), for +23 total.
 
 Layout — regenerated 2026-08-03 from `git ls-files`, not from the previous edition of this tree:
 
@@ -343,8 +345,17 @@ tests/
 ├── server/fingerprint/aggregate.test.ts                 # aggregateStyleFingerprint — pure aggregation (#72)
 ├── server/fingerprint/service.test.ts                   # recomputeFingerprint: cold start, schema_version filtering,
 │                                                        #   override-safe recompute, co-authored posts at equal weight (#72)
+├── server/fingerprint/overrides.test.ts                 # validateOverridePatch, patchFingerprintOverrides,
+│                                                        #   applyFingerprintOverridePatch, countCompletedV2Analyses,
+│                                                        #   NON_OVERRIDABLE_FIELDS write+read guards, computed_at vs
+│                                                        #   updated_at independence (#115). Uses a per-test TEMP FILE
+│                                                        #   db, not `:memory:` — db.transaction() steals the shared
+│                                                        #   client's connection and a fresh `:memory:` reconnect is an
+│                                                        #   unrelated empty database; a real file path is not.
 └── server/db/migrations.schema.test.ts                  # full 001→latest migration chain schema assertion (#71); globs
-                                                         #   migrations/*.sql so new migrations are picked up automatically
+                                                         #   migrations/*.sql so new migrations are picked up automatically.
+                                                         #   Also asserts profile_style_fingerprints' own column/index
+                                                         #   list (11→12 cols, #115).
 ```
 
 **Known gaps:**
