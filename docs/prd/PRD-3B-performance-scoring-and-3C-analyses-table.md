@@ -1,9 +1,10 @@
 # PRD — Phase 3B (Performance / Engagement Scoring) + Phase 3C (Analyses Table Redesign)
 
-**Status:** Draft for owner review. **Not approved for dev handoff.** §10 lists 10 numbered decisions the owner must make first.
+**Status:** **Owner-reviewed 2026-08-05.** All ten §10 decisions are now **[CONFIRMED]** — the owner accepted the recommended option on every one. All three verification spends (V1, V2, V3) are **approved**. Two caveats attach to the acceptances and are recorded in §10.0; §12 adds the resolution for all-image carousels that the first draft only flagged.
 **Owner:** Oden (product owner)
 **Author:** Dan (PM)
 **Created:** 2026-08-05
+**Revised:** 2026-08-05 (owner acceptances recorded; §12 added)
 **Extends:** `docs/PRD-analysis-schema-redesign.md` (the live analysis contract). This PRD **adds a third tier** to that contract and **bumps `schemaVersion`**. Everything in that PRD not contradicted here still stands.
 **Primary input:** `docs/product-direction-plan.md` §3, Phase 3 (3B and 3C).
 **Out of scope:** 3A (the job queue). Referenced only where a real dependency exists (§9.3).
@@ -425,60 +426,75 @@ Ordered left to right. The goal is US-6: scan a creator's library and find what 
 
 ---
 
-## 10. Decisions needed from the owner
+## 10. Owner decisions — all [CONFIRMED] 2026-08-05
 
-Nothing below has a default. **Do not let any of these be silently resolved in a ticket.**
+The owner reviewed all ten open decisions and **accepted the recommended option on every one**. This section is now a record of rulings, not a list of questions. **Rejected options are kept visible with their rationale so nobody re-opens them in a ticket.**
 
-**D1 — The formula. [OPEN]**
-(a) Option A — engagement-per-reach only. Simplest; blind to distribution.
-(b) **Option B — the three-tier degrading model. [RECOMMENDED]**
-(c) Option C — universal industry benchmark. **I recommend rejecting** (§3.4).
+### 10.0 Two caveats attached to the acceptances
 
-**D2 — Division of labour. [RECOMMENDATION, not yet ruled]**
-(a) **Arithmetic in code, interpretation in Gemini. [RECOMMENDED]**
-(b) Gemini computes the ratios too — non-reproducible; breaks the `temperature: 0` discipline.
+Recorded honestly rather than allowed to harden into false precision:
 
-**D3 — Hidden / zero / absent inputs. [OPEN]**
-(a) **No score, explicit unavailable state with a visible reason. [RECOMMENDED]**
-(b) Score the content only and hide the performance column for that row.
-(c) Produce an estimated score at low confidence — **I recommend against**; this is how the fabricated-`5` bug got in.
+- **C1 — The 72-hour maturity floor (D5) is an estimate, not a measured figure.** Nobody has data on how long a post takes to settle; we have explicitly ruled out longitudinal snapshots (§7), so we have no observations to derive it from. **72 hours is a starting value chosen for order-of-magnitude plausibility and is expected to be tuned once real analyses accumulate.** It must not be described anywhere — in code comments, in UI copy, or in a ticket — as a derived or validated constant. The tech lead should make it a single named, configurable constant so tuning it later is a one-line change, not a refactor.
+- **C2 — The 12-column set (D9) was accepted without the owner having seen it rendered.** A column list on a page reads very differently from a table on a screen; width, density and scan order are exactly the things a list cannot convey. **The intended review checkpoint is the UI/UX mockup.** Treat §8.3 as **provisional until the designer's mockup is reviewed**, and expect column cuts or reorderings at that point. This is a normal design step, not a re-opened decision — D9's *content* (which fields matter) is confirmed; the *presentation* is not yet judged.
 
-**D4 — Baseline bucketing and minimum sample. [OPEN]**
-(a) Bucket by platform only, minimum 5.
-(b) **Bucket by (platform, content kind), minimum 5 per bucket. [RECOMMENDED]**
-(c) Minimum 3, always at `LOW` confidence.
-Sub-question: for video carousels, is post-level reach the **first slide** (recommended), the **max slide**, or **unavailable**?
+### 10.1 The rulings
 
-**D5 — Recency. [OPEN]**
-(a) Nothing — accept that old posts are flattered.
-(b) **Age passed to Gemini + a maturity floor marking scores `provisional` + age-bounded baselines. [RECOMMENDED]**
-(c) Age-normalised velocity (reach per day) as the headline — not recommended (§4.5).
-Sub-question: is **72 hours** the right maturity floor?
+**D1 — The formula. [CONFIRMED → Option B]**
+The **three-tier degrading model** (§3.3), including both amendments in §3.5 (Tier 3 demoted below "fallback"; Tier 1 and Tier 2 shown **together**, because the pair distinguishes good content that did not travel from weak content that did).
+*Rejected:* (a) engagement-per-reach only — blind to distribution, which is most of what the agency is actually asking. (c) universal industry benchmark — published Reels benchmarks in §3.1 differ by ~10× depending on denominator and sample; adopting one encodes a vendor's sampling as truth. Same failure mode that got `trendAlignment` removed from the live contract.
 
-**D6 — YouTube scope. [OPEN]**
-(a) **Full parity. [RECOMMENDED]** (§4.7 — YouTube's performance data is cleaner than Instagram's.)
-(b) Degraded — Tier 3 only.
-(c) Excluded from 3B.
+**D2 — Division of labour. [CONFIRMED → arithmetic in code, interpretation in Gemini]**
+All ratios, medians and multipliers are computed deterministically in code, stored, and frozen. Gemini receives the computed numbers and produces the judgement only.
+*Rejected:* Gemini computing the ratios — non-reproducible, and breaks the `temperature: 0` + `responseSchema` discipline the live contract is built on.
 
-**D7 — Score composition. [OPEN]**
-(a) **Performance stays a separate axis from `overallScore`. [RECOMMENDED]**
-(b) Performance folds into `overallScore` — destroys the good-content-vs-good-distribution signal.
+**D3 — Hidden / zero / absent inputs. [CONFIRMED → no score plus a visible reason]**
+When a required input is `HIDDEN`, `UNKNOWN` or absent, **no score is produced**: `performanceScore` is `null`, tier is `UNAVAILABLE`, confidence is `NONE`, and a machine-readable reason is stored **and rendered as text in the UI** — never a blank cell, never an em-dash, never a zero.
+*Rejected:* (b) hiding the performance column for that row — throws away a fact the agency wants ("counts hidden by creator" is useful). (c) an estimated score at low confidence — this is precisely how the fabricated-`5` bug entered the codebase. **House rule, now doubly confirmed: never invent a number.**
 
-**D8 — Baseline freezing. [OPEN]**
-(a) **The baseline is frozen at analysis time along with everything else; older analyses are never re-scored when new siblings land. [RECOMMENDED]** — consistent with decision 9's point-in-time ruling.
-(b) Recompute all of a creator's scores whenever a new analysis lands — contradicts the point-in-time decision and makes the table non-reproducible.
+**D4 — Baseline bucketing and minimum sample. [CONFIRMED → (platform, content kind), minimum 5 per bucket]**
+A creator's median is computed within `(platform, content kind)` and never across. Cold start applies **per bucket** and must be visible in the UI, not silent.
+*Rejected:* (a) platform-only bucketing — mixes reels and carousels, which do not perform comparably. (c) minimum 3 at `LOW` confidence — too thin to quote to a client.
+*Sub-question, also confirmed:* for **video-bearing** carousels, post-level reach is the **first slide's** count, labelled as such, at one confidence level lower. Summing slides is invalid (it double-counts the same viewer).
+*Consequence now made explicit:* see §12.4 — an **all-image-carousel bucket needs its own 5**, which is a slow cold start for creators who post carousels rarely.
 
-**D9 — The 3C default column set.** Sign off on §8.3, or say which of the 12 to cut and what to promote from the non-default list.
+**D5 — Recency. [CONFIRMED → age in prompt + maturity floor + age-bounded baselines]**
+All three parts: post age in days is passed to Gemini and weighed in the verdict; posts under the maturity floor are marked `provisional`; posts under the floor are excluded from other analyses' baseline medians.
+*Rejected:* (a) doing nothing — systematically flatters old posts, backwards for a tool meant to say what works now. (c) reach-per-day velocity as the headline — makes new posts look explosive and mature posts look dead.
+*Sub-question:* **72 hours is confirmed as the starting value, subject to caveat C1 above.**
 
-**D10 — The existing `engagement_rate` column.** Written today with an undocumented denominator; 3B supersedes it.
-(a) **Drop it and use only 3B's computed block. [RECOMMENDED]**
-(b) Redefine it as one of 3B's ratios.
-(c) Leave it and never display it — I recommend against; two incompatible "engagement" numbers in one schema is a bug waiting to happen.
+**D6 — YouTube scope. [CONFIRMED → full parity]**
+YouTube is in scope for 3B at full parity. §4.7's reasoning stands: for *performance* scoring YouTube's data is cleaner than Instagram's — one unambiguous view count, confirmed-numeric subscriber count, no play-vs-view trap.
+*Rejected:* (b) Tier 3 only, (c) excluded — both were justified by missing *content-analysis* context (audio flag, dimensions), which is irrelevant to this feature.
+*Caveat carried:* V2 (below) is now approved and must be captured before code depends on YouTube's likes-hidden shape.
 
-**Verification approvals also needed** (each costs real money):
-**V1** — capture one genuinely counts-disabled Instagram post (1 SC credit).
-**V2** — capture one YouTube video with likes hidden (1 SC credit).
-**V3** — one live Gemini call on a **multi-slide carousel** to measure token headroom for the extended contract (1 billed Gemini call). This also closes a gap the handoff already carries forward.
+**D7 — Score composition. [CONFIRMED → separate axis]**
+`performanceScore` stays a **separate axis from `overallScore`**. Two axes, always rendered as two, never merged, never averaged into a single headline number.
+*Rejected:* folding performance into `overallScore` — destroys the good-content-vs-good-distribution signal, which §3.5 argues is the most useful thing this feature produces.
+
+**D8 — Baseline freezing. [CONFIRMED → frozen]**
+The baseline, the ratios and the audience number are frozen at analysis time. **Old analyses are never re-scored** when new siblings land or when the creator's audience grows.
+*Rejected:* recomputing a creator's history on each new analysis — contradicts the point-in-time ruling (roadmap decision 9) and makes the table non-reproducible.
+
+**D9 — The 3C default column set. [CONFIRMED → §8.3's 12 columns, provisional per caveat C2]**
+The 12-column default set and the explicit not-default list are accepted as the basis for design. Subject to mockup review (C2).
+
+**D10 — The existing `engagement_rate` column. [CONFIRMED → drop it]**
+`analyses.engagement_rate` is **dropped**. Its denominator is documented nowhere and 3B's computed block supersedes it.
+*Rejected:* (b) redefining it as one of 3B's ratios — 3B produces several ratios with different denominators (§12 makes this sharper still); a single column named `engagement_rate` cannot honestly hold them. (c) leaving it unread — two incompatible "engagement" numbers in one schema is a latent bug.
+
+### 10.2 Verification spends — all three [APPROVED]
+
+| ID | What | Cost | Status |
+|---|---|---|---|
+| **V1** | Capture one genuinely counts-disabled Instagram post | ~1 SC credit | **Approved** |
+| **V2** | Capture one YouTube video with likes hidden | ~1 SC credit | **Approved** |
+| **V3** | One live Gemini call on a **multi-slide carousel**, reading `usageMetadata`, to measure output-token headroom for the extended contract | 1 billed Gemini call | **Approved** |
+
+**These are for the tech lead / developers to execute during implementation. No PM or docs work should spend them.**
+
+**V3 also discharges a pre-existing carried-forward unknown.** Carousel token headroom has been unverified since the analysis schema redesign — `docs/HANDOFF-2026-08-05.md` carried-forward item 6 records that the only live measurement (~83% headroom) was taken on a **single-video reel**, not a multi-slide carousel. V3's measurement closes that item as well as 3B's own risk; whoever runs it should update `.claude/context/verified-facts.md` and strike the handoff item in the same pass.
+
+**Until V1 and V2 land, no code may depend on the *shape* of a counts-disabled Instagram payload or a likes-hidden YouTube payload** — only on the documented boolean flag and on defensive `UNKNOWN` handling. That constraint is unchanged by the approval; the approval only means the captures may now be made.
 
 ---
 
