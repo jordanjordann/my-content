@@ -317,9 +317,10 @@ out of the single root config, in one `vitest run` invocation:
   which stay exactly as fast and DOM-free as before. `tests/setup/domMatchers.ts`
   (jsdom-project-only `setupFiles` entry) imports `@testing-library/jest-dom/vitest`, which
   auto-extends `expect` with the DOM matchers — no manual `expect.extend()` call needed — and also
-  registers `afterEach(cleanup)` from `@testing-library/react` explicitly, since the `jsdom`
-  project's `globals: false` would otherwise silently disable RTL's own auto-cleanup (it only
-  self-registers when `afterEach` is a global).
+  registers `afterEach(cleanup)` from `@testing-library/react`, and sets
+  `globalThis.IS_REACT_ACT_ENVIRONMENT = true`, both explicitly, since the `jsdom` project's
+  `globals: false` would otherwise silently disable RTL's own auto-cleanup AND its act-environment
+  registration (both only self-register when `afterEach`/`beforeAll`/`afterAll` are globals).
 
 **Naming convention — required.** A jsdom-flavored test file MUST be named `*.dom.test.ts` or
 `*.dom.test.tsx`. The `node` project's glob (`` tests/**/*.test.ts ``) would otherwise also match a
@@ -345,15 +346,17 @@ read from `.claude/context/fixtures/` via `tests/helpers/fixtures.ts`, which thr
 path-naming error if a fixture file is missing. See §5 for why this matters (credits, and
 `/v1/youtube/channel` charging even on a miss).
 
-**Current state (re-measured 2026-08-05, ticket #123 + PR #126 review fixes): 28 test files, 318
-tests total** — 26 files / 312 tests in the `node` project (25 files / 311 tests unchanged from the
-original ticket, +1 file / 1 test for `tests/config/vitestProjectGlobs.test.ts`, added during PR
-#126 review to pin the glob-routing fix), + 2 files / 6 tests in the `jsdom` project:
-`tests/lib/api/fingerprint/hooks.dom.test.tsx` (see the layout tree above) and
-`tests/setup/domCleanup.dom.test.tsx` (added during PR #126 review to pin the RTL auto-cleanup
-fix). The node-project figures above (19 → 237 in earlier editions of this doc) had already drifted
-upward from unrelated feature work between #115 and this ticket; the 311 figure is a fresh
-measurement, not a re-derivation of the old delta math.
+**Current state (re-measured 2026-08-05, ticket #123 + PR #126 review round 2 fixes): 29 test
+files, 319 tests total** — 26 files / 315 tests in the `node` project (25 files / 311 tests
+unchanged from the original ticket, +1 file / 4 tests for
+`tests/config/vitestProjectGlobs.test.ts`, added during PR #126 review to pin the glob-routing
+fix), + 3 files / 4 tests in the `jsdom` project: `tests/lib/api/fingerprint/hooks.dom.test.tsx`
+(see the layout tree above), `tests/setup/domCleanup.dom.test.tsx` (added during PR #126 review
+round 1 to pin the RTL auto-cleanup fix), and `tests/setup/reactActEnvironment.dom.test.tsx`
+(added during PR #126 review round 2 to pin the `IS_REACT_ACT_ENVIRONMENT` fix). The node-project
+figures above (19 → 237 in earlier editions of this doc) had already drifted upward from unrelated
+feature work between #115 and this ticket; the 311 figure is a fresh measurement, not a
+re-derivation of the old delta math.
 
 Layout — regenerated from `git ls-files`, including this PR's review-fix additions:
 
@@ -363,9 +366,13 @@ tests/
 ├── setup/blockLiveFetch.test.ts                          # proves the guard works
 ├── setup/domMatchers.ts                                 # jsdom-project-only setupFiles entry — imports
 │                                                        #   @testing-library/jest-dom/vitest and registers
-│                                                        #   afterEach(cleanup) explicitly (#123, PR #126 review)
+│                                                        #   afterEach(cleanup) AND
+│                                                        #   globalThis.IS_REACT_ACT_ENVIRONMENT = true
+│                                                        #   explicitly (#123, PR #126 review rounds 1 + 2)
 ├── setup/domCleanup.dom.test.tsx                        # proves RTL's afterEach(cleanup) actually runs between
-│                                                        #   jsdom tests (#123, PR #126 review)
+│                                                        #   jsdom tests (#123, PR #126 review round 1)
+├── setup/reactActEnvironment.dom.test.tsx               # proves IS_REACT_ACT_ENVIRONMENT is set to true by
+│                                                        #   the jsdom setup file (#123, PR #126 review round 2)
 ├── config/vitestProjectGlobs.test.ts                    # re-derives regexes from vitest.config.ts's actual
 │                                                        #   node/jsdom include+exclude globs and asserts they route
 │                                                        #   representative filenames — incl. a JSX-free `.dom.test.ts`
