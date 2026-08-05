@@ -37,12 +37,13 @@ The analysis scorecard judges **content only**. Nothing in the product says whet
 | # | Criterion | How it is checked |
 |---|---|---|
 | S1 | For any analysis where a usable denominator is available — reach for video, follower count for image-only content (§12) — the table shows a performance score and a tier badge | Query: 0 rows with a usable denominator and a null performance score |
-| S7 | **No user can mistake a follower-denominated engagement % for a reach-denominated one.** Every rendered engagement value carries its denominator in accessible text, and no sort or aggregate mixes the two | Component tests AC-20, AC-21; plus explicit designer sign-off at mockup review |
 | S2 | **Zero fabricated numbers.** Every numeral appearing in Gemini's performance prose exists in the computed input block handed to it | Automated: extract numerals from the prose fields, assert each is present in the stored computed-metrics block (rounding tolerance to be stated by the tech lead) |
 | S3 | Re-running the same analysis inputs twice at `temperature: 0` yields an identical performance score and identical computed ratios | Two runs, byte-diff the performance block. (This also discharges the determinism item still formally open from ticket #66 — see `verified-facts.md`, 2026-08-05 entry) |
 | S4 | An analysis whose like/view counts are disabled produces **no** performance score, an explicit unavailable state, and prose that says so | Manual + fixture test once a counts-disabled fixture exists ([VERIFY] V1) |
 | S5 | Reach is never mislabelled: a play count is never rendered or described as "Views" | Extend the existing `user.engagementLabel` test to the new performance prompt block |
 | S6 | Gemini output token usage stays under 50% of the `maxOutputTokens` budget on a production-sized request | Read `usageMetadata` from one live call; compare against the 83% headroom baseline already recorded in `verified-facts.md` |
+| S7 | **No user can mistake a follower-denominated engagement % for a reach-denominated one.** Every rendered engagement value carries its denominator in accessible text, and no sort or aggregate mixes the two | Component tests AC-20, AC-21; plus explicit designer sign-off at mockup review |
+| S8 | **Every displayed score can be explained on the surface it appears on** (§13). No score, and no absent score, renders without its metric, its inputs, its evidence base and — where applicable — its reason | Component tests AC-25 to AC-30, each asserting rendered text content |
 
 ---
 
@@ -388,12 +389,13 @@ Ordered left to right. The goal is US-6: scan a creator's library and find what 
 ### 8.4 Behavioural requirements
 
 - **R-8.4.1** Sortable by performance score, baseline multiplier, reach, engagement, overall score, and date — **subject to R-12.3.2: an engagement sort must never interleave reach-denominated and follower-denominated values.**
-- **R-8.4.7** **The engagement denominator is visible without interaction** on every row that shows an engagement percentage (R-12.3.1). No hover, no legend, no prior knowledge of the content type required. **This is a hard constraint on the design, not a preference**; the mockup review must sign it off explicitly (caveat C2).
 - **R-8.4.2** Filterable by creator, platform, content kind, tier, and status.
 - **R-8.4.3** **Unavailable states render as their reason, not as blank or `0`.** "Counts hidden", "Not yet enough history", "No reach data for image posts". Precedent exists in the shipped engagement-count display states.
 - **R-8.4.4** A Tier 2 number never appears without its sample size.
 - **R-8.4.5** No cell fabricates a value. A null score is a null score.
 - **R-8.4.6** Contrast: any new badge is measured in **gamma-encoded sRGB** against `--background`, `--card` **and** the row-hover surface, ≥ 4.5:1 on all three. This exact error class has shipped non-compliant twice (RUNBOOK §8.4). It is checkable numerically and is therefore a real acceptance criterion, not a screenshot.
+- **R-8.4.7** **The engagement denominator is visible without interaction** on every row that shows an engagement percentage (R-12.3.1). No hover, no legend, no prior knowledge of the content type required. **This is a hard constraint on the design, not a preference**; the mockup review must sign it off explicitly (caveat C2).
+- **R-8.4.8** Every row carries the **table-tier explainability payload defined in §13.4**. See §13 — it is a requirement on this table, not a detail-view-only concern.
 
 ### 8.5 Acceptance criteria (3C)
 
@@ -516,7 +518,10 @@ Recorded plainly rather than quietly worked around.
 4. **All-image carousels have no reach data at all.** Not mentioned in the roadmap's 3B section, and it means a whole content type can never receive a **reach-based** score on current data sources. **Resolved in §12** — they are scored on a different denominator rather than excluded. (§4.6, §12)
 5. **`analyses.engagement_rate` already exists and is populated**, with a denominator documented nowhere in the product docs. The roadmap describes 3B as adding performance scoring where "nothing captures whether a video performed" — true at the *product* level, but a computed engagement number is already sitting in the schema and must be reconciled, not ignored. (§8.2, D10)
 6. **`docs/PRD-analysis-schema-redesign.md` §9 still cites "2 rows in `analyses`, 1 in `profiles`."** The measured figure as of 2026-08-05 is **3 and 2**. Immaterial to any decision; noted for accuracy.
-7. **`verified-facts.md` overstates the `like_and_view_counts_disabled` fixture coverage.** Its OPEN-gap section states *"All five committed fixtures … have this field set to `false`."* **That is not true of `ig_carousel_all_images_10_slides.json`, where the field is ABSENT entirely** — verified 2026-08-05 by direct inspection; the string occurs zero times in the file. The practical effect is benign, because `adapter.ts` already tests `=== true` strictly and so does not coerce absent to `false`. But the documented claim is wrong and should be corrected. It also has a real product consequence: on an all-image carousel we **cannot tell whether counts are hidden** — we can only observe that likes and comments happen to be present. See §12.2. *(Reported for the tech lead; this PRD does not edit `verified-facts.md`.)*
+7. **`verified-facts.md` overstated the `like_and_view_counts_disabled` fixture coverage. [CORRECTED 2026-08-05 — no longer outstanding.]** Its OPEN-gap section stated *"All five committed fixtures … have this field set to `false`."* Two things were wrong with that: there are **seven** committed Instagram fixtures, not five, and the field is **ABSENT entirely** from `ig_carousel_all_images_10_slides.json` (zero occurrences in the file).
+   **Re-verified independently by key-set inspection of every committed Instagram fixture, zero live calls.** Five of the six `/v1/instagram/post` fixtures carry it as `false`; the all-image carousel does not carry it at all; the profile fixture carries it on 24 nested timeline nodes. **Critically, the absence tracks neither `__typename` nor image-ness** — see the expanded finding in §12.1.
+   The practical effect on shipped code is benign, because `adapter.ts` already tests `=== true` strictly and so does not coerce absent to `false`. The product consequence is not benign: on an all-image carousel we **cannot tell whether counts are hidden**, only that likes and comments happen to be present. That drives **R-13.5.3**.
+   **`.claude/context/verified-facts.md` has now been corrected** — append-only, with the original claim retained under a supersede banner per that file's convention. **No tech-lead action is carried forward from this item.**
 
 ---
 
@@ -552,7 +557,12 @@ Everything below comes from the **committed** fixture `.claude/context/fixtures/
 
 **Two things the PRD had not accounted for, both of which matter:**
 
-1. **`like_and_view_counts_disabled` is ABSENT on this payload** — not `false`, absent. Every other committed Instagram fixture carries it as `false`. This is recorded as correction 7 in §11 and drives requirement **R-12.2.3** below.
+1. **`like_and_view_counts_disabled` is ABSENT on this payload** — not `false`, absent. Every other committed Instagram post fixture carries it as `false`. This is recorded as correction 7 in §11 and drives requirement **R-12.2.3** below.
+   **Re-verified 2026-08-05 across all seven committed Instagram fixtures, and the picture is sharper than first reported — this matters for implementation.** The absence is **not** predictable from `__typename`, and **not** predictable from "the content is images":
+   - **Both** carousel fixtures are `XDTGraphSidecar`. The **mixed** video/image carousel **has** the field (`false`); the **all-image** one does not have it at all.
+   - `ig_single_image_post.json` is `XDTGraphImage` — image-only content — and it **does** carry the field as `false`, with a full 17-key `owner` block.
+   - The all-image carousel is a **structurally reduced payload variant**: 25 top-level keys, against 49 on the mixed carousel and 48 on the single image post.
+   **Consequence, and it strengthens R-12.7.1:** any rule of the form "sidecars have no flag" or "image posts have no flag" would be **wrong**. Branch on **field presence only**. `.claude/context/verified-facts.md` has been corrected accordingly (see §11, correction 7).
 2. **The flat `comment_count` field exists only on this carousel shape**, duplicating `edge_media_to_parent_comment.count`. Already on record as divergence 3 in `verified-facts.md`. Harmless, but the implementation should pick **one** path and not treat three fields as three signals.
 
 **The `owner` block: confirmed a 5-key stub.** `data.xdt_shortcode_media.owner` contains exactly `id, username, full_name, is_verified, profile_pic_url`. **No `edge_followed_by`.** A reel or single-image post carries the full 17-key owner block including `edge_followed_by.count`; this carousel does not.
