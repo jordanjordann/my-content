@@ -18,7 +18,7 @@ export function CtaCard({ ctaType, ctaTiming }: CtaCardProps) {
         {ctaType.map((type) => (
           <span
             key={type}
-            className="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent-foreground"
+            className="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent"
           >
             {CTA_TYPE_LABELS[type]}
           </span>
