@@ -156,7 +156,7 @@ export function AnalysisDetailModal({ id, onClose }: AnalysisDetailModalProps) {
           ) : results ? (
             <>
               {/* Thumbnail sidebar */}
-              <div className="flex max-h-[45vh] min-h-0 w-full flex-col border-b p-6 pb-0 lg:max-h-none lg:w-72 lg:shrink-0 lg:self-stretch lg:border-b-0">
+              <div className="flex w-full shrink-0 flex-col border-b p-6 pb-0 lg:w-72 lg:self-stretch lg:border-b-0">
                 {data ? (
                   <>
                     <div className="relative aspect-[9/16] shrink-0 overflow-hidden rounded-xl border bg-secondary">
@@ -195,10 +195,11 @@ export function AnalysisDetailModal({ id, onClose }: AnalysisDetailModalProps) {
 
                     {/* Independently scrollable so a long caption never overlaps/overflows
                         past the modal footer — mirrors the tab content panel's
-                        min-h-0 flex-1 overflow-y-auto pattern below. The parent sidebar
-                        is height-capped (max-h-[45vh] below lg, self-stretch at lg+) so
-                        this flex-1/min-h-0 always resolves against a definite height at
-                        every viewport width. */}
+                        min-h-0 flex-1 overflow-y-auto pattern below. Desktop-only
+                        dashboard: the parent sidebar gets a definite height via
+                        self-stretch at lg+, so this flex-1/min-h-0 resolves against a
+                        definite height there. Below lg the sidebar is not height-capped
+                        (out of scope — desktop-only). */}
                     <div className="mt-3 min-h-0 flex-1 overflow-y-auto pb-6">
                       <div className="flex flex-col gap-2 text-sm text-muted-foreground">
                         <div className="flex items-center gap-2">
