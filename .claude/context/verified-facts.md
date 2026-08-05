@@ -1059,3 +1059,137 @@ typeof response.text === "string", length 1148
   round. Capture a genuine counts-disabled fixture live (and add it under
   `.claude/context/fixtures/scrapecreators-instagram/`) before writing any code that depends on
   the shape of that payload beyond the boolean flag itself.
+
+---
+
+## ScrapeCreators — `/v1/instagram/profile` — FIRST live capture (2026-08-05, superseding ticket #36)
+
+- **Authorisation:** one-time owner-approved narrow live capture, superseding #36's original
+  broader (and already-superseded-by-#64) scope. Budget: ~2 credits. **Actual spend: 1 credit.**
+- **This is the first genuine live capture of this endpoint.** Everything previously written about
+  `/v1/instagram/profile` in this file (the "SECOND-HAND — no raw capture committed" section above)
+  and in `lib/server/scrapecreators/types.ts`'s doc comment (which claims "confirmed against a real
+  payload (/tmp/sc-profile-response.json)") was **transcribed from memory during PR #42, not
+  independently verified, and the original capture file no longer exists.** Ticket #64 explicitly
+  flagged `/v1/instagram/profile` as "still uncaptured; nothing under `.claude/context/fixtures/`
+  covers that endpoint." That gap is now closed.
+- **Tested username:** `nasa` (public, verified, business account — chosen deliberately to also
+  exercise `is_business_account: true`, `is_verified: true` paths, unlike a private/default
+  account).
+- **Call path used:** not a raw standalone client call — called through the actual production
+  entry point, `resolveProfile({ platform: "instagram", username: "nasa" })`
+  (`lib/server/profiles/service.ts`), via a `/tmp` throwaway script that wrapped `globalThis.fetch`
+  with a call counter before importing the service. This exercises the exact same code path
+  production uses (`fetchInstagramProfileInput` → `getInstagramProfile` → `scRequest`), not a
+  hand-rolled request, and the full raw envelope was recovered afterward from the `profiles.raw_payload`
+  column (which stores `JSON.stringify(envelope)` verbatim — see `upsertProfile`).
+- **Raw capture (committed, byte-identical to `raw_payload`):**
+  `.claude/context/fixtures/scrapecreators-instagram/ig_profile_business_account.json`
+
+### Envelope — CONFIRMED
+
+```
+success: boolean            // true
+credits_remaining: number   // 31989 at capture time
+credits_charged: number     // *** NOT modelled in ScrapeCreatorsProfileEnvelope — see mismatch below ***
+data: { user: {...} }
+status: string               // "ok"
+```
+
+Confirms the doc-comment claim in `lib/server/scrapecreators/types.ts` line 20
+(`{ success, credits_remaining, data: { user: {...} }, status }`) for the fields it lists, **but
+that comment is missing `credits_charged`**, which the real payload has (`credits_charged: 1`) —
+the exact same field the post-endpoint envelope already models. Same trap as the type comment's
+unverified claim about a `pk`/`follower_count` flat variant (which is genuinely absent, confirmed
+below) — the comment was mostly right but not exhaustively checked against a byte, because there
+was no byte to check it against until now.
+
+### `data.user` — CONFIRMED shape, 69 keys (real payload is FAR wider than modelled)
+
+`ScrapeCreatorsProfileUser` (`lib/server/scrapecreators/types.ts`) models 10 named fields plus an
+index signature. The real `data.user` object has **69 top-level keys**. Every one of the 10 named
+fields is present, correctly named, correctly typed, and correctly nested — **zero mismatches**:
+
+```
+id: string                          // "528817151" — confirmed string, matches ScrapeCreatorsProfileUser.id
+username: string                    // "nasa"
+full_name: string                   // "NASA"
+biography: string                   // "Making the seemingly impossible, possible. ✨"
+profile_pic_url: string
+is_verified: boolean                // true
+is_private: boolean                 // false
+is_business_account: boolean        // true
+edge_followed_by: { count: number } // { count: 104252772 } — nested object, NOT a flat follower_count
+edge_follow: { count: number }      // { count: 92 } — nested object, NOT a flat following_count
+```
+
+**No flat `follower_count`/`following_count`/`pk` fields exist anywhere in the 69 keys.** The type
+comment's claim that "there is no flat follower_count/following_count/pk variant" is CONFIRMED, not
+just asserted.
+
+Fields present in the real payload but NOT modelled at all (fall through
+`[key: string]: unknown` — not a bug, just unmapped, listed for anyone extending this later):
+`profile_pic_url_hd`, `fbid`, `eimu_id`, `external_url` / `external_url_linkshimmed`,
+`business_address_json` (nested `{city_name, city_id, latitude, longitude, street_address,
+zip_code}`), `business_category_name`, `business_contact_method`, `business_email`,
+`business_phone_number`, `category_enum`, `bio_links` (array of 5), `biography_with_entities`,
+`highlight_reel_count`, `has_clips`, `has_channel`, `has_guides`, `has_ar_effects`,
+`hide_like_and_view_counts` (boolean — profile-level analog of the post-level
+`like_and_view_counts_disabled` gap recorded above; NOT the same field, not wired to anything, just
+noting the naming echo), `pronouns` (empty array in this sample), `edge_owner_to_timeline_media`,
+`edge_felix_video_timeline`, `edge_saved_media`, `edge_media_collections`, `edge_mutual_followed_by`,
+`edge_related_profiles`, and ~15 more viewer-relative / moderation booleans
+(`blocked_by_viewer`, `restricted_by_viewer`, `has_requested_viewer`, `followed_by_viewer`, etc.) —
+all meaningless for an unauthenticated scrape, same pattern as the post owner block.
+
+### Verdict against ticket #33's `fetchInstagramProfileInput` assumptions — NO MISMATCH
+
+`lib/server/profiles/service.ts`'s `fetchInstagramProfileInput` reads exactly:
+`raw.id`, `raw.edge_followed_by?.count`, `raw.edge_follow?.count`, `raw.full_name`,
+`raw.profile_pic_url`, `raw.biography`, `raw.is_verified`, `raw.is_business_account`,
+`raw.is_private`. **Every single one of these field names, and their nesting
+(`edge_followed_by.count` / `edge_follow.count` as nested objects, not flat numbers), matches the
+live payload exactly, including casing (all snake_case, as assumed).** #33's code needs no fix.
+The only genuine gap found is the envelope-level `credits_charged` field being unmodelled (transport
+metadata, not consumed by #33's logic — same non-issue category as the post endpoint's
+`credits_charged`/`extensions`, which are also deliberately unpersisted).
+
+### Cache verification (`resolveProfile`, `PROFILE_TTL_DAYS`) — REAL, OBSERVED, NOT ASSUMED
+
+Wrapped `globalThis.fetch` with a call counter, then called `resolveProfile({ platform:
+"instagram", username: "nasa" })` twice in the same process, back to back, against a freshly
+migrated local `my-content.db` with no prior `nasa` row:
+
+| Call | fetch() calls made | Result |
+|---|---|---|
+| 1st `resolveProfile` (cache miss — no row existed) | **1** (`GET /v1/instagram/profile?handle=nasa&trim=false`) | Row inserted, `credits_charged: 1` in the stored `raw_payload` |
+| 2nd `resolveProfile` (same platform/username, immediately after) | **0** | Returned the cached row read straight from `profiles`, no network call at all |
+
+Direct `sqlite3`-equivalent confirmation via `db.execute` in the same script:
+
+```
+last_fetched_at: 2026-08-05 03:42:47   updated_at: 2026-08-05 03:42:47
+```
+
+— a single timestamp shared by both columns after **both** `resolveProfile` calls, proving the
+second call never went through `upsertProfile()`'s `datetime('now')` write path a second time (had
+it hit the API again and re-upserted, `last_fetched_at`/`updated_at` would have advanced past the
+first call's timestamp). Combined with the 0-fetch observation above, this is real evidence — not
+an assertion — that the 7-day TTL cache (`PROFILE_TTL_DAYS`, default 7, `lib/server/profiles/constants.ts`;
+`isStale()`, `lib/server/profiles/helpers.ts`) works as designed: a fresh cached row short-circuits
+`resolveProfile` before `fetchInstagramProfileInput`/`getInstagramProfile`/`scRequest` are ever
+reached.
+
+The `profiles` table row this test wrote is a real local DB write (`platform='instagram',
+username='nasa'`), consistent with this task's explicit allowance that the cache-write itself is
+expected, unlike #36's original "no DB writes" constraint for a different, broader script.
+
+### Credit ledger — this session (2026-08-05)
+
+| Call | credits_remaining after |
+|---|---|
+| `resolveProfile` call 1 (cache miss → live `/v1/instagram/profile`) | 31989 |
+| `resolveProfile` call 2 (cache hit, same username) | 31989 (unchanged — 0 fetch calls made, confirmed above) |
+
+**Total spend: 1 credit**, within the ~2-credit budget. No retries, no exploratory calls, no
+errors.
