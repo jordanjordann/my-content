@@ -4,7 +4,7 @@
 **Owner:** Oden (product owner)
 **Author:** Dan (PM)
 **Created:** 2026-08-05
-**Revised:** 2026-08-05 (owner acceptances recorded; §12 added)
+**Revised:** 2026-08-05 (owner acceptances recorded; §12 added; **§13 score explainability added** — new owner requirement, and the primary input to the UI/UX designer's next pass)
 **Extends:** `docs/PRD-analysis-schema-redesign.md` (the live analysis contract). This PRD **adds a third tier** to that contract and **bumps `schemaVersion`**. Everything in that PRD not contradicted here still stands.
 **Primary input:** `docs/product-direction-plan.md` §3, Phase 3 (3B and 3C).
 **Out of scope:** 3A (the job queue). Referenced only where a real dependency exists (§9.3).
@@ -62,6 +62,8 @@ The analysis scorecard judges **content only**. Nothing in the product says whet
 - **US-4.** As an agency strategist, I want to know **how much evidence** sits behind a performance claim, so I do not over-claim to a client.
 - **US-5.** As an agency strategist, I want the tool to **say "we don't know"** when the creator has hidden their counts, rather than print a plausible number I would repeat to a client.
 - **US-6.** As an agency strategist, I want to **scan a creator's analysed library in one table** and sort by performance, so I can find their best work without opening every row.
+- **US-7.** As an agency strategist, I want **every score to explain itself inside the app** — what it measured, what went into it, how much evidence sits behind it, and why it says what it says — so I can defend the number in a client meeting instead of just repeating it. **(§13. Owner requirement, 2026-08-05.)**
+- **US-8.** As an agency strategist, I want the app to **stop me from comparing two numbers that are not comparable**, so I do not confidently tell a client something untrue. **(§13.6, §12.3.)**
 
 ---
 
@@ -353,6 +355,7 @@ Gherkin, phrased so each is actually checkable. **No screenshot-only criteria** 
 - **Desktop-only.** Not an oversight, a scope decision.
 - **The one constraint the designer must not design around: §12.3.** Two different engagement percentages exist in this table and they are **not comparable**. How they are distinguished is entirely the designer's call; **that they are unmistakably distinguished is a requirement, and the mockup review is where it gets signed off.**
 - **The column set in §8.3 is provisional until this mockup is reviewed** (caveat C2). The owner approved the *fields*; he has not yet seen the *table*. Expect and welcome cuts.
+- **§13 (score explainability) is the other required input to this design pass, and it is the larger one.** The owner has required that every score explain itself inside the app. §13 specifies **what** must be explained and **where**; **how it looks is entirely the designer's decision** and is deliberately unspecified. **Read §13.8 first** — it states the boundary explicitly.
 
 ### 8.2 Columns that exist today and are never surfaced
 
@@ -395,7 +398,7 @@ Ordered left to right. The goal is US-6: scan a creator's library and find what 
 - **R-8.4.5** No cell fabricates a value. A null score is a null score.
 - **R-8.4.6** Contrast: any new badge is measured in **gamma-encoded sRGB** against `--background`, `--card` **and** the row-hover surface, ≥ 4.5:1 on all three. This exact error class has shipped non-compliant twice (RUNBOOK §8.4). It is checkable numerically and is therefore a real acceptance criterion, not a screenshot.
 - **R-8.4.7** **The engagement denominator is visible without interaction** on every row that shows an engagement percentage (R-12.3.1). No hover, no legend, no prior knowledge of the content type required. **This is a hard constraint on the design, not a preference**; the mockup review must sign it off explicitly (caveat C2).
-- **R-8.4.8** Every row carries the **table-tier explainability payload defined in §13.4**. See §13 — it is a requirement on this table, not a detail-view-only concern.
+- **R-8.4.8** Every row carries the **table-tier explainability information defined in §13.7** (R-13.7.1 to R-13.7.6). See §13 — explainability is a requirement on this table, not a detail-view-only concern.
 
 ### 8.5 Acceptance criteria (3C)
 
@@ -427,7 +430,7 @@ Ordered left to right. The goal is US-6: scan a creator's library and find what 
 - **R3 — The follower count is up to 7 days stale.** Accepted by the owner. Mitigated by Tier 2 being the headline (it does not use the follower count at all), and by never presenting Tier 3 as exact.
 - **R4 — Tier 2 on a 5-post baseline is statistically thin.** Same caveat the fingerprint carries. Mitigated by always showing the sample size, never by hiding it.
 - **R5 — The table gets too wide.** Mitigated by §8.3's explicit non-default list. If the designer pushes back, cut from the bottom of the default list, not from #7/#8.
-- **R6 — Two engagement percentages that look identical but are not comparable** (§12.3). **The highest-severity *product* risk introduced by §12**, because the failure is silent: nothing errors, a user simply draws a wrong conclusion and repeats it to a client. Mitigated by R-12.2.2 (a required denominator discriminator that must survive every layer, so dropping it is a type error), R-12.3.1–.3.3, AC-20/21, and explicit designer sign-off at mockup review.
+- **R6 — Two engagement percentages that look identical but are not comparable** (§12.3). **The highest-severity *product* risk introduced by §12**, because the failure is silent: nothing errors, a user simply draws a wrong conclusion and repeats it to a client. Mitigated by R-12.2.2 (a required denominator discriminator that must survive every layer, so dropping it is a type error), R-12.3.1–.3.3, AC-20/21, and explicit designer sign-off at mockup review. **Also the reason §13 exists:** R-12.2.2 makes the system *correct*; **§13.6 requires that the user cannot *misread* it.** Those are two different requirements and R6 is not mitigated until both are met.
 - **R7 — Slow Tier 2 cold start on image carousels** (§12.4). For a creator who rarely posts carousels, the bucket may sit under the minimum of 5 indefinitely, leaving image posts on a `MEDIUM`-confidence follower ratio with no baseline. **Accepted deliberately** — lowering the threshold would produce a number we could not defend. Mitigated by showing the state ("3 of 5"), never hiding it. Revisit when bulk ingestion (3A) lands.
 
 ### 9.3 Dependency on 3A (the only genuine one)
@@ -686,3 +689,145 @@ Recorded so the reasoning is auditable, and so that a future content type with g
 *Given* a creator with 3 all-image-carousel analyses (below the D4 minimum of 5) and 20 reel analyses,
 *When* a fourth all-image carousel is analysed,
 *Then* `tierUsed` is not `CREATOR_BASELINE`, the reel bucket is **not** used as a substitute baseline, and the UI renders an explicit insufficient-history reason rather than a blank cell or a `0`.
+
+---
+
+## 13. Score explainability — the score must explain itself, in the app [CONFIRMED — owner requirement, 2026-08-05]
+
+**Owner requirement, stated directly and recorded verbatim in substance:** *every part of the scoring must be explained to the user inside the app — what the score is based on, how it was derived, and why it says what it says.* The owner raised this himself and explicitly expects it to need design work.
+
+**This is a first-class requirement, not a polish item.** It is the difference between a tool an agency can quote to a client and a tool that produces a number nobody can defend. US-2 and US-4 already asked for it in outline; §12.3 made it urgent. This section makes it explicit and testable.
+
+**Read §13.8 before designing anything.** This section specifies **what must be explained and where**. It deliberately does **not** specify how it looks.
+
+### 13.1 The principle, and the five questions
+
+**A number the user cannot interrogate is a number they should not repeat to a client.** Every performance figure the product renders must be traceable, on the surface it appears on, back to the facts it was computed from.
+
+Every displayed performance score — **and every deliberately absent one** — must let the user answer all five of these without leaving the product and without asking a developer:
+
+1. **Which metric is this, and why this one?** (§13.2)
+2. **What went into it?** (§13.3)
+3. **How much evidence is behind it, and is it final?** (§13.4)
+4. **Why is there no score here?** — when there isn't (§13.5)
+5. **Can I compare this to that other number?** — and the honest answer is often *no* (§13.6)
+
+- **R-13.1.1** These five are a **completeness requirement on the information available at each surface**, not a prescription for five separate UI elements. One well-chosen sentence may answer three of them. **The designer decides the form; the requirement is that a user can get the answer.**
+- **R-13.1.2** **No explanation may be a restatement of the number.** "Performance score: 4 (good)" explains nothing. The explanation must reference the underlying quantities or the comparison that produced the verdict.
+- **R-13.1.3** **All explanatory text is written for a non-technical agency strategist.** No field names, no enum identifiers, no error codes, no `snake_case`, no `UNAVAILABLE`. Enum identifiers stay English and machine-stable underneath (§5.4); what the user reads is a human sentence. This is the existing Indonesian-labels-via-UI-lookup pattern, extended to this layer.
+
+### 13.2 Which metric this score used, and why — in plain language
+
+The product computes **different metrics for different content types** (§12). A user who does not know that will misread the product. **The app must tell them, on the score.**
+
+- **R-13.2.1** Every rendered performance figure states **which metric it is** in plain language — engagement measured against **the number of people who saw the post** (reach-denominated) versus against **the creator's follower count** (follower-denominated).
+- **R-13.2.2** It also states **why that metric was used**, and the reason must be the real one, in plain language: *Instagram publishes no reach or view data for image-only posts, so this is measured against followers instead.* **The user should come away understanding that this is a limit of what Instagram exposes, not a shortcut we took.**
+- **R-13.2.3** The reason is **specific to that post's content type**, not generic boilerplate shown on every row. A reel and an all-image carousel must not carry the same explanation.
+- **R-13.2.4** The **tier actually used** (§5.2 `tierUsed`) is explained in the same plain-language register: *compared against this creator's own typical carousel performance* (Tier 2), *measured against how many people saw it* (Tier 1), *a rough read against audience size* (Tier 3). **Tier 3 must read as the weakest of the three** wherever it appears — this carries §3.5's demotion through to the user, where it actually matters.
+- **R-13.2.5** Reach kind is carried into the explanation, not just the number: a `PLAYS` figure is described as plays, never as views (R-4.3.1). **The existing prompt-level discipline becomes a UI-level requirement here.**
+
+### 13.3 The inputs behind the number
+
+- **R-13.3.1** For any score, the user can see **the actual counts used** — likes and comments as captured — and **the audience figure it was measured against** (the reach value, or the follower count). Not a formula the user has to evaluate; the operands themselves.
+- **R-13.3.2** The audience figure is **attributed and dated**. The follower count comes from a cache with up to a 7-day TTL (§4.2, R3). Where a follower count is used, **its staleness must be inspectable** — the computed block already stores the cached profile record's age precisely so this is possible (§5.1). **A follower-denominated percentage presented as if exact is a false precision the product must not create.**
+- **R-13.3.3** For a **Tier 2** figure, the user can see **what the comparison was against**: the creator's own median, the bucket it was drawn from *(this creator's image carousels — not their reels)*, and the number of posts in it. The **bucket identity is part of the explanation**, not an implementation detail — "3.2× typical" is meaningless until the user knows *typical what*.
+- **R-13.3.4** **Every numeral shown in an explanation must exist in the stored computed block** (§5.1). This extends S2/AC-7 from Gemini's prose to the explainability layer. **The explanation is not a place where new numbers may appear.**
+- **R-13.3.5** Post age at analysis time is available alongside any score (§4.5), because no performance figure can be read honestly without it.
+
+### 13.4 Confidence and provenance — how much evidence, and is it final
+
+- **R-13.4.1** A **Tier 2** figure never appears without its **sample size**, expressed the way the product already expresses it: **"based on N videos"**. This is not a new pattern — it is the confirmed style-fingerprint precedent (live PRD §6.1, in scope for that phase), and 3B **reuses it rather than inventing a second vocabulary for the same idea**. R-8.4.4 already required the number; this requires that the user understands what it is evidence *of*.
+- **R-13.4.2** The **confidence level** (`HIGH` / `MEDIUM` / `LOW` / `NONE`) is surfaced in plain language, **with the reason it was lowered** where it was lowered. The three known reasons must each be expressible: a **cached/approximate follower denominator** (R-12.2.5, capped at `MEDIUM`), a **derived post-level reach taken from a carousel's first slide** (D4, −1 level), and a **thin sample**.
+- **R-13.4.3** A **provisional** score — a post below the maturity floor (§4.5) — must **say that it is provisional and why**: the post is new and still accumulating. **A provisional score must never be presentable as final.**
+- **R-13.4.4** The maturity floor is a **tunable estimate, not a measured constant** (caveat C1). **Nothing user-facing may imply it is a researched threshold.** No UI copy anywhere may state or imply that 72 hours is a validated settling time.
+- **R-13.4.5** Scores are **frozen point-in-time** (D8). Where a user could reasonably believe a figure is live — a follower-denominated percentage on a creator whose audience has since grown — **the as-of nature of the figure must be evident**. The most common wrong conclusion this product can produce is "this number is current". It is not.
+
+### 13.5 Absent scores must explain themselves
+
+**A blank cell is the single worst outcome this feature can produce**, because it looks like a bug and teaches the user to distrust every other cell. D3 is confirmed: **no score, plus a visible reason.** §13 makes the *reason* a product requirement rather than an enum.
+
+- **R-13.5.1** Wherever a score is absent, the surface renders a **reason legible to a non-technical user**. `CONTENT_KIND_UNSUPPORTED` is a storage value, **not** something a user may ever read. `REACH_HIDDEN` / `REACH_UNKNOWN` / `NO_AUDIENCE_DATA` / insufficient-history each map to a plain sentence.
+- **R-13.5.2** The reason must distinguish the cases a user would act on differently: **the creator hid their counts** (nothing we can do), **we do not have enough of this creator's history yet** (it will resolve itself — and per R-12.4.2 the progress is shown, e.g. 3 of 5), and **this data does not exist for this content type** (a permanent property of the platform). **Collapsing these into one "unavailable" is a failure of this requirement.**
+- **R-13.5.3 — the case we genuinely cannot attribute, specified rather than left undefined.** On an all-image carousel the `like_and_view_counts_disabled` flag is **absent from the payload entirely** (§12.1; `.claude/context/verified-facts.md`, 2026-08-05 correction). Absence means **we cannot tell** whether the creator hid their counts. So where a score is unavailable on such a post, **the app must not assert a cause it cannot evidence** — it must not say "counts hidden by creator", because we do not know that.
+  **What the app says instead:** it states **what it does know** — that Instagram published no performance data for this post — and **does not speculate as to why**. The honest form is a statement of the observation, not a diagnosis.
+  - **R-13.5.3a** A distinct stored reason is required for *cause not determinable*, separate from *counts confirmed hidden*. **Two different facts must not share one enum value**, or the UI is structurally unable to tell the truth.
+  - **R-13.5.3b** Absent must **never** be coerced to `false` to produce a more confident-sounding sentence (R-12.2.3). **A tidier UI string is not a reason to assert a fact we do not have.**
+  - **R-13.5.3c** If V1 (§10.2) later establishes the real counts-disabled payload shape and it turns out the flag *is* reliably present on this shape, this requirement may be revisited. **Until then it stands. Approved is not verified.**
+- **R-13.5.4** An absent score **never renders as `0`, as an em-dash, or as an empty cell** — restating D3 and R-8.4.3 at the surface, because this is exactly the rule that erodes first under layout pressure.
+
+### 13.6 Comparability — the app must make the misread impossible, not merely be correct underneath
+
+**This is the highest-severity product risk in this document (R6, §12.3), and it is the reason explainability is a requirement rather than a nicety.** A reel at 4% and an image carousel at 4% mean entirely different things. **Nothing errors. No test fails. A user simply draws a wrong conclusion and repeats it to a client.**
+
+- **R-13.6.1** Being *technically correct underneath is not sufficient*. R-12.2.2's `denominator` discriminator makes the system correct; **§13 requires that the user cannot misread it.** These are different requirements and both must be met.
+- **R-13.6.2** Wherever two engagement figures with **different denominators** can be seen in one view — the table is the obvious case — the difference must be apparent **without interaction**: no hover, no legend, no tooltip, no prior knowledge of content types (R-8.4.7, R-12.3.1).
+- **R-13.6.3** The product must **never present a comparison it cannot justify**. No aggregate, average, "typical engagement", ranking or roll-up may span denominators (R-12.3.3). Where a user might reasonably *expect* a comparison and it is not valid, **the app should say why it is not offered** rather than silently omitting it.
+- **R-13.6.4** Gemini's Indonesian prose is **part of the explainability surface**, not separate from it. A verdict reading only *"engagement 4,2%"* is non-compliant (R-12.5.4). **The prose is what a strategist will paste into a client deck, so it is the highest-risk surface of all** — an unqualified percentage there escapes the product entirely and can never be corrected.
+
+### 13.7 Where this surfaces — the informational requirement at each location
+
+**Both surfaces are in scope. Neither is sufficient alone.** A detail-view-only explanation fails, because §12.3's misreading happens in the table, where two denominators sit inches apart. A table-only explanation fails, because the table cannot carry the depth.
+
+**The analyses table (3C) — the "cannot be misread" tier.** Available at a glance, without interaction:
+
+- **R-13.7.1** The **metric identity / denominator** on every engagement figure (R-13.6.2).
+- **R-13.7.2** The **tier and confidence** of the score.
+- **R-13.7.3** The **sample size** on any Tier 2 figure — "based on N videos" (R-13.4.1).
+- **R-13.7.4** The **provisional** state where it applies (R-13.4.3).
+- **R-13.7.5** The **plain-language reason** on any absent score (R-13.5.1), in the cell — not deferred to the detail view.
+- **R-13.7.6** The table is **not required to carry the full "why this metric" explanation** (R-13.2.2) or the raw operands (R-13.3.1). **It must, however, make it evident that a fuller explanation exists and is reachable.** A user who wonders "why followers and not reach?" must not have to guess that the detail view can answer it.
+
+**The detail view — the "can be interrogated" tier.** Everything the table carries, plus:
+
+- **R-13.7.7** The **full plain-language reason** for the metric choice (§13.2), including that Instagram exposes no reach for image-only content.
+- **R-13.7.8** The **operands** — the counts used and the audience figure measured against (R-13.3.1), with the follower count's staleness (R-13.3.2).
+- **R-13.7.9** For Tier 2, the **baseline, the bucket identity and the sample size** (R-13.3.3).
+- **R-13.7.10** The **confidence reason** (R-13.4.2) and the **point-in-time / as-of** framing (R-13.4.5).
+- **R-13.7.11** Gemini's `drivers[]` — the content-trait-to-performance links — presented **as the explanation of the verdict**, which is what they are and the reason the feature uses a model at all (§5.2).
+
+**Any export, if one exists, inherits R-13.6.1 to R-13.6.3 in full.** A percentage that leaves the product without its denominator is the failure mode this whole section exists to prevent. **Exports are not in 3C scope; this is a standing constraint on whoever adds one.**
+
+### 13.8 Boundary — what this section deliberately does NOT specify
+
+**Directed at the UI/UX designer, who works from this PRD next.**
+
+- **This section specifies WHAT must be explained and WHERE. It does not specify how it looks.**
+- **Explicitly the designer's decision, and not pre-empted here:** tooltips, popovers, modals, expandable rows, inline captions, footnotes, icons, colour, typography, information density, disclosure patterns, and the **exact user-facing wording** of every string.
+- **No mockups appear in this document**, consistent with §8's standing rule.
+- **What is not negotiable is the outcome.** Where this section says *without interaction*, that constrains the mechanism (R-13.6.2, R-8.4.7) — it is a correctness constraint, not a style preference, and it is the one place the designer's freedom is genuinely bounded. Everything else is open.
+- **Where this section suggests example phrasing, it is illustrative of the register, never approved copy.** Final wording is the designer's, subject to R-13.1.3.
+- **The mockup review (caveat C2) is where §13 gets signed off**, alongside §12.3. **The sign-off should be recorded**, because "we assumed the designer had handled it" is precisely how R6 ships.
+
+### 13.9 Acceptance criteria
+
+Each asserts **rendered text content or stored data** and is mechanically checkable. **None is screenshot-only** — an unmet screenshot criterion has already been merged unverified in this repo (§6), so nothing here depends on someone eyeballing an image.
+
+**AC-25 — Every score states its metric**
+*Given* a rendered table containing one reel row (reach-denominated) and one all-image-carousel row (follower-denominated), both scored,
+*When* the rendered output is inspected with no hover, no tooltip and no legend,
+*Then* each row's accessible text identifies which denominator its engagement figure uses, and the two identifiers are distinct strings. Component test on text content.
+
+**AC-26 — The detail view explains why this metric**
+*Given* an all-image-carousel analysis,
+*When* the detail view renders,
+*Then* its text states that no reach/view data exists for image-only posts on Instagram and that the figure is measured against follower count; and it contains **no** occurrence of the words reach, views or plays applied to that post's engagement figure. Component test asserting both presence and absence.
+
+**AC-27 — Operands are shown, and every numeral is real**
+*Given* any analysis with a performance block,
+*When* the detail view renders,
+*Then* the counts used and the audience figure measured against are present in the rendered text, **and** every numeral extracted from all explanatory text exists in the stored computed block of §5.1 within the stated rounding tolerance. Extends AC-7's mechanism to this layer.
+
+**AC-28 — Tier 2 never appears without its evidence base**
+*Given* a Tier 2 score,
+*When* it renders in the table **and** in the detail view,
+*Then* both carry the sample size in the form "based on N videos", and the detail view additionally names the bucket the median was drawn from. Component test on both surfaces.
+
+**AC-29 — Provisional says so**
+*Given* a post below the confirmed maturity floor,
+*When* it renders on either surface,
+*Then* the accessible text states the score is early/still accumulating, **and** no rendered string anywhere asserts that the floor is a measured or validated threshold (R-13.4.4). Asserted by string search over the UI copy source.
+
+**AC-30 — Absent scores give a legible, non-speculative reason**
+*Given* four analyses — (a) `like_and_view_counts_disabled === true`, (b) insufficient bucket history, (c) an all-image carousel with no usable inputs and the flag **absent** from the payload, (d) no cached follower count —
+*When* each renders in the table,
+*Then* each shows a distinct plain-language reason; **none** renders as blank, `0` or an em-dash; **none** contains an enum identifier, a field name or an error code; and case (c) specifically **does not** assert that the creator hid their counts, because that is not determinable from an absent flag (R-13.5.3). Component test asserting the four strings are distinct plus a negative assertion on case (c).
