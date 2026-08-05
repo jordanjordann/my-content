@@ -33,9 +33,9 @@ Reading conventions used throughout:
 6. **Phase 3 is expanded from one workstream to three.** **3A** job queue (unchanged), **3B** performance / engagement scoring (new), **3C** analyses table redesign (**moved in from Phase 5**). 3A and 3B may run in parallel; **3C is strictly last** because it displays 3B's output. (§3 Phase 3, §7)
 7. **Scoring must judge PERFORMANCE, not just content** — views/plays against follower or subscriber count — and **the judgement comes from Gemini**, not a bare computed number in the UI. That requires putting the metrics into the prompt and extending the analysis output contract. (§3, 3B)
 8. **No backward compatibility. Existing analyses are DELETED, not migrated.** A `schema_version` bump plus a data-only deletion migration, precedent `008_delete_legacy_pre_redesign_analyses.sql`. Measured 2026-08-05: **3 rows in `analyses`, 0 in `profile_style_fingerprints`** — near-zero cost, and it clears the 2 legacy rows in the handoff's carried-forward item 6. (§3, 3B)
-9. **Follower-count snapshot recording must start in Phase 3.** `lib/server/profiles/repository.ts` destroys the prior `follower_count` on every upsert, so scores can only ever use today's count. **History cannot be backfilled** — not starting now makes it permanently unrecoverable. This is §4.4's cheap recording half, promoted from optional. (§3, 3B; §4.4)
+9. **The performance score is point-in-time and frozen — follower-count snapshots are NOT required.** The score is computed at analysis time against the follower/subscriber count as it stood then, written onto the analysis row, and **never recomputed** as the audience later moves. Owner: *"should just be at that time, we shouldn't care about when the follower count goes down or up."* Accepted consequence: historical follower counts at post-publication time stay **unrecoverable**, deliberately. Accepted caveat: the count comes from a **7-day-TTL profile cache**, so it is approximate. §4.4's `metric_snapshots` recording half stays a Phase 4 [RECOMMENDATION] — **it was not promoted.** (§3, 3B; §4.4)
 
-**Explicitly NOT decided** in the same conversation, and not to be invented: the **scoring formula**, the **code-vs-Gemini division of labour** (a [RECOMMENDATION] only), **behaviour when counts are hidden/zero/absent**, and **whether YouTube scores at parity**. See §3, 3B.
+**Explicitly NOT decided** in the same conversation, and not to be invented: the **scoring formula**, the **code-vs-Gemini division of labour** (a [RECOMMENDATION] only), **behaviour when counts are hidden/zero/absent**, **whether YouTube scores at parity**, and the **exact input set fed to Gemini** — including post recency and creator-baseline comparison. See §3, 3B.
 
 ---
 
@@ -435,15 +435,21 @@ Record the mechanical consequence plainly, because it is easy to miss: **Gemini 
 
 **Measured facts (local DB, 2026-08-05): 3 rows in `analyses`, 0 rows in `profile_style_fingerprints`.** The deletion cost is therefore **near-zero**, and it **also sweeps up the 2 unresolved legacy rows** recorded as carried-forward item 6 in `docs/HANDOFF-2026-08-05.md`.
 
-##### Follower-count snapshots must be handled in this phase [CONFIRMED]
+##### The score is point-in-time and frozen — snapshots are explicitly NOT required here [CONFIRMED]
 
-This is a **real constraint on 3B, not a nicety.**
+**This overrules an earlier draft of this section**, which recorded follower-count snapshot recording as a hard Phase 3 requirement. **The owner has ruled the other way.** His words: the follower-count-versus-views comparison *"should just be at that time, we shouldn't care about when the follower count goes down or up."*
 
-`lib/server/profiles/repository.ts` **destroys the previous `follower_count` on every upsert** (`COALESCE(excluded.follower_count, profiles.follower_count)`). So any ratio we compute can only ever use **TODAY's follower count** — never the creator's follower count **at the time the post was published**. For a growing account, **older posts score artificially low**, and the score is quietly wrong in a way the UI cannot signal.
+**Owner decision [CONFIRMED]:**
 
-**History cannot be backfilled.** If snapshot recording does not start now, that data is **permanently unrecoverable**. Deleting the existing analyses does **not** solve this — deletion is backward-looking, this is forward-looking.
+- The performance score is computed **at analysis time**, using the follower / subscriber count **as it stood then**.
+- That number is **frozen onto the analysis row** and **never recomputed** as the creator's audience later grows or shrinks.
+- It is a **point-in-time verdict**, which is what an analysis is.
 
-This is the **cheap recording half** of §4.4's `metric_snapshots` proposal, which the roadmap already carries. 3B is the point at which it stops being optional.
+**Therefore snapshot recording is NOT a requirement of Phase 3.** Do not put it in a 3B ticket. §4.4's `metric_snapshots` proposal stays exactly where it was — a Phase 4 [RECOMMENDATION], unpromoted.
+
+**The trade-off, recorded neutrally so nobody re-opens it later as an oversight.** `lib/server/profiles/repository.ts` overwrites the previous `follower_count` on every upsert, so the app keeps only the latest value. Consequence: **historical follower counts at post-publication time are, and will remain, unrecoverable.** A reel analysed today records today's audience size; if the same reel were re-analysed a year from now it would be scored against a different denominator. **This is an accepted cost of a deliberate decision, not something that was missed.**
+
+**Accuracy caveat — told to the owner and accepted.** The follower count is served from a **profile cache with a 7-day TTL** (`PROFILE_TTL_DAYS`, default **7** — `docs/RUNBOOK.md` §3). So "the count at that time" can in practice be **up to a week stale**. The figure is **approximate**, and nothing downstream — UI copy, the Gemini prompt, or any derived ratio — should present it as exact.
 
 ##### Open sub-decisions of 3B — do NOT invent answers to these
 
@@ -454,7 +460,7 @@ These are for **PRD B** (not yet written) or for the owner to settle.
 - **[OPEN] Behaviour when counts are hidden, zero, or absent.** Instagram creators can disable like/view counts (`like_and_view_counts_disabled`), and there is a **real captured fixture where `video_view_count` is 0 while the true play count is 116,333**. Any ratio divides by numbers that are **sometimes missing, sometimes zero, and sometimes misleading**. What the score shows in those cases is a **product decision**, not an implementation detail.
 - **[OPEN] Whether YouTube is in scope for scoring at parity.** YouTube carries **subscriber count**, but structurally **less context** than Instagram (no audio flag, no dimensions — see §3, 1.1). Flagged, **not decided**.
 
-**Cost: expensive.** It is a second contract change on top of Phase 2's, plus prompt work, plus a snapshot-recording path.
+**Cost: expensive.** It is a second contract change on top of Phase 2's, plus prompt work. (It is **no longer** carrying a snapshot-recording path — see the point-in-time decision above.)
 
 #### 3C Analyses table redesign [CONFIRMED — moved here from Phase 5, 2026-08-05]
 
@@ -511,9 +517,9 @@ Owner: *"reuse the gemini_file_url."*
 
 **Cost: trivial**, as expected.
 
-#### 4.4 `metric_snapshots` groundwork [RECOMMENDATION — reduced scope; recording half now PULLED INTO PHASE 3]
+#### 4.4 `metric_snapshots` groundwork [RECOMMENDATION — reduced scope]
 
-> **Updated 2026-08-05.** The **recording half** of this section is no longer optional and no longer sits in Phase 4: **Phase 3's 3B depends on it** and the owner has confirmed it must be handled there (§3, 3B, "Follower-count snapshots"). Reason: performance scoring divides by follower count, `repository.ts` keeps only today's value, and **history cannot be backfilled**. The **scheduled re-fetch half stays dropped** — see §6. The rest of this section is the original framing and still explains why.
+> **Note, 2026-08-05.** An earlier draft of this section said the recording half had been pulled into Phase 3's 3B. **That is no longer true and has been withdrawn.** The owner ruled that the performance score is a **frozen, point-in-time** figure (§3, 3B), so 3B does **not** depend on snapshots. This section's status is unchanged from before: still a **Phase 4 [RECOMMENDATION]**, still optional, with the **scheduled re-fetch half dropped** (§6).
 
 Owner marked Q1.3 as *"nice to have."* Given the product definition, **it drops further than that**: if plans are generated on-demand per topic, trajectory data is not load-bearing for anything.
 
@@ -646,11 +652,18 @@ Phase 3  THREE workstreams (expanded 2026-08-05)
          │  ├─ Gemini judges performance ⇒ metrics MUST go in the prompt
          │  ├─ new contract: schema_version bump, prompt + responseSchema
          │  │     + parser + validation + detail UI
-         │  ├─ existing analyses DELETED, not migrated (3 rows; precedent 008)
-         │  ├─ follower-count SNAPSHOT RECORDING starts here — repository.ts
-         │  │     keeps only today's count and history CANNOT be backfilled
+         │  ├─ existing analyses DELETED, not migrated
+         │  │     (3 rows as of 2026-08-05; precedent 008)
+         │  ├─ score is POINT-IN-TIME and FROZEN at analysis time — NO
+         │  │     snapshots required; history stays unrecoverable (accepted)
+         │  │     follower count is 7-day-TTL cached ⇒ approximate
          │  ├─ [OPEN] the formula itself — none chosen, research + propose
          │  ├─ [RECOMMEND] ratios in code, Gemini interprets — NOT confirmed
+         │  ├─ [OPEN] input set for PRD B: audience size · views AND plays
+         │  │     as DISTINCT fields · likes/comments + hidden flag · ratios
+         │  ├─ [OPEN] post age / recency term — raw ratios flatter old posts
+         │  ├─ [OPEN] creator's OWN baseline as the comparison — inherits
+         │  │     the style fingerprint's cold-start problem (min 5)
          │  ├─ [OPEN] hidden / zero / absent counts (fixture: view_count 0
          │  │     vs true play count 116,333)
          │  └─ [OPEN] YouTube at parity? less context than Instagram
@@ -662,8 +675,9 @@ Phase 3  THREE workstreams (expanded 2026-08-05)
 Phase 4  Carousel multi-media            [CONFIRMED]  moderate-expensive
          gemini_file_uri reuse           [CONFIRMED]  cheap
          "Red Flags" relabel             [CONFIRMED]  trivial (ship any time)
-         metric_snapshots recording      → PULLED INTO 3B (2026-08-05); the
-                                           scheduled re-fetch stays dropped
+         metric_snapshots recording      [RECOMMEND]  cheap  — stays here,
+                                           NOT pulled into 3B (owner ruled the
+                                           score is frozen); re-fetch dropped
 
 Phase 5  Profiles module + style UI      [CONFIRMED]                  ← IA decided: lives in
          │                                                              the creator profile page
