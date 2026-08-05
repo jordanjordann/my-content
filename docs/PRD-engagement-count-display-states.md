@@ -116,7 +116,9 @@ These are boundaries and hints, not an implementation spec — the tech lead own
 
 ## 7. Open Questions (flagged — not invented answers)
 
-The four states and their treatments are settled. These are genuinely open and should be resolved before or during handoff:
+> **CLOSED — owner reviewed 2026-08-05: no further action needed, leave as shipped.** The owner was asked about the five items below and explicitly declined to pursue them. The feature has since shipped and whatever behaviour it shipped with stands. These are kept for the record, not as work items — do not spend time chasing them down. Reopen only if a concrete user complaint appears.
+
+The four states and their treatments are settled. These were flagged as genuinely open at handoff time:
 
 1. **Likes under Case 1.** The Instagram flag disables **like and view** counts together. This PRD's states are described mostly in view/play terms — confirm the **likes** display in each surface also switches to "Hidden" under Case 1 (assumed yes, since the flag covers likes, but state it explicitly). Do likes have their own Case 3 "unknown" ("—") independent of the disabled flag?
 2. **Exact tooltip copy (Indonesian vs. English).** App UI is English, analysis output is Indonesian. Confirm the "Hidden" tooltip copy language and exact wording. (Assumed English UI copy, but unconfirmed.)

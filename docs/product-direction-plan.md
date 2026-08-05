@@ -20,6 +20,14 @@ Reading conventions used throughout:
 
 **Status as of 2026-08-05:** Phases 1 and 2 have **shipped**. Phase 4 is **partially shipped** — carousel multi-media and the "Red Flags" relabel are in; `gemini_file_uri` reuse and `metric_snapshots` are not. Phases 3 and 5 are **not started**. See the latest HANDOFF for full session detail, and `docs/RUNBOOK.md` for the live operational state.
 
+**Owner decisions recorded 2026-08-05 (same day).** Five questions were put to the owner and answered:
+
+1. **Generation IA — RESOLVED.** Content generation lives **inside the creator's profile page**. [OPEN 2] is closed; the profiles-module promotion is no longer provisional. (§1, §5, §3 Phase 5, §7)
+2. **Bulk-ingestion spending cap — CONFIRMED IN PRINCIPLE.** A safety cap must exist. Threshold and hard-stop-vs-warning remain open sub-details. (§1 "Bulk ingestion by profile")
+3. **Carousel slide-count cap — CONFIRMED AS-IS.** Existing cap stays; it already matches Instagram's real maximum. No longer an open item. (§3, 4.1)
+4. **Multi-user auth — RECONFIRMED LOWEST PRIORITY.** Build last, after all other roadmap work. (§6)
+5. **Engagement-count PRD open questions — CLOSED, no action.** The owner reviewed the five items in `docs/PRD-engagement-count-display-states.md` §7 and declined to pursue them; the feature stays as shipped.
+
 ---
 
 ## 1. The product, defined
@@ -69,24 +77,24 @@ Consequences:
 
 Three ingestion paths, not one. This affects the generation surface's input design and needs to be in the Q1.4/generation PRD.
 
-### Where generation lives [OPEN — see §5 OPEN 2]
+### Where generation lives [CONFIRMED]
 
-**The working proposal is: content generation lives inside the creator's profile page**, rather than as a new top-level "Generate" surface. This is a **proposal from the boss and tech lead, not an owner decision.** The owner has said he will make planning decisions of this kind later. Do not build against it as settled.
+**The owner has confirmed (2026-08-05): content generation lives inside the creator's profile page**, rather than as a new top-level "Generate" surface. This is a settled owner decision, not a proposal. Build to it.
 
-The reasoning behind the proposal: generation is meaningless without a creator whose style you are generating in, so the natural home is the creator you are generating for rather than a standalone shell entry.
+The reasoning, recorded while this was still a proposal and unchanged by the decision: generation is meaningless without a creator whose style you are generating in, so the natural home is the creator you are generating for rather than a standalone shell entry.
 
-**Q2.8 (sidebar / app-shell IA) remains deferred and open.** `Sidebar.tsx` today has one section and one link. If the proposal above is accepted, Q2.8 would resolve as a side effect — generation would take no shell entry of its own. But that is a *consequence of a decision not yet made*, not an answer in itself. Q2.8 stays open and is tracked as such.
+**Q2.8 (sidebar / app-shell IA) resolves as a side effect.** `Sidebar.tsx` today has one section and one link. Because generation lives inside the profile page, **generation takes no shell entry of its own.** Whatever shell work remains is about the profiles module's own entry, not about a separate Generate destination.
 
-**[PROVISIONAL — contingent on [OPEN 2] being resolved]** If the proposal holds, it **promotes the profiles module significantly**, and that would be the largest sequencing change in this revision. Profiles was previously placed "down the long line" (the owner's Q2.7 answer, and an earlier revision of this plan had it in the final phase). Under the proposal it becomes the **home of the core feature** — but this promotion rests entirely on the proposal being confirmed, so treat the sequencing below as provisional.
+**[CONFIRMED]** This decision **promotes the profiles module significantly**, and it is the largest sequencing change in this revision. Profiles was previously placed "down the long line" (the owner's Q2.7 answer, and an earlier revision of this plan had it in the final phase). It is now the **home of the core feature.**
 
-Under that proposal, the creator profile page would be **no longer a detail page**. It would become a real destination holding:
+The creator profile page is therefore **no longer a detail page**. It becomes a real destination holding:
 
 - scraped **facts** (`profiles` — follower count, bio, account type),
 - the **editable style fingerprint** (the separate derived record from above),
 - **that creator's analyses**,
 - the **Generate** action.
 
-Sequencing consequence **[PROVISIONAL — contingent on [OPEN 2] being resolved]**: if the proposal is confirmed, the profiles-module work moves out of the long line and into the mainline plan. Until then it stays where §3 Phase 5 puts it, blocked on [OPEN 2]. Either way, nothing about generation can ship without it.
+Sequencing consequence **[CONFIRMED]**: the profiles-module work **moves out of the long line and into the mainline plan.** Nothing about generation can ship without it. Note this removes the IA blocker only — the generation work still depends on Phase 3 (the job queue) and on a generator PRD that does not exist yet.
 
 ### Bulk ingestion by profile [CONFIRMED] — NEW
 
@@ -105,6 +113,11 @@ Three technical notes that constrain when and how this can be built:
 **(b) CRITICAL DEPENDENCY: bulk ingestion is blocked on the job queue (Q2.3).** Analyzing 5–20 posts in one user action **cannot** run synchronously behind the existing `maxDuration = 300` HTTP request in `app/api/analyze/route.ts`. That loop is **serial**, and this is precisely the timeout failure mode the audit identified. Bulk ingest is therefore **not a standalone feature — it is the first real CONSUMER of the queue work.** "Add creator → auto-analyze their posts" **cannot ship before Q2.3 lands.** This strengthens the case for keeping Q2.3 at its current priority rather than sliding it.
 
 **(c) Cost implication.** N posts × (1–2 SC credits + one Gemini video analysis per post). At a 5-post minimum this is modest. The **ceiling** scales with how many posts an agency chooses to ingest per creator, and there is currently **no quota and no spend visibility** (Q2.4 — `credits_remaining` is returned by ScrapeCreators and discarded). **Bulk ingest is the point at which the missing cost controls start to actually matter.** They were deferrable while ingestion was one URL at a time; they stop being deferrable when one click spends 20 analyses.
+
+**Owner decision (2026-08-05) [CONFIRMED]: bulk ingestion must ship with a spending safety cap.** The owner has confirmed in principle that a cap should exist, so bulk ingest is not allowed to be built as an unbounded spend. Two sub-details are **explicitly still [OPEN]** and are to be decided when this feature is actually scoped — **do not invent either of them**:
+
+- **The threshold itself** — no number has been chosen.
+- **The behaviour at the threshold** — hard stop versus a warning the user can click through. Undecided.
 
 ### The style fingerprint [SHIPPED]
 
@@ -403,7 +416,9 @@ Scope, as delivered:
 - extend the duration guard to sum across video slides (the current guard is bypassable via carousels),
 - surface `analysis_mode` in `/api/analyses` — a caption-only `metadata_only` guess currently renders **identically** to a real video analysis.
 
-**Cost scales with slide count.** A 10-slide carousel is up to 10× the media cost of a single reel. Needs a cap decision.
+**Cost scales with slide count.** A 10-slide carousel is up to 10× the media cost of a single reel.
+
+**Slide-count cap — RESOLVED [CONFIRMED, 2026-08-05].** The owner has confirmed the **existing cap stays as-is, unchanged.** It already matches Instagram's real maximum carousel slide count, so lowering it would reject legitimate posts and raising it would be meaningless. This is **no longer an open item** — do not reopen it as "needs a cap decision."
 
 **Cost: moderate-to-expensive**, concentrated in the downloader/Gemini layer.
 
@@ -437,8 +452,8 @@ Proposal: **record snapshots cheaply if convenient** — a small append-only tab
 
 ### Phase 5 — Later / long line [CONFIRMED as direction, not scheduled]
 
-- **Profiles as its own module.** Owner: *"down the long line will be expanded to its own module... its own module in the UI... The content generator will also be accounting the profile since the profile will have its own analysis like speaking tone, video style, text style."* Note this is the same object as the style fingerprint in §1 — plan them as one thing, not two.
-- **Generation UI / IA.** Blocked on [OPEN 2] below.
+- **Profiles as its own module.** Owner: *"down the long line will be expanded to its own module... its own module in the UI... The content generator will also be accounting the profile since the profile will have its own analysis like speaking tone, video style, text style."* Note this is the same object as the style fingerprint in §1 — plan them as one thing, not two. **Promoted into the mainline plan** by the 2026-08-05 IA decision (§1).
+- **Generation UI.** **IA is decided** — it lives inside the creator's profile page ([OPEN 2] resolved 2026-08-05). Still gated on **Phase 3 (job queue)** and on a **generator PRD, which does not exist yet.** Do not write generation tickets before that PRD.
 - **Table field selection.** Owner wants to revisit which fields the analyses table shows (Q3.4). Migration 006 added ~14 columns that `getAnalysesList()` and `getAnalysisDetail()` in `lib/server/db.ts` **do not select** — they feed the Gemini prompt and then go nowhere. Sequence this **after** Phase 2, since the schema redesign changes what's worth showing.
 - **Market research.** Owner: *"I have not done a full market research of this. From what I know this is very niche."* Not blocking engineering. Flagged so it isn't forgotten before any monetization decision.
 
@@ -468,7 +483,7 @@ Explicit list of premises in `product-direction-open-questions.md` that are now 
 
 ## 5. Open questions still blocking
 
-**One remains — [OPEN 2]. Do not invent answers.** [OPEN 1] and [OPEN 3] have since been resolved and are kept below with their resolutions recorded.
+**None remain.** [OPEN 1], [OPEN 2] and [OPEN 3] have all been resolved and are kept below with their resolutions recorded. New open questions raised since are tracked in place in the sections they belong to (see §1 bulk ingestion's spending-cap sub-details).
 
 ### ~~[OPEN 1]~~ Cold-start minimum for the style fingerprint — **RESOLVED [CONFIRMED]**
 
@@ -482,7 +497,9 @@ A fingerprint from 1 analyzed video is noise; from ~15 it is meaningful. What is
 
 An agency onboarding a new creator hits this **on day one, every time**. **No longer blocking Phase 2 design.**
 
-### [OPEN 2] Where does generation live in the app IA?
+### ~~[OPEN 2]~~ Where does generation live in the app IA? — **RESOLVED [CONFIRMED]**
+
+**Answered by the owner on 2026-08-05: generation lives inside the creator's profile page.** No new top-level "Generate" surface. This also resolves the previously-deferred Q2.8 sidebar question as a side effect — generation takes no shell entry of its own. See §1 "Where generation lives" for the full record. Generation UI work in Phase 5 is **no longer blocked on IA**; it remains dependent on Phase 3 and on a generator PRD that has not been written. Original framing kept below for the record:
 
 A new top-level "Generate" surface, or hanging off a creator's profile page?
 
@@ -508,7 +525,7 @@ Recorded with reasons so nobody relitigates them.
 | **Widening YouTube support to `/watch?v=` / long-form** | **Not doing — DECIDED AND REJECTED** | Shorts-only. Short-form product focus, and a 15-min video at `MAX_VIDEO_SECONDS = 900` is ~100× the Gemini input tokens of a 30s Short. The `[DECISION]` ticket that raised it (**#58**) is **closed as decided and rejected** — this is settled policy, not an open question. |
 | **`hasAudio: true` for YouTube Shorts** | **Rejected** | Would be **inferred, not observed** — the ScrapeCreators payload carries **no audio flag**. Not a regression, but a real ceiling on YouTube prompt context (§3, 1.1). |
 | **`originalWidth` / `originalHeight` for YouTube** | **Rejected** | **Absent from the ScrapeCreators payload entirely**, so the **#46 resolution context block stays empty for YouTube** (§3, 1.1). |
-| **Auth / multi-tenancy (`user_id` on every table)** | **Deferred** | At 2 rows, retrofitting `user_id` is an afternoon, not a project. **Condition:** do it **before a second organization touches the app** — not merely when it becomes annoying. (The creator-vs-competitor distinction previously noted here has been **removed entirely** — see §3, 2.1a.) |
+| **Auth / multi-tenancy (`user_id` on every table)** | **Deferred — LOWEST PRIORITY, build last** | At 2 rows, retrofitting `user_id` is an afternoon, not a project. **Condition:** do it **before a second organization touches the app** — not merely when it becomes annoying. **Owner reconfirmed 2026-08-05:** this is *intentionally* the lowest-priority item on the roadmap and should be **sequenced last** relative to all other roadmap work — not merely "deferred until needed." The single PIN stays until then. (The creator-vs-competitor distinction previously noted here has been **removed entirely** — see §3, 2.1a.) |
 | **Scheduled metric re-fetch / longitudinal polling** | **Not doing** | Not load-bearing for on-demand per-topic generation. Costs a scheduler plus recurring SC credits per account per interval. Only the cheap snapshot-recording half survives (§4.4). |
 | **Calendar / posting schedule / cadence** | **Not doing** | Not the product. See §1. |
 | **Trend feed / competitor recommendation engine** | **Not doing** | Not the product. Requires ingesting other people's content at scale, which the single-URL model can't do. |
@@ -554,8 +571,11 @@ Phase 4  Carousel multi-media            [CONFIRMED]  moderate-expensive
          "Red Flags" relabel             [CONFIRMED]  trivial (ship any time)
          metric_snapshots recording      [RECOMMEND]  cheap
 
-Phase 5  Profiles module + style UI      [CONFIRMED direction]        ← blocked on [OPEN 2]
-         Generation surface              [CONFIRMED direction]        ← blocked on [OPEN 2]
+Phase 5  Profiles module + style UI      [CONFIRMED]                  ← IA decided: lives in
+         │                                                              the creator profile page
+         └─ promoted into the mainline plan (2026-08-05)
+         Generation surface              [CONFIRMED direction]        ← still blocked on Phase 3
+                                                                        + no generator PRD yet
          Table field selection           [CONFIRMED direction]
          Market research                 [not engineering]
 ```
