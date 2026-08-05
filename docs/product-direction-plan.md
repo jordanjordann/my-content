@@ -28,6 +28,15 @@ Reading conventions used throughout:
 4. **Multi-user auth — RECONFIRMED LOWEST PRIORITY.** Build last, after all other roadmap work. (§6)
 5. **Engagement-count PRD open questions — CLOSED, no action.** The owner reviewed the five items in `docs/archive/specs/PRD-engagement-count-display-states.md` §7 and declined to pursue them; the feature stays as shipped.
 
+**Further owner decisions, later the same day (2026-08-05).** These are additional to the five above; the numbering continues rather than replacing them.
+
+6. **Phase 3 is expanded from one workstream to three.** **3A** job queue (unchanged), **3B** performance / engagement scoring (new), **3C** analyses table redesign (**moved in from Phase 5**). 3A and 3B may run in parallel; **3C is strictly last** because it displays 3B's output. (§3 Phase 3, §7)
+7. **Scoring must judge PERFORMANCE, not just content** — views/plays against follower or subscriber count — and **the judgement comes from Gemini**, not a bare computed number in the UI. That requires putting the metrics into the prompt and extending the analysis output contract. (§3, 3B)
+8. **No backward compatibility. Existing analyses are DELETED, not migrated.** A `schema_version` bump plus a data-only deletion migration, precedent `008_delete_legacy_pre_redesign_analyses.sql`. Measured 2026-08-05: **3 rows in `analyses`, 0 in `profile_style_fingerprints`** — near-zero cost, and it clears the 2 legacy rows in the handoff's carried-forward item 6. (§3, 3B)
+9. **The performance score is point-in-time and frozen — follower-count snapshots are NOT required.** The score is computed at analysis time against the follower/subscriber count as it stood then, written onto the analysis row, and **never recomputed** as the audience later moves. Owner: *"should just be at that time, we shouldn't care about when the follower count goes down or up."* Accepted consequence: historical follower counts at post-publication time stay **unrecoverable**, deliberately. Accepted caveat: the count comes from a **7-day-TTL profile cache**, so it is approximate. §4.4's `metric_snapshots` recording half stays a Phase 4 [RECOMMENDATION] — **it was not promoted.** (§3, 3B; §4.4)
+
+**Explicitly NOT decided** in the same conversation, and not to be invented: the **scoring formula**, the **code-vs-Gemini division of labour** (a [RECOMMENDATION] only), **behaviour when counts are hidden/zero/absent**, **whether YouTube scores at parity**, and the **exact input set fed to Gemini** — including post recency and creator-baseline comparison. See §3, 3B.
+
 ---
 
 ## 1. The product, defined
@@ -185,11 +194,11 @@ The layering — **fetcher → adapter → pipeline → Gemini → persist** —
 - Metric snapshots (Q1.3): a new table alongside `profiles`.
 - Multi-part carousels (Q2.6): generalizes the media path; the pipeline stages stay.
 
-**4. There is no data to start fresh FROM.** 2 rows in `analyses`, 1 in `profiles`. No migration burden, no users to break. Starting fresh *on data* is free right now and requires no rewrite.
+**4. There is no data to start fresh FROM.** **3 rows in `analyses`, 2 in `profiles` — measured 2026-08-05** (the doc previously said 2 and 1; the figure had rotted). No migration burden, no users to break. Starting fresh *on data* is free right now and requires no rewrite.
 
 ### But: reset the analysis output schema immediately
 
-That is the thing genuinely worth "starting fresh" on. Every analysis run under the current schema is corpus that will need re-running. At 2 rows that cost is zero; it will not stay zero.
+That is the thing genuinely worth "starting fresh" on. Every analysis run under the current schema is corpus that will need re-running. At **3 rows (as of 2026-08-05)** that cost is zero; it will not stay zero.
 
 The correct move is **"stop running analyses under the current schema, redesign it, resume."** Not *"rewrite the app."*
 
@@ -377,7 +386,17 @@ Originally flagged as a recommendation the owner had not re-sequenced. **It went
 
 ---
 
-### Phase 3 — Job queue / async pipeline [CONFIRMED]
+### Phase 3 — Queue, performance scoring, and the analyses table [CONFIRMED]
+
+**Expanded by the owner on 2026-08-05.** Phase 3 was previously the job queue alone. It now holds **three workstreams**:
+
+- **3A — Job queue / async pipeline.** Unchanged in substance; still the core of the phase.
+- **3B — Performance / engagement scoring.** New.
+- **3C — Analyses table redesign.** **Moved in from Phase 5** ("Table field selection").
+
+**Sequencing inside the phase [CONFIRMED]:** **3A and 3B are independent of each other and may run in parallel.** **3C is strictly last.** 3C displays 3B's output, so designing the table before the performance score exists means designing it twice.
+
+#### 3A Job queue / async pipeline [CONFIRMED]
 
 Owner: *"This will be our 3rd priority after 1.4, let's make this right first."*
 
@@ -392,6 +411,77 @@ Scope: job table + background worker + polling or SSE + a reaper for stale `pend
 **Touches:** `app/api/analyze/route.ts`, `lib/server/analysis/pipeline/index.ts` (caller changes only — `runAnalysis()` itself survives), `lib/server/analysis/pipeline/progress.ts` (wire it up or delete it), new migration, new worker entrypoint, the progress panel under `components/`.
 
 **Cost: expensive.** Architectural, but **additive** — it changes who calls `runAnalysis()`, not what it does.
+
+#### 3B Performance / engagement scoring [CONFIRMED as direction — NEW, 2026-08-05]
+
+**The gap.** Today the analysis scorecard judges **CONTENT only**. Nothing in the product scores whether a video actually **PERFORMED** relative to the creator's audience size. A video with 2,000 views on a 500-follower account and one with 2,000 views on a 500,000-follower account currently read identically.
+
+**Owner decision [CONFIRMED]:** scoring must account for **engagement rate and video performance** — e.g. views/plays measured against **follower or subscriber count** — not just content quality.
+
+**Owner decision [CONFIRMED]: the performance judgement comes from Gemini.** The owner explicitly does not want a bare computed number rendered in the UI; he wants a *judgement*, reasoned about in light of the content.
+
+Record the mechanical consequence plainly, because it is easy to miss: **Gemini watches the video and has NO knowledge of follower counts, view counts or play counts unless those numbers are placed in the prompt.** (This is the same class of error corrected in §2 — Gemini sees one video and nothing else.) So this workstream necessarily requires:
+
+- **feeding the metrics into the prompt**, and
+- **extending the analysis output contract** to carry Gemini's performance reasoning.
+
+##### This is a new analysis contract, and existing data is DELETED, not migrated [CONFIRMED]
+
+**The owner has decided NOT to maintain backward compatibility.** Consequences, recorded accurately so nobody discovers them mid-ticket:
+
+- a **`schema_version` bump**,
+- **prompt** + **`responseSchema`** + **parser** + **validation** + **detail-UI** changes,
+- a **data-only migration deleting existing analyses**. There is direct precedent: `migrations/008_delete_legacy_pre_redesign_analyses.sql`.
+
+**Measured facts (local DB, 2026-08-05): 3 rows in `analyses`, 0 rows in `profile_style_fingerprints`.** The deletion cost is therefore **near-zero**, and it **also sweeps up the 2 unresolved legacy rows** recorded as carried-forward item 6 in `docs/HANDOFF-2026-08-05.md`.
+
+##### The score is point-in-time and frozen — snapshots are explicitly NOT required here [CONFIRMED]
+
+**This overrules an earlier draft of this section**, which recorded follower-count snapshot recording as a hard Phase 3 requirement. **The owner has ruled the other way.** His words: the follower-count-versus-views comparison *"should just be at that time, we shouldn't care about when the follower count goes down or up."*
+
+**Owner decision [CONFIRMED]:**
+
+- The performance score is computed **at analysis time**, using the follower / subscriber count **as it stood then**.
+- That number is **frozen onto the analysis row** and **never recomputed** as the creator's audience later grows or shrinks.
+- It is a **point-in-time verdict**, which is what an analysis is.
+
+**Therefore snapshot recording is NOT a requirement of Phase 3.** Do not put it in a 3B ticket. §4.4's `metric_snapshots` proposal stays exactly where it was — a Phase 4 [RECOMMENDATION], unpromoted.
+
+**The trade-off, recorded neutrally so nobody re-opens it later as an oversight.** `lib/server/profiles/repository.ts` overwrites the previous `follower_count` on every upsert, so the app keeps only the latest value. Consequence: **historical follower counts at post-publication time are, and will remain, unrecoverable.** A reel analysed today records today's audience size; if the same reel were re-analysed a year from now it would be scored against a different denominator. **This is an accepted cost of a deliberate decision, not something that was missed.**
+
+**Accuracy caveat — told to the owner and accepted.** The follower count is served from a **profile cache with a 7-day TTL** (`PROFILE_TTL_DAYS`, default **7** — `docs/RUNBOOK.md` §3). So "the count at that time" can in practice be **up to a week stale**. The figure is **approximate**, and nothing downstream — UI copy, the Gemini prompt, or any derived ratio — should present it as exact.
+
+##### The input set — what actually has to be computed and passed to Gemini [OPEN]
+
+The owner asked what data the scoring actually needs. **This list is the input set PRD B must pin down. It is NOT decided here** — it is the candidate set, recorded so PRD B starts from something rather than from a blank page. Do not treat any line of it as settled.
+
+- **Audience size** — **follower count** (Instagram) / **subscriber count** (YouTube).
+- **Reach — view count AND play count, as two distinct, non-interchangeable fields.** They are **not** the same number and must never be collapsed into one. There is a captured trap fixture where **`video_view_count` is 0 while the true play count is 116,333** (`docs/RUNBOOK.md` §6, `ig_reel_1_zero_view_count.json`), and there is already a prompt rule with a test behind it that a play count must be labelled **PLAYS** and never "Views" (`server/analysis/prompts/user.engagementLabel.test.ts`, RUNBOOK §7). **Getting this wrong silently corrupts every ratio** and every sentence Gemini writes about reach.
+- **Engagement** — **likes**, **comments**, and **whether they are hidden** (`like_and_view_counts_disabled`). The hidden flag is part of the input, not a rendering concern: a `0` sometimes means **genuinely zero** and sometimes means **not disclosed**, and a ratio cannot tell the difference on its own.
+- **The precomputed ratios** — consistent with the [RECOMMENDATION] below that **arithmetic happens in code** and **interpretation happens in Gemini**. Which ratios, and how many, is part of the open formula question.
+
+##### Open sub-decisions of 3B — do NOT invent answers to these
+
+These are for **PRD B** (not yet written) or for the owner to settle.
+
+- **[OPEN] The formula itself.** **No formula has been chosen.** The owner said explicitly that he does not know it and wants **options researched and proposed**. Do not pick one in a ticket.
+- **[RECOMMENDATION] Division of labour between code and Gemini.** The boss's position — **told to the owner, not yet ruled on, therefore NOT confirmed**: **compute the ratios deterministically in code** and pass them to Gemini, which then **INTERPRETS** them in light of the content. Rationale: an LLM doing arithmetic produces occasionally-wrong, non-reproducible numbers; a computed ratio plus model judgement gives **reproducible figures AND** the reasoning the owner wants. Treat as a proposal until the owner rules.
+- **[OPEN] Behaviour when counts are hidden, zero, or absent.** Instagram creators can disable like/view counts (`like_and_view_counts_disabled`), and there is a **real captured fixture where `video_view_count` is 0 while the true play count is 116,333**. Any ratio divides by numbers that are **sometimes missing, sometimes zero, and sometimes misleading**. What the score shows in those cases is a **product decision**, not an implementation detail.
+- **[OPEN] Post age / recency. Newly raised 2026-08-05 — the boss's flag, not an owner decision.** A **two-day-old** reel and a **two-year-old** reel have had wildly different amounts of time to accumulate views. A raw views-per-follower ratio with **no recency term systematically flatters older posts**, which is exactly backwards for a tool meant to tell a creator what is working *now*. Whether the score carries a recency term, a comparison window, or nothing at all is **open**.
+- **[RECOMMENDATION] Compare against the creator's OWN baseline, not a universal benchmark. Newly raised 2026-08-05 — the boss's proposal, not yet ruled on.** *"3× this creator's typical reach"* is a far stronger signal than an absolute engagement-rate number, because **a 2% engagement rate is excellent for one account and poor for another**. **Caveat to record before anyone commits to it:** a per-creator baseline needs **several analysed videos before it means anything** — it inherits **the same cold-start problem as the style fingerprint** (resolved minimum: **5**, §1 / [OPEN 1]). So it cannot be the *only* comparison on video one. Treat as a proposal.
+- **[OPEN] Whether YouTube is in scope for scoring at parity.** YouTube carries **subscriber count**, but structurally **less context** than Instagram (no audio flag, no dimensions — see §3, 1.1). Flagged, **not decided**.
+
+**Cost: expensive.** It is a second contract change on top of Phase 2's, plus prompt work. (It is **no longer** carrying a snapshot-recording path — see the point-in-time decision above.)
+
+#### 3C Analyses table redesign [CONFIRMED — moved here from Phase 5, 2026-08-05]
+
+Was Phase 5's "Table field selection" (Q3.4). **It now sits in Phase 3, strictly after 3B.**
+
+Show the fields that **actually matter**, including the **new performance score from 3B**. Migration 006 added **~14 columns** that the list and detail read paths (`getAnalysesList()` / `getAnalysisDetail()` in `lib/server/db.ts`) **do not select at all** — they feed the Gemini prompt and then go nowhere.
+
+**Why it must be last:** the table's job is to display 3B's output. Designing it before the performance score exists means designing it twice.
+
+**Cost: moderate**, and mostly frontend.
 
 ---
 
@@ -440,6 +530,8 @@ Owner: *"reuse the gemini_file_url."*
 
 #### 4.4 `metric_snapshots` groundwork [RECOMMENDATION — reduced scope]
 
+> **Note, 2026-08-05.** An earlier draft of this section said the recording half had been pulled into Phase 3's 3B. **That is no longer true and has been withdrawn.** The owner ruled that the performance score is a **frozen, point-in-time** figure (§3, 3B), so 3B does **not** depend on snapshots. This section's status is unchanged from before: still a **Phase 4 [RECOMMENDATION]**, still optional, with the **scheduled re-fetch half dropped** (§6).
+
 Owner marked Q1.3 as *"nice to have."* Given the product definition, **it drops further than that**: if plans are generated on-demand per topic, trajectory data is not load-bearing for anything.
 
 But: **history cannot be backfilled**, and `lib/server/profiles/repository.ts` currently **destroys** the previous `follower_count` on every upsert (`COALESCE(excluded.follower_count, profiles.follower_count)`).
@@ -454,7 +546,7 @@ Proposal: **record snapshots cheaply if convenient** — a small append-only tab
 
 - **Profiles as its own module.** Owner: *"down the long line will be expanded to its own module... its own module in the UI... The content generator will also be accounting the profile since the profile will have its own analysis like speaking tone, video style, text style."* Note this is the same object as the style fingerprint in §1 — plan them as one thing, not two. **Promoted into the mainline plan** by the 2026-08-05 IA decision (§1).
 - **Generation UI.** **IA is decided** — it lives inside the creator's profile page ([OPEN 2] resolved 2026-08-05). Still gated on **Phase 3 (job queue)** and on a **generator PRD, which does not exist yet.** Do not write generation tickets before that PRD.
-- **Table field selection.** Owner wants to revisit which fields the analyses table shows (Q3.4). Migration 006 added ~14 columns that `getAnalysesList()` and `getAnalysisDetail()` in `lib/server/db.ts` **do not select** — they feed the Gemini prompt and then go nowhere. Sequence this **after** Phase 2, since the schema redesign changes what's worth showing.
+- ~~**Table field selection.**~~ **MOVED OUT of Phase 5 (2026-08-05).** It is now **Phase 3's 3C**, sequenced strictly after 3B so the table can show the new performance score. See §3, 3C. Do not plan it here.
 - **Market research.** Owner: *"I have not done a full market research of this. From what I know this is very niche."* Not blocking engineering. Flagged so it isn't forgotten before any monetization decision.
 
 ---
@@ -525,7 +617,7 @@ Recorded with reasons so nobody relitigates them.
 | **Widening YouTube support to `/watch?v=` / long-form** | **Not doing — DECIDED AND REJECTED** | Shorts-only. Short-form product focus, and a 15-min video at `MAX_VIDEO_SECONDS = 900` is ~100× the Gemini input tokens of a 30s Short. The `[DECISION]` ticket that raised it (**#58**) is **closed as decided and rejected** — this is settled policy, not an open question. |
 | **`hasAudio: true` for YouTube Shorts** | **Rejected** | Would be **inferred, not observed** — the ScrapeCreators payload carries **no audio flag**. Not a regression, but a real ceiling on YouTube prompt context (§3, 1.1). |
 | **`originalWidth` / `originalHeight` for YouTube** | **Rejected** | **Absent from the ScrapeCreators payload entirely**, so the **#46 resolution context block stays empty for YouTube** (§3, 1.1). |
-| **Auth / multi-tenancy (`user_id` on every table)** | **Deferred — LOWEST PRIORITY, build last** | At 2 rows, retrofitting `user_id` is an afternoon, not a project. **Condition:** do it **before a second organization touches the app** — not merely when it becomes annoying. **Owner reconfirmed 2026-08-05:** this is *intentionally* the lowest-priority item on the roadmap and should be **sequenced last** relative to all other roadmap work — not merely "deferred until needed." The single PIN stays until then. (The creator-vs-competitor distinction previously noted here has been **removed entirely** — see §3, 2.1a.) |
+| **Auth / multi-tenancy (`user_id` on every table)** | **Deferred — LOWEST PRIORITY, build last** | At **3 rows (as of 2026-08-05)**, retrofitting `user_id` is an afternoon, not a project. **Condition:** do it **before a second organization touches the app** — not merely when it becomes annoying. **Owner reconfirmed 2026-08-05:** this is *intentionally* the lowest-priority item on the roadmap and should be **sequenced last** relative to all other roadmap work — not merely "deferred until needed." The single PIN stays until then. (The creator-vs-competitor distinction previously noted here has been **removed entirely** — see §3, 2.1a.) |
 | **Scheduled metric re-fetch / longitudinal polling** | **Not doing** | Not load-bearing for on-demand per-topic generation. Costs a scheduler plus recurring SC credits per account per interval. Only the cheap snapshot-recording half survives (§4.4). |
 | **Calendar / posting schedule / cadence** | **Not doing** | Not the product. See §1. |
 | **Trend feed / competitor recommendation engine** | **Not doing** | Not the product. Requires ingesting other people's content at scale, which the single-URL model can't do. |
@@ -534,7 +626,7 @@ Recorded with reasons so nobody relitigates them.
 | **Auto-onboarding / pulling a creator's account automatically** (Q3.5) | **Not doing** | Owner: *"No need for now."* |
 | **Mobile-first layout** (Q3.6) | **Not doing** | Desktop dashboard confirmed. |
 | **Hiding the analysis feature behind the planner** (Q1.9) | **Not doing** | Analysis stays a **real user-facing feature**. Owner's plan: a video link given to the planner also shows up in the analysis feature, and the analysis is the **basis** of the generated plan. |
-| **Analyses table redesign / card grid** (Q3.4, unused `AnalysisGrid`) | **Deferred to Phase 5** | Owner wants to revisit which fields are shown. Pointless before the Q1.4 schema changes what fields exist. |
+| **Analyses table redesign / card grid** (Q3.4, unused `AnalysisGrid`) | **No longer deferred — moved into Phase 3 as 3C (2026-08-05)** | Owner wants to revisit which fields are shown. Phase 2 has since landed, and 3B adds a performance score the table must display — so it is sequenced **last inside Phase 3**, after 3B, rather than in the long line. |
 | **Error UX beyond current toast** (Q3.3) | **Deferred** | Today: a toast with the BE error passed through. Revisit with the Phase 3 progress/SSE work. |
 | **Deduplication / unique index on `analyses.url`** (Q2.4) | **Partially addressed** | The `gemini_file_uri` reuse (§4.2) captures most of the saving. Full dedup + quota + `credits_remaining` persistence is unscheduled. |
 
@@ -564,19 +656,46 @@ Phase 2  Q1.4 + Q1.5 schema redesign     [CONFIRMED]  EXPENSIVE       ← needs 
          ├─ cold-start decision           [RESOLVED: 5, all videos weighted equally]
          └─ validation harness + tests    [RECOMMEND] run in parallel
 
-Phase 3  Job queue / async pipeline      [CONFIRMED]  EXPENSIVE       ← also decides hosting
+Phase 3  THREE workstreams (expanded 2026-08-05)
+         3A Job queue / async pipeline   [CONFIRMED]  EXPENSIVE       ← also decides hosting
+         │                                                              3A ∥ 3B (independent)
+         3B Performance / engagement scoring [CONFIRMED direction] EXPENSIVE
+         │  ├─ Gemini judges performance ⇒ metrics MUST go in the prompt
+         │  ├─ new contract: schema_version bump, prompt + responseSchema
+         │  │     + parser + validation + detail UI
+         │  ├─ existing analyses DELETED, not migrated
+         │  │     (3 rows as of 2026-08-05; precedent 008)
+         │  ├─ score is POINT-IN-TIME and FROZEN at analysis time — NO
+         │  │     snapshots required; history stays unrecoverable (accepted)
+         │  │     follower count is 7-day-TTL cached ⇒ approximate
+         │  ├─ [OPEN] the formula itself — none chosen, research + propose
+         │  ├─ [RECOMMEND] ratios in code, Gemini interprets — NOT confirmed
+         │  ├─ [OPEN] input set for PRD B: audience size · views AND plays
+         │  │     as DISTINCT fields · likes/comments + hidden flag · ratios
+         │  ├─ [OPEN] post age / recency term — raw ratios flatter old posts
+         │  ├─ [OPEN] creator's OWN baseline as the comparison — inherits
+         │  │     the style fingerprint's cold-start problem (min 5)
+         │  ├─ [OPEN] hidden / zero / absent counts (fixture: view_count 0
+         │  │     vs true play count 116,333)
+         │  └─ [OPEN] YouTube at parity? less context than Instagram
+         3C Analyses table redesign      [CONFIRMED]  moderate        ← STRICTLY LAST
+            ├─ moved in from Phase 5's "Table field selection"           (it displays 3B)
+            ├─ shows 3B's performance score
+            └─ migration 006's ~14 columns the read paths never select
 
 Phase 4  Carousel multi-media            [CONFIRMED]  moderate-expensive
          gemini_file_uri reuse           [CONFIRMED]  cheap
          "Red Flags" relabel             [CONFIRMED]  trivial (ship any time)
-         metric_snapshots recording      [RECOMMEND]  cheap
+         metric_snapshots recording      [RECOMMEND]  cheap  — stays here,
+                                           NOT pulled into 3B (owner ruled the
+                                           score is frozen); re-fetch dropped
 
 Phase 5  Profiles module + style UI      [CONFIRMED]                  ← IA decided: lives in
          │                                                              the creator profile page
          └─ promoted into the mainline plan (2026-08-05)
          Generation surface              [CONFIRMED direction]        ← still blocked on Phase 3
                                                                         + no generator PRD yet
-         Table field selection           [CONFIRMED direction]
+         Table field selection           → MOVED to Phase 3 as 3C (2026-08-05)
          Market research                 [not engineering]
 ```
 
