@@ -28,6 +28,15 @@ Reading conventions used throughout:
 4. **Multi-user auth — RECONFIRMED LOWEST PRIORITY.** Build last, after all other roadmap work. (§6)
 5. **Engagement-count PRD open questions — CLOSED, no action.** The owner reviewed the five items in `docs/archive/specs/PRD-engagement-count-display-states.md` §7 and declined to pursue them; the feature stays as shipped.
 
+**Further owner decisions, later the same day (2026-08-05).** These are additional to the five above; the numbering continues rather than replacing them.
+
+6. **Phase 3 is expanded from one workstream to three.** **3A** job queue (unchanged), **3B** performance / engagement scoring (new), **3C** analyses table redesign (**moved in from Phase 5**). 3A and 3B may run in parallel; **3C is strictly last** because it displays 3B's output. (§3 Phase 3, §7)
+7. **Scoring must judge PERFORMANCE, not just content** — views/plays against follower or subscriber count — and **the judgement comes from Gemini**, not a bare computed number in the UI. That requires putting the metrics into the prompt and extending the analysis output contract. (§3, 3B)
+8. **No backward compatibility. Existing analyses are DELETED, not migrated.** A `schema_version` bump plus a data-only deletion migration, precedent `008_delete_legacy_pre_redesign_analyses.sql`. Measured 2026-08-05: **3 rows in `analyses`, 0 in `profile_style_fingerprints`** — near-zero cost, and it clears the 2 legacy rows in the handoff's carried-forward item 6. (§3, 3B)
+9. **Follower-count snapshot recording must start in Phase 3.** `lib/server/profiles/repository.ts` destroys the prior `follower_count` on every upsert, so scores can only ever use today's count. **History cannot be backfilled** — not starting now makes it permanently unrecoverable. This is §4.4's cheap recording half, promoted from optional. (§3, 3B; §4.4)
+
+**Explicitly NOT decided** in the same conversation, and not to be invented: the **scoring formula**, the **code-vs-Gemini division of labour** (a [RECOMMENDATION] only), **behaviour when counts are hidden/zero/absent**, and **whether YouTube scores at parity**. See §3, 3B.
+
 ---
 
 ## 1. The product, defined
@@ -502,7 +511,9 @@ Owner: *"reuse the gemini_file_url."*
 
 **Cost: trivial**, as expected.
 
-#### 4.4 `metric_snapshots` groundwork [RECOMMENDATION — reduced scope]
+#### 4.4 `metric_snapshots` groundwork [RECOMMENDATION — reduced scope; recording half now PULLED INTO PHASE 3]
+
+> **Updated 2026-08-05.** The **recording half** of this section is no longer optional and no longer sits in Phase 4: **Phase 3's 3B depends on it** and the owner has confirmed it must be handled there (§3, 3B, "Follower-count snapshots"). Reason: performance scoring divides by follower count, `repository.ts` keeps only today's value, and **history cannot be backfilled**. The **scheduled re-fetch half stays dropped** — see §6. The rest of this section is the original framing and still explains why.
 
 Owner marked Q1.3 as *"nice to have."* Given the product definition, **it drops further than that**: if plans are generated on-demand per topic, trajectory data is not load-bearing for anything.
 
@@ -518,7 +529,7 @@ Proposal: **record snapshots cheaply if convenient** — a small append-only tab
 
 - **Profiles as its own module.** Owner: *"down the long line will be expanded to its own module... its own module in the UI... The content generator will also be accounting the profile since the profile will have its own analysis like speaking tone, video style, text style."* Note this is the same object as the style fingerprint in §1 — plan them as one thing, not two. **Promoted into the mainline plan** by the 2026-08-05 IA decision (§1).
 - **Generation UI.** **IA is decided** — it lives inside the creator's profile page ([OPEN 2] resolved 2026-08-05). Still gated on **Phase 3 (job queue)** and on a **generator PRD, which does not exist yet.** Do not write generation tickets before that PRD.
-- **Table field selection.** Owner wants to revisit which fields the analyses table shows (Q3.4). Migration 006 added ~14 columns that `getAnalysesList()` and `getAnalysisDetail()` in `lib/server/db.ts` **do not select** — they feed the Gemini prompt and then go nowhere. Sequence this **after** Phase 2, since the schema redesign changes what's worth showing.
+- ~~**Table field selection.**~~ **MOVED OUT of Phase 5 (2026-08-05).** It is now **Phase 3's 3C**, sequenced strictly after 3B so the table can show the new performance score. See §3, 3C. Do not plan it here.
 - **Market research.** Owner: *"I have not done a full market research of this. From what I know this is very niche."* Not blocking engineering. Flagged so it isn't forgotten before any monetization decision.
 
 ---
@@ -598,7 +609,7 @@ Recorded with reasons so nobody relitigates them.
 | **Auto-onboarding / pulling a creator's account automatically** (Q3.5) | **Not doing** | Owner: *"No need for now."* |
 | **Mobile-first layout** (Q3.6) | **Not doing** | Desktop dashboard confirmed. |
 | **Hiding the analysis feature behind the planner** (Q1.9) | **Not doing** | Analysis stays a **real user-facing feature**. Owner's plan: a video link given to the planner also shows up in the analysis feature, and the analysis is the **basis** of the generated plan. |
-| **Analyses table redesign / card grid** (Q3.4, unused `AnalysisGrid`) | **Deferred to Phase 5** | Owner wants to revisit which fields are shown. Pointless before the Q1.4 schema changes what fields exist. |
+| **Analyses table redesign / card grid** (Q3.4, unused `AnalysisGrid`) | **No longer deferred — moved into Phase 3 as 3C (2026-08-05)** | Owner wants to revisit which fields are shown. Phase 2 has since landed, and 3B adds a performance score the table must display — so it is sequenced **last inside Phase 3**, after 3B, rather than in the long line. |
 | **Error UX beyond current toast** (Q3.3) | **Deferred** | Today: a toast with the BE error passed through. Revisit with the Phase 3 progress/SSE work. |
 | **Deduplication / unique index on `analyses.url`** (Q2.4) | **Partially addressed** | The `gemini_file_uri` reuse (§4.2) captures most of the saving. Full dedup + quota + `credits_remaining` persistence is unscheduled. |
 
@@ -628,19 +639,38 @@ Phase 2  Q1.4 + Q1.5 schema redesign     [CONFIRMED]  EXPENSIVE       ← needs 
          ├─ cold-start decision           [RESOLVED: 5, all videos weighted equally]
          └─ validation harness + tests    [RECOMMEND] run in parallel
 
-Phase 3  Job queue / async pipeline      [CONFIRMED]  EXPENSIVE       ← also decides hosting
+Phase 3  THREE workstreams (expanded 2026-08-05)
+         3A Job queue / async pipeline   [CONFIRMED]  EXPENSIVE       ← also decides hosting
+         │                                                              3A ∥ 3B (independent)
+         3B Performance / engagement scoring [CONFIRMED direction] EXPENSIVE
+         │  ├─ Gemini judges performance ⇒ metrics MUST go in the prompt
+         │  ├─ new contract: schema_version bump, prompt + responseSchema
+         │  │     + parser + validation + detail UI
+         │  ├─ existing analyses DELETED, not migrated (3 rows; precedent 008)
+         │  ├─ follower-count SNAPSHOT RECORDING starts here — repository.ts
+         │  │     keeps only today's count and history CANNOT be backfilled
+         │  ├─ [OPEN] the formula itself — none chosen, research + propose
+         │  ├─ [RECOMMEND] ratios in code, Gemini interprets — NOT confirmed
+         │  ├─ [OPEN] hidden / zero / absent counts (fixture: view_count 0
+         │  │     vs true play count 116,333)
+         │  └─ [OPEN] YouTube at parity? less context than Instagram
+         3C Analyses table redesign      [CONFIRMED]  moderate        ← STRICTLY LAST
+            ├─ moved in from Phase 5's "Table field selection"           (it displays 3B)
+            ├─ shows 3B's performance score
+            └─ migration 006's ~14 columns the read paths never select
 
 Phase 4  Carousel multi-media            [CONFIRMED]  moderate-expensive
          gemini_file_uri reuse           [CONFIRMED]  cheap
          "Red Flags" relabel             [CONFIRMED]  trivial (ship any time)
-         metric_snapshots recording      [RECOMMEND]  cheap
+         metric_snapshots recording      → PULLED INTO 3B (2026-08-05); the
+                                           scheduled re-fetch stays dropped
 
 Phase 5  Profiles module + style UI      [CONFIRMED]                  ← IA decided: lives in
          │                                                              the creator profile page
          └─ promoted into the mainline plan (2026-08-05)
          Generation surface              [CONFIRMED direction]        ← still blocked on Phase 3
                                                                         + no generator PRD yet
-         Table field selection           [CONFIRMED direction]
+         Table field selection           → MOVED to Phase 3 as 3C (2026-08-05)
          Market research                 [not engineering]
 ```
 
