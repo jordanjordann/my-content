@@ -92,9 +92,25 @@ export type FingerprintResult = FingerprintView | FingerprintAbsence;
 export type FingerprintOverridePatch = Record<string, unknown>;
 
 /**
+ * Precomputed highest-`share` value per distribution (via `topDistributionValue`),
+ * keyed by dimension. Computed inside `select` itself, not left as a function
+ * reference for a consumer to invoke later — see `FingerprintSelection`.
+ */
+export type FingerprintTopDistributionValues = {
+  topicNiche: string | null;
+  formatArchetype: string | null;
+  hookType: string | null;
+  ctaType: string | null;
+  ctaTiming: string | null;
+  pacing: string | null;
+  verbalTone: string | null;
+};
+
+/**
  * `useFingerprint`'s `select` output (TDD §6). All derivation lives here per
  * AGENTS.md's data-transformation-layering rule — no consumer should ever branch on
- * raw `overriddenKeys`/distribution arrays directly.
+ * raw `overriddenKeys`/distribution arrays directly. `topValues` is precomputed inside
+ * `select`, not a function the consumer calls at render time.
  */
 export type FingerprintSelection =
   | {
@@ -102,7 +118,7 @@ export type FingerprintSelection =
       view: FingerprintView;
       overriddenKeys: Set<string>;
       isOverridden: (key: string) => boolean;
-      topDistributionValue: (distribution: FrequencyDistributionEntry[]) => string | null;
+      topValues: FingerprintTopDistributionValues;
     }
   | {
       status: "absent";

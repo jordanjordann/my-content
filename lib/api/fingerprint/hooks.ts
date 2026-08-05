@@ -14,11 +14,14 @@ import type {
 /**
  * Derives the `select` shape consumed by (a future) UI (TDD §6): a typed absence for
  * the cold-start `404` case, or the view plus an `overriddenKeys` `Set`/`isOverridden`
- * lookup and a `topDistributionValue` helper for the found case. Defined at module
- * scope, mirroring `lib/api/analyses/hooks.ts`'s `selectIndexedAnalyses`, so TanStack
- * can memoize `select` across renders.
+ * lookup and the precomputed per-distribution top values for the found case. Defined at
+ * module scope, mirroring `lib/api/analyses/hooks.ts`'s `selectIndexedAnalyses`, so
+ * TanStack can memoize `select` across renders. `topDistributionValue` is invoked here,
+ * inside `select` — per AGENTS.md's data-transformation rule, derivation belongs in
+ * `select`, not a function reference left for a future UI consumer to call at render
+ * time.
  */
-function selectFingerprint(result: FingerprintResult): FingerprintSelection {
+export function selectFingerprint(result: FingerprintResult): FingerprintSelection {
   if (isFingerprintAbsence(result)) {
     return { status: "absent", absence: result };
   }
@@ -29,7 +32,15 @@ function selectFingerprint(result: FingerprintResult): FingerprintSelection {
     view: result,
     overriddenKeys,
     isOverridden: (key: string) => overriddenKeys.has(key),
-    topDistributionValue,
+    topValues: {
+      topicNiche: topDistributionValue(result.topicNicheDistribution),
+      formatArchetype: topDistributionValue(result.formatArchetypeDistribution),
+      hookType: topDistributionValue(result.hookTypeDistribution),
+      ctaType: topDistributionValue(result.ctaTypeDistribution),
+      ctaTiming: topDistributionValue(result.ctaTimingDistribution),
+      pacing: topDistributionValue(result.pacingDistribution),
+      verbalTone: topDistributionValue(result.verbalTonePatterns),
+    },
   };
 }
 
