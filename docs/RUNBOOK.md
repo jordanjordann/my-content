@@ -312,12 +312,21 @@ out of the single root config, in one `vitest run` invocation:
   unchanged. Nothing here touches the DOM.
 - **`jsdom` project** (new, #123) — for tests that render a real React tree
   (`@testing-library/react` + `@testing-library/jest-dom`). Scoped to its own glob,
-  **`tests/**/*.dom.test.tsx`**, so it can never silently swallow a plain `.test.ts` file, and kept
-  as a *separate* project rather than flipping the global environment to `jsdom` — jsdom is slower
-  and unnecessary for the ~300 existing node tests, which stay exactly as fast and DOM-free as
-  before. `tests/setup/domMatchers.ts` (jsdom-project-only `setupFiles` entry) imports
-  `@testing-library/jest-dom/vitest`, which auto-extends `expect` with the DOM matchers — no manual
-  `expect.extend()` call needed.
+  `` tests/**/*.dom.test.{ts,tsx} ``, and kept as a *separate* project rather than flipping the
+  global environment to `jsdom` — jsdom is slower and unnecessary for the ~300 existing node tests,
+  which stay exactly as fast and DOM-free as before. `tests/setup/domMatchers.ts`
+  (jsdom-project-only `setupFiles` entry) imports `@testing-library/jest-dom/vitest`, which
+  auto-extends `expect` with the DOM matchers — no manual `expect.extend()` call needed — and also
+  registers `afterEach(cleanup)` from `@testing-library/react` explicitly, since the `jsdom`
+  project's `globals: false` would otherwise silently disable RTL's own auto-cleanup (it only
+  self-registers when `afterEach` is a global).
+
+**Naming convention — required.** A jsdom-flavored test file MUST be named `*.dom.test.ts` or
+`*.dom.test.tsx`. The `node` project's glob (`` tests/**/*.test.ts ``) would otherwise also match a
+`.dom.test.ts` file (it still ends in `.test.ts`); the `node` project's `exclude` closes that gap
+explicitly. A plain `*.test.tsx` file with no `.dom.` segment matches **neither** project and will
+silently not run at all — see the comment above `test.projects` in `vitest.config.ts` for the full
+reasoning.
 
 Both projects still run from the single `npm run test` (`vitest run`) invocation — no change to the
 CI step or the script. Run one project in isolation with `npx vitest run --project=node` /
@@ -336,31 +345,38 @@ read from `.claude/context/fixtures/` via `tests/helpers/fixtures.ts`, which thr
 path-naming error if a fixture file is missing. See §5 for why this matters (credits, and
 `/v1/youtube/channel` charging even on a miss).
 
-**Current state (re-measured 2026-08-05, ticket #123): 26 test files, 312 tests total** — 25 files /
-311 tests in the `node` project (unchanged by this ticket), + 1 new file / 1 test in the `jsdom`
-project: `tests/lib/api/fingerprint/hooks.dom.test.tsx`. That file renders `useFingerprint` and
-`useUpdateFingerprintOverrides` together in a real `QueryClientProvider` tree and asserts the
-mutation's `onSuccess` invalidation actually triggers a refetch that the query hook observes —
-the exact `useUpdateFingerprintOverrides` ↔ `useFingerprint` cache-invalidation contract that PR
-#122's review flagged as previously only "verified by construction" (both sides using the same
-`FINGERPRINT_KEYS.detail` factory). The node-project figures above (19 → 237 in earlier editions of
-this doc) had already drifted upward from unrelated feature work between #115 and this ticket; the
-311 figure is a fresh measurement, not a re-derivation of the old delta math.
+**Current state (re-measured 2026-08-05, ticket #123 + PR #126 review fixes): 28 test files, 318
+tests total** — 26 files / 312 tests in the `node` project (25 files / 311 tests unchanged from the
+original ticket, +1 file / 1 test for `tests/config/vitestProjectGlobs.test.ts`, added during PR
+#126 review to pin the glob-routing fix), + 2 files / 6 tests in the `jsdom` project:
+`tests/lib/api/fingerprint/hooks.dom.test.tsx` (see the layout tree above) and
+`tests/setup/domCleanup.dom.test.tsx` (added during PR #126 review to pin the RTL auto-cleanup
+fix). The node-project figures above (19 → 237 in earlier editions of this doc) had already drifted
+upward from unrelated feature work between #115 and this ticket; the 311 figure is a fresh
+measurement, not a re-derivation of the old delta math.
 
-Layout — regenerated 2026-08-03 from `git ls-files`, not from the previous edition of this tree:
-
-Layout below predates this ticket's additions and has not been fully regenerated; the two new files
-are:
-
-```
-tests/setup/domMatchers.ts                                # jsdom-project-only setupFiles entry — imports @testing-library/jest-dom/vitest (#123)
-tests/lib/api/fingerprint/hooks.dom.test.tsx                # jsdom harness demonstration test (#123) — see above
-```
+Layout — regenerated from `git ls-files`, including this PR's review-fix additions:
 
 ```
 tests/
 ├── setup/blockLiveFetch.ts                              # global fetch guard, wired via setupFiles
 ├── setup/blockLiveFetch.test.ts                          # proves the guard works
+├── setup/domMatchers.ts                                 # jsdom-project-only setupFiles entry — imports
+│                                                        #   @testing-library/jest-dom/vitest and registers
+│                                                        #   afterEach(cleanup) explicitly (#123, PR #126 review)
+├── setup/domCleanup.dom.test.tsx                        # proves RTL's afterEach(cleanup) actually runs between
+│                                                        #   jsdom tests (#123, PR #126 review)
+├── config/vitestProjectGlobs.test.ts                    # re-derives regexes from vitest.config.ts's actual
+│                                                        #   node/jsdom include+exclude globs and asserts they route
+│                                                        #   representative filenames — incl. a JSX-free `.dom.test.ts`
+│                                                        #   hook file — to exactly one project (#123, PR #126 review)
+├── lib/api/fingerprint/hooks.dom.test.tsx               # jsdom harness demonstration test (#123) — renders
+│                                                        #   useFingerprint + useUpdateFingerprintOverrides together
+│                                                        #   in a real QueryClientProvider tree and asserts the
+│                                                        #   mutation's onSuccess invalidation actually triggers a
+│                                                        #   refetch the query hook observes — the exact contract PR
+│                                                        #   #122's review flagged as previously only "verified by
+│                                                        #   construction"
 ├── helpers/fixtures.ts                                  # loader for .claude/context/fixtures/ (fail-fast on missing file)
 ├── fixtures/README.md                                   # fixture inventory + the YouTube/Instagram gaps
 ├── fixtures/synthetic/instagramMedia.ts                 # hand-built adapter inputs — NOT captures

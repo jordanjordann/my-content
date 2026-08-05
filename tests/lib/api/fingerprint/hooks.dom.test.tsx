@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { useFingerprint, useUpdateFingerprintOverrides } from "@/lib/api/fingerprint/hooks";
 import type { FingerprintView } from "@/lib/api/fingerprint/types";
@@ -66,10 +66,6 @@ function createWrapper() {
   }
   return Wrapper;
 }
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
 
 describe("useUpdateFingerprintOverrides invalidating useFingerprint (real React tree)", () => {
   it("refetches and reflects the patched view after the mutation succeeds", async () => {
