@@ -194,11 +194,11 @@ The layering — **fetcher → adapter → pipeline → Gemini → persist** —
 - Metric snapshots (Q1.3): a new table alongside `profiles`.
 - Multi-part carousels (Q2.6): generalizes the media path; the pipeline stages stay.
 
-**4. There is no data to start fresh FROM.** 2 rows in `analyses`, 1 in `profiles`. No migration burden, no users to break. Starting fresh *on data* is free right now and requires no rewrite.
+**4. There is no data to start fresh FROM.** **3 rows in `analyses`, 2 in `profiles` — measured 2026-08-05** (the doc previously said 2 and 1; the figure had rotted). No migration burden, no users to break. Starting fresh *on data* is free right now and requires no rewrite.
 
 ### But: reset the analysis output schema immediately
 
-That is the thing genuinely worth "starting fresh" on. Every analysis run under the current schema is corpus that will need re-running. At 2 rows that cost is zero; it will not stay zero.
+That is the thing genuinely worth "starting fresh" on. Every analysis run under the current schema is corpus that will need re-running. At **3 rows (as of 2026-08-05)** that cost is zero; it will not stay zero.
 
 The correct move is **"stop running analyses under the current schema, redesign it, resume."** Not *"rewrite the app."*
 
@@ -600,7 +600,7 @@ Recorded with reasons so nobody relitigates them.
 | **Widening YouTube support to `/watch?v=` / long-form** | **Not doing — DECIDED AND REJECTED** | Shorts-only. Short-form product focus, and a 15-min video at `MAX_VIDEO_SECONDS = 900` is ~100× the Gemini input tokens of a 30s Short. The `[DECISION]` ticket that raised it (**#58**) is **closed as decided and rejected** — this is settled policy, not an open question. |
 | **`hasAudio: true` for YouTube Shorts** | **Rejected** | Would be **inferred, not observed** — the ScrapeCreators payload carries **no audio flag**. Not a regression, but a real ceiling on YouTube prompt context (§3, 1.1). |
 | **`originalWidth` / `originalHeight` for YouTube** | **Rejected** | **Absent from the ScrapeCreators payload entirely**, so the **#46 resolution context block stays empty for YouTube** (§3, 1.1). |
-| **Auth / multi-tenancy (`user_id` on every table)** | **Deferred — LOWEST PRIORITY, build last** | At 2 rows, retrofitting `user_id` is an afternoon, not a project. **Condition:** do it **before a second organization touches the app** — not merely when it becomes annoying. **Owner reconfirmed 2026-08-05:** this is *intentionally* the lowest-priority item on the roadmap and should be **sequenced last** relative to all other roadmap work — not merely "deferred until needed." The single PIN stays until then. (The creator-vs-competitor distinction previously noted here has been **removed entirely** — see §3, 2.1a.) |
+| **Auth / multi-tenancy (`user_id` on every table)** | **Deferred — LOWEST PRIORITY, build last** | At **3 rows (as of 2026-08-05)**, retrofitting `user_id` is an afternoon, not a project. **Condition:** do it **before a second organization touches the app** — not merely when it becomes annoying. **Owner reconfirmed 2026-08-05:** this is *intentionally* the lowest-priority item on the roadmap and should be **sequenced last** relative to all other roadmap work — not merely "deferred until needed." The single PIN stays until then. (The creator-vs-competitor distinction previously noted here has been **removed entirely** — see §3, 2.1a.) |
 | **Scheduled metric re-fetch / longitudinal polling** | **Not doing** | Not load-bearing for on-demand per-topic generation. Costs a scheduler plus recurring SC credits per account per interval. Only the cheap snapshot-recording half survives (§4.4). |
 | **Calendar / posting schedule / cadence** | **Not doing** | Not the product. See §1. |
 | **Trend feed / competitor recommendation engine** | **Not doing** | Not the product. Requires ingesting other people's content at scale, which the single-URL model can't do. |
