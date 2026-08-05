@@ -1,0 +1,99 @@
+import { describe, expect, it } from "vitest";
+
+import vitestConfigModule from "@/vitest.config";
+
+/**
+ * Pins the routing gap PR #126's review flagged: the `node` project's
+ * `include` (`tests/**\/*.test.ts`) would, without an explicit `exclude`,
+ * also match a hypothetical `useX.dom.test.ts` file (no JSX, so it wouldn't
+ * need the `.tsx` extension) — silently running a DOM-dependent test with no
+ * DOM and no jest-dom matchers. This test re-derives regexes from the ACTUAL
+ * `include`/`exclude` glob strings in `vitest.config.ts` (not a hand-copied
+ * duplicate of them) so a future edit to those globs that reopens the gap
+ * fails here instead of surfacing as a confusing runtime error weeks later.
+ *
+ * `globToRegExp` below is a small, deliberately narrow glob-to-regex
+ * converter — it only supports the subset of glob syntax this repo's config
+ * actually uses (`**`, `*`, `{a,b}` alternation), not a general-purpose glob
+ * engine. That's a reasonable trade for a config-correctness test.
+ */
+
+function globToRegExp(glob: string): RegExp {
+  const escaped = glob.replace(/[.+^$()|[\]\\]/g, "\\$&");
+  const withAlternation = escaped.replace(
+    /\{([^}]+)\}/g,
+    (_match, group: string) => `(${group.split(",").join("|")})`,
+  );
+  const withDoubleStarPlaceholder = withAlternation.replace(/\*\*/g, "__DOUBLESTAR__");
+  const withSingleStar = withDoubleStarPlaceholder.replace(/\*/g, "[^/]*");
+  const source = withSingleStar.replace(/__DOUBLESTAR__/g, ".*");
+  return new RegExp(`^${source}$`);
+}
+
+function getProjectTestConfig(name: "node" | "jsdom") {
+  const projects = vitestConfigModule.test?.projects;
+  if (!Array.isArray(projects)) {
+    throw new Error("expected vitest.config.ts's test.projects to be an array");
+  }
+  const project = projects.find(
+    (candidate): candidate is { test: { include: string[]; exclude?: string[] } } =>
+      typeof candidate === "object" &&
+      candidate !== null &&
+      "test" in candidate &&
+      (candidate as { test?: { name?: string } }).test?.name === name,
+  );
+  if (!project) {
+    throw new Error(`expected to find a "${name}" project in vitest.config.ts's test.projects`);
+  }
+  return project.test;
+}
+
+function isRoutedTo(filePath: string, projectTest: { include: string[]; exclude?: string[] }): boolean {
+  const included = projectTest.include.some((pattern) => globToRegExp(pattern).test(filePath));
+  const excluded = (projectTest.exclude ?? []).some((pattern) => globToRegExp(pattern).test(filePath));
+  return included && !excluded;
+}
+
+describe("vitest.config.ts node/jsdom project glob routing (PR #126 review, ticket #123)", () => {
+  const nodeTest = getProjectTestConfig("node");
+  const jsdomTest = getProjectTestConfig("jsdom");
+
+  it("routes a plain node test file to the node project only", () => {
+    const filePath = "tests/lib/api/fingerprint/helpers.test.ts";
+
+    expect(isRoutedTo(filePath, nodeTest)).toBe(true);
+    expect(isRoutedTo(filePath, jsdomTest)).toBe(false);
+  });
+
+  it("routes a .dom.test.tsx component file to the jsdom project only", () => {
+    const filePath = "tests/lib/api/fingerprint/hooks.dom.test.tsx";
+
+    expect(isRoutedTo(filePath, jsdomTest)).toBe(true);
+    expect(isRoutedTo(filePath, nodeTest)).toBe(false);
+  });
+
+  it("routes a JSX-free .dom.test.ts hook file to the jsdom project, NOT the node project", () => {
+    // This is the exact case the review flagged: a `renderHook`-only test with no JSX,
+    // plausibly authored as `.dom.test.ts` instead of `.dom.test.tsx`. Before the fix, the
+    // node project's include (`tests/**/*.test.ts`) matched this with no `exclude` to stop it.
+    const filePath = "tests/lib/api/fingerprint/useX.dom.test.ts";
+
+    expect(isRoutedTo(filePath, jsdomTest)).toBe(true);
+    expect(isRoutedTo(filePath, nodeTest)).toBe(false);
+  });
+
+  it("never routes the same file to both projects, across a range of representative names", () => {
+    const filePaths = [
+      "tests/lib/api/fingerprint/helpers.test.ts",
+      "tests/lib/api/fingerprint/hooks.dom.test.tsx",
+      "tests/lib/api/fingerprint/useX.dom.test.ts",
+      "tests/setup/blockLiveFetch.test.ts",
+    ];
+
+    for (const filePath of filePaths) {
+      const inNode = isRoutedTo(filePath, nodeTest);
+      const inJsdom = isRoutedTo(filePath, jsdomTest);
+      expect(inNode && inJsdom).toBe(false);
+    }
+  });
+});

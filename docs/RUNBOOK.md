@@ -301,27 +301,89 @@ recording the results in `.claude/context/verified-facts.md`.
 ## 7. Testing
 
 Ticket **#64** established the harness: **vitest**, `npm run test` (`vitest run`) and
-`npm run test:watch`. Config is `vitest.config.ts` — node environment, `tests/**/*.test.ts`, and an
-`@/` alias that must stay in lockstep with `tsconfig.json`'s `paths`.
+`npm run test:watch`. Config is `vitest.config.ts`, and an `@/` alias that must stay in lockstep with
+`tsconfig.json`'s `paths`.
 
-**The suite is offline by construction, not by convention.** `vitest.config.ts`'s `setupFiles`
-installs `tests/setup/blockLiveFetch.ts` before every test file: it stubs `fetch` to throw, naming
-the attempted URL, unless a test explicitly opts in with its own `vi.stubGlobal("fetch", ...)`.
+**Two vitest projects, one `vitest.config.ts` (ticket #123).** `test.projects` (vitest 4's
+replacement for the deprecated `defineWorkspace`/`vitest.workspace.ts` file) runs two environments
+out of the single root config, in one `vitest run` invocation:
+
+- **`node` project** — the original ticket #64 suite. `tests/**/*.test.ts`, `environment: "node"`,
+  unchanged. Nothing here touches the DOM.
+- **`jsdom` project** (new, #123) — for tests that render a real React tree
+  (`@testing-library/react` + `@testing-library/jest-dom`). Scoped to its own glob,
+  `` tests/**/*.dom.test.{ts,tsx} ``, and kept as a *separate* project rather than flipping the
+  global environment to `jsdom` — jsdom is slower and unnecessary for the ~300 existing node tests,
+  which stay exactly as fast and DOM-free as before. `tests/setup/domMatchers.ts`
+  (jsdom-project-only `setupFiles` entry) imports `@testing-library/jest-dom/vitest`, which
+  auto-extends `expect` with the DOM matchers — no manual `expect.extend()` call needed — and also
+  registers `afterEach(cleanup)` from `@testing-library/react`, and sets
+  `globalThis.IS_REACT_ACT_ENVIRONMENT = true`, both explicitly, since the `jsdom` project's
+  `globals: false` would otherwise silently disable RTL's own auto-cleanup AND its act-environment
+  registration (both only self-register when `afterEach`/`beforeAll`/`afterAll` are globals).
+
+**Naming convention — required.** A jsdom-flavored test file MUST be named `*.dom.test.ts` or
+`*.dom.test.tsx`. The `node` project's glob (`` tests/**/*.test.ts ``) would otherwise also match a
+`.dom.test.ts` file (it still ends in `.test.ts`); the `node` project's `exclude` closes that gap
+explicitly. A plain `*.test.tsx` file with no `.dom.` segment matches **neither** project and will
+silently not run at all — see the comment above `test.projects` in `vitest.config.ts` for the full
+reasoning.
+
+Both projects still run from the single `npm run test` (`vitest run`) invocation — no change to the
+CI step or the script. Run one project in isolation with `npx vitest run --project=node` /
+`--project=jsdom` when iterating.
+
+New dev dependencies (#123, versions chosen for Node `24.14.1` per `.nvmrc` — `jsdom@30` requires
+Node `^24.15.0`+ and is NOT installable here): `jsdom@29.1.1`, `@testing-library/react@16.3.2`,
+`@testing-library/dom@10.4.1` (peer of RTL 16, must be installed explicitly), and
+`@testing-library/jest-dom@7.0.0`.
+
+**The suite is offline by construction, not by convention.** Both projects' `setupFiles` install
+`tests/setup/blockLiveFetch.ts` before every test file: it stubs `fetch` to throw, naming the
+attempted URL, unless a test explicitly opts in with its own `vi.stubGlobal("fetch", ...)`.
 `tests/setup/blockLiveFetch.test.ts` proves the guard fires and re-arms between tests. Fixtures are
 read from `.claude/context/fixtures/` via `tests/helpers/fixtures.ts`, which throws a clear,
 path-naming error if a fixture file is missing. See §5 for why this matters (credits, and
 `/v1/youtube/channel` charging even on a miss).
 
-**Current state: 19 test files, 237 tests** — re-measured on ticket #115's branch (base `main` at
-`3e58c32`, 214 tests). Ticket #115 added `tests/server/fingerprint/overrides.test.ts` (21 tests) and
-two new cases in `tests/server/db/migrations.schema.test.ts` (+2), for +23 total.
+**Current state (re-measured 2026-08-05, ticket #123 + PR #126 review round 2 fixes): 29 test
+files, 319 tests total** — 26 files / 315 tests in the `node` project (25 files / 311 tests
+unchanged from the original ticket, +1 file / 4 tests for
+`tests/config/vitestProjectGlobs.test.ts`, added during PR #126 review to pin the glob-routing
+fix), + 3 files / 4 tests in the `jsdom` project: `tests/lib/api/fingerprint/hooks.dom.test.tsx`
+(see the layout tree above), `tests/setup/domCleanup.dom.test.tsx` (added during PR #126 review
+round 1 to pin the RTL auto-cleanup fix), and `tests/setup/reactActEnvironment.dom.test.tsx`
+(added during PR #126 review round 2 to pin the `IS_REACT_ACT_ENVIRONMENT` fix). The node-project
+figures above (19 → 237 in earlier editions of this doc) had already drifted upward from unrelated
+feature work between #115 and this ticket; the 311 figure is a fresh measurement, not a
+re-derivation of the old delta math.
 
-Layout — regenerated 2026-08-03 from `git ls-files`, not from the previous edition of this tree:
+Layout — regenerated from `git ls-files`, including this PR's review-fix additions:
 
 ```
 tests/
 ├── setup/blockLiveFetch.ts                              # global fetch guard, wired via setupFiles
 ├── setup/blockLiveFetch.test.ts                          # proves the guard works
+├── setup/domMatchers.ts                                 # jsdom-project-only setupFiles entry — imports
+│                                                        #   @testing-library/jest-dom/vitest and registers
+│                                                        #   afterEach(cleanup) AND
+│                                                        #   globalThis.IS_REACT_ACT_ENVIRONMENT = true
+│                                                        #   explicitly (#123, PR #126 review rounds 1 + 2)
+├── setup/domCleanup.dom.test.tsx                        # proves RTL's afterEach(cleanup) actually runs between
+│                                                        #   jsdom tests (#123, PR #126 review round 1)
+├── setup/reactActEnvironment.dom.test.tsx               # proves IS_REACT_ACT_ENVIRONMENT is set to true by
+│                                                        #   the jsdom setup file (#123, PR #126 review round 2)
+├── config/vitestProjectGlobs.test.ts                    # re-derives regexes from vitest.config.ts's actual
+│                                                        #   node/jsdom include+exclude globs and asserts they route
+│                                                        #   representative filenames — incl. a JSX-free `.dom.test.ts`
+│                                                        #   hook file — to exactly one project (#123, PR #126 review)
+├── lib/api/fingerprint/hooks.dom.test.tsx               # jsdom harness demonstration test (#123) — renders
+│                                                        #   useFingerprint + useUpdateFingerprintOverrides together
+│                                                        #   in a real QueryClientProvider tree and asserts the
+│                                                        #   mutation's onSuccess invalidation actually triggers a
+│                                                        #   refetch the query hook observes — the exact contract PR
+│                                                        #   #122's review flagged as previously only "verified by
+│                                                        #   construction"
 ├── helpers/fixtures.ts                                  # loader for .claude/context/fixtures/ (fail-fast on missing file)
 ├── fixtures/README.md                                   # fixture inventory + the YouTube/Instagram gaps
 ├── fixtures/synthetic/instagramMedia.ts                 # hand-built adapter inputs — NOT captures
