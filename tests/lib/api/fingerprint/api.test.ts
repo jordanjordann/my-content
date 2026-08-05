@@ -83,6 +83,12 @@ describe("fetchFingerprint", () => {
     expect(result).toEqual(body);
   });
 
+  it("throws on a 404 whose body is missing a valid reason, instead of resolving as a typed absence", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ error: "Not found." }, 404)));
+
+    await expect(fetchFingerprint("profile-1")).rejects.toThrow("Not found.");
+  });
+
   it("throws on 401", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ error: "Unauthorized" }, 401)));
 
