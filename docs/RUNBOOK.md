@@ -301,22 +301,61 @@ recording the results in `.claude/context/verified-facts.md`.
 ## 7. Testing
 
 Ticket **#64** established the harness: **vitest**, `npm run test` (`vitest run`) and
-`npm run test:watch`. Config is `vitest.config.ts` — node environment, `tests/**/*.test.ts`, and an
-`@/` alias that must stay in lockstep with `tsconfig.json`'s `paths`.
+`npm run test:watch`. Config is `vitest.config.ts`, and an `@/` alias that must stay in lockstep with
+`tsconfig.json`'s `paths`.
 
-**The suite is offline by construction, not by convention.** `vitest.config.ts`'s `setupFiles`
-installs `tests/setup/blockLiveFetch.ts` before every test file: it stubs `fetch` to throw, naming
-the attempted URL, unless a test explicitly opts in with its own `vi.stubGlobal("fetch", ...)`.
+**Two vitest projects, one `vitest.config.ts` (ticket #123).** `test.projects` (vitest 4's
+replacement for the deprecated `defineWorkspace`/`vitest.workspace.ts` file) runs two environments
+out of the single root config, in one `vitest run` invocation:
+
+- **`node` project** — the original ticket #64 suite. `tests/**/*.test.ts`, `environment: "node"`,
+  unchanged. Nothing here touches the DOM.
+- **`jsdom` project** (new, #123) — for tests that render a real React tree
+  (`@testing-library/react` + `@testing-library/jest-dom`). Scoped to its own glob,
+  **`tests/**/*.dom.test.tsx`**, so it can never silently swallow a plain `.test.ts` file, and kept
+  as a *separate* project rather than flipping the global environment to `jsdom` — jsdom is slower
+  and unnecessary for the ~300 existing node tests, which stay exactly as fast and DOM-free as
+  before. `tests/setup/domMatchers.ts` (jsdom-project-only `setupFiles` entry) imports
+  `@testing-library/jest-dom/vitest`, which auto-extends `expect` with the DOM matchers — no manual
+  `expect.extend()` call needed.
+
+Both projects still run from the single `npm run test` (`vitest run`) invocation — no change to the
+CI step or the script. Run one project in isolation with `npx vitest run --project=node` /
+`--project=jsdom` when iterating.
+
+New dev dependencies (#123, versions chosen for Node `24.14.1` per `.nvmrc` — `jsdom@30` requires
+Node `^24.15.0`+ and is NOT installable here): `jsdom@29.1.1`, `@testing-library/react@16.3.2`,
+`@testing-library/dom@10.4.1` (peer of RTL 16, must be installed explicitly), and
+`@testing-library/jest-dom@7.0.0`.
+
+**The suite is offline by construction, not by convention.** Both projects' `setupFiles` install
+`tests/setup/blockLiveFetch.ts` before every test file: it stubs `fetch` to throw, naming the
+attempted URL, unless a test explicitly opts in with its own `vi.stubGlobal("fetch", ...)`.
 `tests/setup/blockLiveFetch.test.ts` proves the guard fires and re-arms between tests. Fixtures are
 read from `.claude/context/fixtures/` via `tests/helpers/fixtures.ts`, which throws a clear,
 path-naming error if a fixture file is missing. See §5 for why this matters (credits, and
 `/v1/youtube/channel` charging even on a miss).
 
-**Current state: 19 test files, 237 tests** — re-measured on ticket #115's branch (base `main` at
-`3e58c32`, 214 tests). Ticket #115 added `tests/server/fingerprint/overrides.test.ts` (21 tests) and
-two new cases in `tests/server/db/migrations.schema.test.ts` (+2), for +23 total.
+**Current state (re-measured 2026-08-05, ticket #123): 26 test files, 312 tests total** — 25 files /
+311 tests in the `node` project (unchanged by this ticket), + 1 new file / 1 test in the `jsdom`
+project: `tests/lib/api/fingerprint/hooks.dom.test.tsx`. That file renders `useFingerprint` and
+`useUpdateFingerprintOverrides` together in a real `QueryClientProvider` tree and asserts the
+mutation's `onSuccess` invalidation actually triggers a refetch that the query hook observes —
+the exact `useUpdateFingerprintOverrides` ↔ `useFingerprint` cache-invalidation contract that PR
+#122's review flagged as previously only "verified by construction" (both sides using the same
+`FINGERPRINT_KEYS.detail` factory). The node-project figures above (19 → 237 in earlier editions of
+this doc) had already drifted upward from unrelated feature work between #115 and this ticket; the
+311 figure is a fresh measurement, not a re-derivation of the old delta math.
 
 Layout — regenerated 2026-08-03 from `git ls-files`, not from the previous edition of this tree:
+
+Layout below predates this ticket's additions and has not been fully regenerated; the two new files
+are:
+
+```
+tests/setup/domMatchers.ts                                # jsdom-project-only setupFiles entry — imports @testing-library/jest-dom/vitest (#123)
+tests/lib/api/fingerprint/hooks.dom.test.tsx                # jsdom harness demonstration test (#123) — see above
+```
 
 ```
 tests/
