@@ -5,7 +5,7 @@ import type { FingerprintView } from "@/lib/api/fingerprint/types";
 
 /**
  * Ticket #117 — table-driven tests for the pure helpers `hooks.ts`'s `select` composes
- * (TDD §6, `docs/TDD-fingerprint-read-override-api.md`). Nothing under test is mocked.
+ * (TDD §6, `docs/archive/specs/TDD-fingerprint-read-override-api.md`). Nothing under test is mocked.
  */
 
 function makeView(overrides: Partial<FingerprintView> = {}): FingerprintView {

@@ -13,7 +13,7 @@ import type { FingerprintView } from "@/lib/server/fingerprint";
 
 /**
  * `GET`/`PATCH /api/profiles/[id]/fingerprint` — Ticket #73 sub-ticket B
- * (`docs/TDD-fingerprint-read-override-api.md` §4, §8[B]). Thin HTTP shell
+ * (`docs/archive/specs/TDD-fingerprint-read-override-api.md` §4, §8[B]). Thin HTTP shell
  * over the `lib/server/fingerprint` module shipped by ticket A (#115,
  * PR #120) — this file does no aggregation, validation, or SQL of its own
  * beyond a profile-existence check for the `PROFILE_NOT_FOUND` vs.

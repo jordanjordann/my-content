@@ -1,6 +1,6 @@
 /**
  * Client-side mirror of `lib/server/fingerprint/types.ts`'s `ComputedFingerprint`/
- * `FingerprintView` (TDD §4, `docs/TDD-fingerprint-read-override-api.md`), and of the
+ * `FingerprintView` (TDD §4, `docs/archive/specs/TDD-fingerprint-read-override-api.md`), and of the
  * `404` bodies returned by `app/api/profiles/[id]/fingerprint/route.ts`. Deliberately
  * NOT imported from `lib/server/fingerprint` — the client module stays independent of
  * server-layer types (mirroring the precedent in `lib/api/analyses/types.ts`, which

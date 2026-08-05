@@ -7,7 +7,7 @@ import type { Client } from "@libsql/client";
 import type { StyleAttributes } from "@/lib/server/analysis/types";
 
 /**
- * Ticket #115 (TDD `docs/TDD-fingerprint-read-override-api.md` §3
+ * Ticket #115 (TDD `docs/archive/specs/TDD-fingerprint-read-override-api.md` §3
  * D1/D3-D7). Exercises: NON_OVERRIDABLE_FIELDS rejection at write time and
  * at read time; the partial-patch primitive's null-deletes / SQL-NULL-on-
  * empty semantics; validateOverridePatch's allow-list + taxonomy guards +

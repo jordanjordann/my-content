@@ -10,7 +10,7 @@ import {
 import type { ComputedFingerprint, FingerprintValidationResult, FrequencyDistributionEntry } from "./types";
 
 /**
- * Ticket #73 sub-ticket A (TDD `docs/TDD-fingerprint-read-override-api.md`
+ * Ticket #73 sub-ticket A (TDD `docs/archive/specs/TDD-fingerprint-read-override-api.md`
  * §3 D4/D5). An allow-list validator over a `PATCH` body's top-level keys —
  * never throws, never mutates `patch`/`computed`. An unknown key is always
  * reported invalid (never silently dropped, D4). A top-level `null` value is

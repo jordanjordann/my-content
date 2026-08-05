@@ -7,9 +7,11 @@ They are kept, not deleted, because several still hold the **only** record of a 
 trace, or a lesson that no live document repeats. One line each on what that is.
 
 > **Note on paths inside the archived handoffs.** Their file references (`docs/design/…`,
-> `docs/TDD-…`) point at pre-archive locations and were deliberately **not** rewritten — they are
-> dated snapshots, and editing them would falsify the record. Map any such path onto
-> `archive/specs/`.
+> `docs/TDD-…`, `docs/HANDOFF-…`) point at pre-archive locations and were deliberately **not**
+> rewritten — they are dated snapshots, and editing them would falsify the record. Map any such path
+> onto the corresponding location under `archive/`: specs and designs (`TDD-…`, `DESIGN-…`, `PRD-…`)
+> map to `archive/specs/`, other handoffs (`HANDOFF-…`) map to `archive/handoffs/`, and
+> `retrospective-001.md` maps to `archive/` root.
 
 ## `handoffs/`
 
