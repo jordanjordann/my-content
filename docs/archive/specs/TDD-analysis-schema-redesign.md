@@ -569,7 +569,7 @@ Net: the YouTube chain (#53 → #54 → #57) is strictly serial and already bloc
 **[NEEDS OWNER DECISION] before or during Phase 2:**
 1. ~~**`MAX_MEDIA_PARTS` cap** (§7.6). Recommended 10.~~ **[ANSWERED 2026-07-22 — `MAX_MEDIA_PARTS = 20`]**, Instagram's own per-post limit. Owner's rationale: 20-slide posts are rare, so the cap should not bind on realistic payloads. Consequence: it binds on neither captured fixture (both 10 slides), so the truncation path must still be implemented **and** tested against a synthetic >20-part input, with the drop declared in the slide manifest. `MAX_TOTAL_MEDIA_BYTES` becomes the guard that actually binds. Full record in #71.
 2. **Confidence indicator host surface** (§6.5). PRD puts it in scope for this phase but both named surfaces are out of scope. Recommended: expose in the API now, render when the profile page exists. **Still open.**
-3. ~~**Tier 1 style section design** (§8.2). No design exists~~ **[ANSWERED 2026-07-21/22 — Direction A, tabbed modal]**, recorded in `docs/design/DESIGN-analysis-tier1-style-section.md` with 9 sub-decisions and an interactive mockup. #70 implements it.
+3. ~~**Tier 1 style section design** (§8.2). No design exists~~ **[ANSWERED 2026-07-21/22 — Direction A, tabbed modal]**, recorded in `docs/archive/specs/DESIGN-analysis-tier1-style-section.md` with 9 sub-decisions and an interactive mockup. #70 implements it.
 4. **Delete the 2 legacy analyses rows?** (§10). Recommended yes.
 5. **Equal weighting of the four dimensions inside `consistencyIndex`** (§6.4). Recommended yes; low urgency.
 

@@ -26,7 +26,7 @@ Reading conventions used throughout:
 2. **Bulk-ingestion spending cap — CONFIRMED IN PRINCIPLE.** A safety cap must exist. Threshold and hard-stop-vs-warning remain open sub-details. (§1 "Bulk ingestion by profile")
 3. **Carousel slide-count cap — CONFIRMED AS-IS.** Existing cap stays; it already matches Instagram's real maximum. No longer an open item. (§3, 4.1)
 4. **Multi-user auth — RECONFIRMED LOWEST PRIORITY.** Build last, after all other roadmap work. (§6)
-5. **Engagement-count PRD open questions — CLOSED, no action.** The owner reviewed the five items in `docs/PRD-engagement-count-display-states.md` §7 and declined to pursue them; the feature stays as shipped.
+5. **Engagement-count PRD open questions — CLOSED, no action.** The owner reviewed the five items in `docs/archive/specs/PRD-engagement-count-display-states.md` §7 and declined to pursue them; the feature stays as shipped.
 
 ---
 
