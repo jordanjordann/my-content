@@ -1033,6 +1033,12 @@ typeof response.text === "string", length 1148
 
 ## ScrapeCreators — `/v1/instagram/post` — `like_and_view_counts_disabled` — OPEN / UNVERIFIED GAP
 
+⚠️ **PARTIALLY SUPERSEDED** — see "⚠️ CORRECTION — `like_and_view_counts_disabled` fixture coverage was
+overstated (2026-08-05)" at the end of this file. The sentence below beginning *"All five committed
+fixtures … have this field set to `false`"* is **factually wrong**: the field is **absent entirely**
+from `ig_carousel_all_images_10_slides.json`. The rest of this section — the strict `=== true` read,
+and the gap itself (no committed fixture represents a genuinely counts-disabled post) — still stands.
+
 - **Status: NOT independently verified against a live capture.** Flagged during PR #111
   (ticket #110) code review (finding N1) — recorded here per the "stop and flag it" rule in
   AGENTS.md's "External API Verification" section rather than guessed at or live-called.
@@ -1340,3 +1346,88 @@ successfully" criterion specifically:
       required by the ticket owner's one-call scope; noted, not silently dropped.
 - [x] Forced-truncation (`MAX_TOKENS` throws before parse) — covered offline by PR #119's unit
       tests, not by a second live call (deliberate, per instruction).
+
+---
+
+## ⚠️ CORRECTION — `like_and_view_counts_disabled` fixture coverage was overstated (2026-08-05)
+
+**Method: offline key-set inspection of every committed Instagram fixture. ZERO live API calls, zero
+credits spent.** Nothing here is inferred from `__typename`, from the TypeScript types, or from any
+earlier entry in this file — every row below was read out of the committed JSON.
+
+### What the earlier claim said
+
+The section "ScrapeCreators — `/v1/instagram/post` — `like_and_view_counts_disabled` — OPEN /
+UNVERIFIED GAP" states:
+
+> All five committed fixtures under `.claude/context/fixtures/scrapecreators-instagram/` have this
+> field set to `false`.
+
+**That is wrong on two counts.** There are **seven** committed Instagram fixtures, not five, and one
+of them does not carry the field at all.
+
+### What is actually true
+
+Field path inspected: `data.xdt_shortcode_media.like_and_view_counts_disabled` (post fixtures) and
+`data.user.edge_{felix_video_timeline,owner_to_timeline_media}.edges[].node.like_and_view_counts_disabled`
+(profile fixture).
+
+| Committed fixture | `__typename` | `like_and_view_counts_disabled` |
+|---|---|---|
+| `ig_reel_1_zero_view_count.json` | `XDTGraphVideo` | `false` |
+| `ig_reel_2.json` | `XDTGraphVideo` | `false` |
+| `ig_reel_3.json` | `XDTGraphVideo` | `false` |
+| `ig_single_image_post.json` | `XDTGraphImage` | `false` |
+| `ig_carousel_mixed_video_and_image_10_slides.json` | `XDTGraphSidecar` | `false` |
+| **`ig_carousel_all_images_10_slides.json`** | **`XDTGraphSidecar`** | **ABSENT — key does not exist anywhere in the payload (0 raw string occurrences)** |
+| `ig_profile_business_account.json` (profile endpoint, not `/post`) | — | present `false` on all **24** nested timeline-media nodes |
+
+So: **five of the six committed `/v1/instagram/post` fixtures carry it as `false`; the sixth does not
+carry it at all.** The profile fixture carries it 24 times over, on nested nodes the original claim
+did not contemplate.
+
+### The absence is NOT predictable from content type or `__typename`
+
+This is the part that matters for implementation, and it is why "sidecars don't have it" would be an
+equally wrong rule to write down:
+
+- **Both** carousel fixtures are `XDTGraphSidecar`. The mixed video/image one **has** the field; the
+  all-image one **does not**.
+- The single-image post (`XDTGraphImage` — image-only content) **does** have the field as `false`.
+  Image-only content is therefore *not* the discriminator either.
+- The all-image carousel is a **structurally reduced payload variant**: **25 top-level keys**, versus
+  **49** on the mixed carousel and **48** on the single image post. It is missing 30 keys the mixed
+  carousel carries — including `like_and_view_counts_disabled`, `dimensions`, `display_resources`,
+  `comments_disabled` and `accessibility_caption` — while carrying 6 keys the mixed carousel lacks
+  (`comment_count`, `has_audio`, `video_duration`, `video_url`, `product_type`,
+  `clips_music_attribution_info`). Its `owner` is the 5-key stub with **no `edge_followed_by`**,
+  whereas the mixed carousel's `owner` is the full 17-key block.
+
+**Rule to build to: branch on field presence, never on `__typename` or on "is this image content".**
+Presence of this field varies between two payloads of the same `__typename`.
+
+### Practical consequence
+
+- **Benign in the existing code path.** `lib/server/analysis/fetcher/adapter.ts` reads
+  `raw.like_and_view_counts_disabled === true` — strict identity, never truthy coercion — so an
+  absent key is already not coerced to `false`. No shipped behaviour is wrong today. **This
+  correction fixes the documentation, not a bug.**
+- **But there is a real product consequence, and it is not benign.** On an all-image carousel we
+  **cannot determine whether the creator has hidden their counts**. Absence of the flag means *we do
+  not know*, not *counts are visible*. We can only observe that `edge_media_preview_like.count` and
+  `edge_media_to_parent_comment.count` happen to be present with values.
+- This interacts directly with the **confirmed** product rule that a hidden/absent input yields **no
+  score plus a visible, user-legible reason** (see `docs/prd/PRD-3B-performance-scoring-and-3C-analyses-table.md`,
+  D3 and §12.2/§12.6). On this payload shape the app cannot honestly state *why* with confidence, so
+  it must say what it does know rather than assert a cause it cannot evidence. Never coerce absent to
+  `false` to make a reason string easier to write.
+
+### Scope of this correction
+
+- The **gap itself is unchanged and still open**: no committed fixture represents a genuinely
+  counts-disabled post, and the shape of a real counts-disabled payload remains **UNVERIFIED**. A
+  live capture of one is approved but **not yet made** — approved is not verified.
+- The strict `=== true` read documented in the original section is confirmed correct and is the
+  reason this documentation error never became a runtime bug.
+- Original claim left in place above with a supersede banner, per this file's convention. Nothing
+  deleted.
