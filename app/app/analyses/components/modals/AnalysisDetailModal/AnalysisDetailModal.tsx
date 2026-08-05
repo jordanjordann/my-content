@@ -156,10 +156,10 @@ export function AnalysisDetailModal({ id, onClose }: AnalysisDetailModalProps) {
           ) : results ? (
             <>
               {/* Thumbnail sidebar */}
-              <div className="w-full shrink-0 border-b lg:w-72 lg:border-b-0 lg:self-stretch p-6 pb-0 lg:pb-6">
+              <div className="flex w-full shrink-0 flex-col border-b p-6 pb-0 lg:w-72 lg:self-stretch lg:border-b-0">
                 {data ? (
                   <>
-                    <div className="relative aspect-[9/16] overflow-hidden rounded-xl border bg-secondary">
+                    <div className="relative aspect-[9/16] shrink-0 overflow-hidden rounded-xl border bg-secondary">
                       {data.thumbnailUrl ? (
                         <>
                           <a
@@ -193,50 +193,59 @@ export function AnalysisDetailModal({ id, onClose }: AnalysisDetailModalProps) {
                       )}
                     </div>
 
-                    <div className="mt-3 flex flex-col gap-2 text-sm text-muted-foreground">
-                      <div className="flex items-center gap-2">
-                        <EyeIcon
-                          className="size-4 shrink-0 text-accent"
-                          aria-hidden="true"
-                        />
-                        <EngagementCount
-                          metric="views"
-                          state={data.viewCountState}
-                          showMetricWord
-                        />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <HeartIcon
-                          className="size-4 shrink-0 text-accent"
-                          aria-hidden="true"
-                        />
-                        <EngagementCount
-                          metric="likes"
-                          state={data.likeCountState}
-                          showMetricWord
-                        />
-                      </div>
-                      {data.postDate && (
+                    {/* Independently scrollable so a long caption never overlaps/overflows
+                        past the modal footer — mirrors the tab content panel's
+                        min-h-0 flex-1 overflow-y-auto pattern below. Desktop-only
+                        dashboard: the parent sidebar gets a definite height via
+                        self-stretch at lg+, so this flex-1/min-h-0 resolves against a
+                        definite height there. Below lg the sidebar is not height-capped
+                        (out of scope — desktop-only). */}
+                    <div className="mt-3 min-h-0 flex-1 overflow-y-auto pb-6">
+                      <div className="flex flex-col gap-2 text-sm text-muted-foreground">
                         <div className="flex items-center gap-2">
-                          <CalendarIcon
+                          <EyeIcon
                             className="size-4 shrink-0 text-accent"
                             aria-hidden="true"
                           />
-                          <span>{formatDate(data.postDate)}</span>
+                          <EngagementCount
+                            metric="views"
+                            state={data.viewCountState}
+                            showMetricWord
+                          />
                         </div>
-                      )}
-                      {data.caption && (
-                        <p className="text-xs leading-relaxed">
-                          {data.caption}
-                        </p>
-                      )}
-                    </div>
+                        <div className="flex items-center gap-2">
+                          <HeartIcon
+                            className="size-4 shrink-0 text-accent"
+                            aria-hidden="true"
+                          />
+                          <EngagementCount
+                            metric="likes"
+                            state={data.likeCountState}
+                            showMetricWord
+                          />
+                        </div>
+                        {data.postDate && (
+                          <div className="flex items-center gap-2">
+                            <CalendarIcon
+                              className="size-4 shrink-0 text-accent"
+                              aria-hidden="true"
+                            />
+                            <span>{formatDate(data.postDate)}</span>
+                          </div>
+                        )}
+                        {data.caption && (
+                          <p className="text-xs leading-relaxed">
+                            {data.caption}
+                          </p>
+                        )}
+                      </div>
 
-                    {/* Fingerprint hint line (design doc §2.7) — a single analysis is one
-                        data point feeding a fingerprint, not a fingerprint itself. */}
-                    <div className="mt-4 rounded-lg bg-secondary p-3 text-xs leading-relaxed text-muted-foreground">
-                      Part of <span className="font-medium text-foreground">@{data.username}</span>
-                      &apos;s style — needs 5+ analyses.
+                      {/* Fingerprint hint line (design doc §2.7) — a single analysis is one
+                          data point feeding a fingerprint, not a fingerprint itself. */}
+                      <div className="mt-4 rounded-lg bg-secondary p-3 text-xs leading-relaxed text-muted-foreground">
+                        Part of <span className="font-medium text-foreground">@{data.username}</span>
+                        &apos;s style — needs 5+ analyses.
+                      </div>
                     </div>
                   </>
                 ) : (
