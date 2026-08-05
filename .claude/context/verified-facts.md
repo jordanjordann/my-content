@@ -1193,3 +1193,150 @@ expected, unlike #36's original "no DB writes" constraint for a different, broad
 
 **Total spend: 1 credit**, within the ~2-credit budget. No retries, no exploratory calls, no
 errors.
+
+---
+
+## Gemini production `ANALYSIS_RESPONSE_SCHEMA` @ `temperature: 0` — LIVE call (2026-08-05, ticket #66 closeout)
+
+⚠️ **SUPERSEDES the "Gemini `@google/genai` structured output — LIVE call (2026-07-23, ticket #66)"
+section above, specifically for the claim that `ANALYSIS_RESPONSE_SCHEMA`-at-`temperature:0` was
+verified.** That entry is still accurate about what it actually tested (SDK plumbing via the
+harness's own probe schema, `temperature: 0.2`, a short synthetic text prompt) — it is superseded
+only insofar as this new entry closes the gap it explicitly left open. Do not delete the 07-23
+entry; it documents real, separate findings about the SDK (`response.text` getter behaviour,
+`thinkingConfig` defaults, etc.) that remain valid.
+
+- **Authorisation:** one-time owner-approved live call for ticket #66 closeout, exactly one billed
+  `generateContent` request. No retries needed — succeeded on the first attempt.
+- **Trigger:** code review on #66 (comment
+  https://github.com/jordanjordann/my-content/issues/66#issuecomment-5164456622) found the prior
+  live call didn't discharge the ticket's own verification requirement: "one live billed Gemini
+  call against a real reel, using the actual production `ANALYSIS_RESPONSE_SCHEMA`, at temperature
+  0, with finishReason STOP, parsed successfully."
+
+### What was actually called — the real production code path, not a harness
+
+- `lib/server/analysis/gemini/generate.ts`'s exported `analyzeContent(mediaParts, prompt)` was
+  imported and invoked directly (via `tsx`, `GEMINI_API_KEY` from `.env.local`) — the exact
+  function `lib/server/analysis/pipeline/index.ts` calls in production. Not a reimplementation, not
+  a copy of the request shape — the real function, unmodified.
+- `prompt` was built with the real `buildSystemInstruction()` (`lib/server/analysis/prompts/system.ts`)
+  and `buildUserPrompt()` (`lib/server/analysis/prompts/user.ts`), concatenated exactly as
+  `pipeline/index.ts` does (`` `${systemPrompt}\n\n${userPrompt}` ``) — full rubric block, full
+  taxonomy block, full discriminator-rules block, real engagement context section. Prompt length:
+  **22,500 characters** (vs. the 07-23 entry's 68-token synthetic prompt) — a genuine
+  production-sized request.
+- `config` inside `analyzeContent` is untouched production code: `temperature: 0`,
+  `responseMimeType: "application/json"`, `responseSchema: ANALYSIS_RESPONSE_SCHEMA` (the real
+  schema from `lib/server/analysis/schema/responseSchema.ts`, not a probe/analog), `maxOutputTokens: 32768`.
+
+### The real reel
+
+- `https://www.instagram.com/reel/DEC1qiWsmYm/` (`@giorrando`) — the same reel captured live in
+  `.claude/context/fixtures/scrapecreators-instagram/ig_reel_2.json` (2026-07-22 Instagram capture
+  session). 61.133s, 750x1333, real caption, real engagement numbers (306,949 views, 35,726 likes,
+  369 comments, 250,506 followers).
+- **Media source: reused an already-uploaded Gemini File API asset, not a fresh download.** The
+  `analyses` table (`my-content.db`) had a prior **production run of this exact reel** from
+  2026-08-03 (`id=c93914d2-6db1-4cd0-81b1-acc04df25574`, `status='completed'`), whose
+  `gemini_file_uri` (`https://generativelanguage.googleapis.com/v1beta/files/svx16crcvmc5`) was
+  **still ACTIVE** at call time (expiry `2026-08-05T06:55:46.119268334Z`, called ~3h before
+  expiry). Verified via a free `ai.files.get({ name: "files/svx16crcvmc5" })` call before spending
+  on `generateContent`: `state: "ACTIVE"`, `mimeType: "video/mp4"`, `videoMetadata.videoDuration:
+  "61s"` (matches the reel). This means **zero ScrapeCreators spend and zero video re-upload** were
+  needed for this verification — only the one authorized Gemini `generateContent` call.
+  - Note: the fixture-committed `video_url` CDN links (all captured 2026-07-22/2026-07-23) were
+    checked first and are **expired** — their signed `oe=` params decode to expiry timestamps in
+    late July 2026, and a live `curl` against one returned `SSL_ERROR_SYSCALL` (connection reset by
+    Instagram's edge, confirmed not a sandbox network issue — `curl` to `google.com` succeeded
+    immediately from the same shell). This is why the still-active Gemini File API asset from the
+    2026-08-03 production run was used instead of re-deriving a fresh CDN URL.
+  - `metadata: MediaMetadata` passed to `buildUserPrompt()` was reconstructed field-for-field from
+    that same `analyses` row (caption, view/like/comment counts, follower count, engagement rate,
+    audio fields, resolution) — real production data, not fabricated.
+
+### Result
+
+```
+finishReason: STOP  (implicit — analyzeContent's fail-closed guard did not throw;
+                      execution reached the post-guard `response.text` read, which
+                      only happens when finishReason === FinishReason.STOP)
+usageMetadata: {
+  promptTokenCount: 24052,
+  candidatesTokenCount: 1574,
+  totalTokenCount: 29620,
+  thoughtsTokenCount: 3994,
+  promptTokensDetails: [
+    { modality: "TEXT", tokenCount: 6057 },
+    { modality: "VIDEO", tokenCount: 16043 },
+    { modality: "AUDIO", tokenCount: 1952 }
+  ],
+  serviceTier: "standard"
+}
+typeof response.text === "string", length 5621
+JSON.parse(response.text) succeeded with ZERO repair/fallback logic — no code fence, no prose
+wrapper, no truncation. Parsed directly with the built-in `JSON.parse`, the same call
+`parseContentAnalysis` makes internally.
+```
+
+- **`finishReason` was `STOP`.** Not logged as a bare value in this run's console capture (the
+  guard doesn't log the value on the success path, only throws on failure), but its value is
+  provable by construction: `analyzeContent`'s guard (`generate.ts:61`,
+  `if (finishReason !== FinishReason.STOP) throw ...`) sits BEFORE the `response.text` read, and
+  the call returned normally with a populated `text` — the only way that happens is
+  `finishReason === FinishReason.STOP`. This is the exact fail-closed guard added in PR #119.
+- **Every top-level key required by `ANALYSIS_RESPONSE_SCHEMA` is present and correctly typed** in
+  the parsed output: `style` (all 15 sub-fields including `hookTypeSecondary` as a real enum string,
+  `ctaType` as a real array `["SHARE_PROMPT"]`, `estimatedCutsPerMinute` as a real number `30`,
+  `structureBeatMap` as an array of 6 beat objects with `propertyOrdering`-consistent shape),
+  `overallScore`, `scorecard` (all 7 dimensions, integers 1–5), `summary`, `strengths`,
+  `weaknesses`, `keyMoments`, `redFlags` (empty array, valid), `suggestions`. The `ctaType`/
+  `ctaTiming` biconditional holds (`["SHARE_PROMPT"]` + `"END"`, not `NONE`/`NONE`).
+- **Headroom against the 32768 `maxOutputTokens` budget, measured on a genuine production-sized
+  request for the first time:** `candidatesTokenCount: 1574` + `thoughtsTokenCount: 3994` = `5568`
+  tokens spent against the output budget — **~83% headroom remaining** (27,200 tokens free) on a
+  real 61-second video with audio, a full 7-dimension scorecard, a 6-beat structure map, and a
+  31-item on-screen-text array. This supersedes the 07-23 entry's "~97% headroom on a 68-token
+  synthetic prompt" figure as the operative headroom bound for real production traffic — still
+  comfortably clear of `MAX_TOKENS`, but the real number is meaningfully lower than the synthetic
+  estimate, as expected once a full-size prompt against real video is used.
+- **Forced-truncation (`MAX_TOKENS`) scenario: NOT tested live in this session, by design.** Per
+  the ticket's own instruction, a second full-price billed call was not spent solely to trigger
+  this. The offline unit-test coverage added in PR #119
+  (`tests/server/analysis/gemini/generate.test.ts` or equivalent — see that PR) already asserts,
+  with a mocked SDK response, that (a) `finishReason: MAX_TOKENS` throws, (b) a missing
+  `finishReason` throws (fail-closed), and (c) the throw happens before `response.text` is read —
+  this was accepted by the ticket's own reviewer as sufficient to discharge the truncation
+  criterion without a second live call. Not re-verified live here; flagging plainly rather than
+  silently omitting it, per instruction.
+- **Determinism (`temperature: 0` reproducibility across two runs of the same video): NOT tested.**
+  Only one call was authorized and made. The ticket's checklist item "same video twice at
+  `temperature: 0` yields identical scorecard values" remains formally unverified — noted here
+  rather than silently dropped, but not a blocker per the ticket owner's explicit scope (one live
+  call, not two).
+
+### Credit ledger
+
+- **Gemini spend: 1 billed `generateContent` call** (plus one free `ai.files.get` state check,
+  not billed as generation). No ScrapeCreators calls were made — the already-active Gemini File API
+  asset from an earlier production run was reused instead of re-fetching or re-uploading the video.
+- Raw call output captured at `/tmp/gemini-live-verify-output.txt` (not committed — scratch, outside
+  the repo per `AGENTS.md`).
+
+### Verdict for ticket #66
+
+All four of the ticket's previously-unmet verification items that required a live call are now
+resolved for the "real reel, real schema, `temperature: 0`, `finishReason: STOP`, parsed
+successfully" criterion specifically:
+
+- [x] One live call against a real reel, using `ANALYSIS_RESPONSE_SCHEMA` (not a probe), at
+      `temperature: 0` (not `0.2`) — **met**, this entry.
+- [x] `finishReason: STOP` — **met** (proven by the fail-closed guard's control flow, see above).
+- [x] Parsed successfully with zero repair/fallback logic — **met**.
+- [x] `usageMetadata` / headroom reported for a real production-sized input — **met**, 83%
+      headroom on a real 61s video + full prompt (supersedes the earlier 97%-on-synthetic-prompt
+      figure as the operative bound).
+- [ ] Same video twice at `temperature: 0` yields identical scorecard values — still open, not
+      required by the ticket owner's one-call scope; noted, not silently dropped.
+- [x] Forced-truncation (`MAX_TOKENS` throws before parse) — covered offline by PR #119's unit
+      tests, not by a second live call (deliberate, per instruction).
