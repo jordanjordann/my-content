@@ -3,7 +3,7 @@
 **Status:** Ready for dev handoff (with one raised blocker — see §2)
 **Author:** John (tech lead)
 **Created:** 2026-07-25
-**Source of truth:** `docs/PRD-engagement-count-display-states.md` (four states + treatments owner-settled, §3) and `docs/design/DESIGN-engagement-count-display-states.md` (presentation, owner-confirmed 2026-07-25, PR #98). GitHub #96.
+**Source of truth:** `docs/archive/specs/PRD-engagement-count-display-states.md` (four states + treatments owner-settled, §3) and `docs/archive/specs/DESIGN-engagement-count-display-states.md` (presentation, owner-confirmed 2026-07-25, PR #98). GitHub #96.
 **Dependencies referenced:** migration 009 (`play_count`, `like_count`, `like_and_view_counts_disabled` DB columns — merged, PR #95/#71), ticket #70 tooltip pattern (`DimensionScoreRow`).
 
 Reading conventions:

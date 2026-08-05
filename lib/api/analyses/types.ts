@@ -23,7 +23,7 @@ export type AnalysisPlatform = "instagram" | "youtube";
 export type AnalysisStatus = "pending" | "completed" | "failed";
 
 /**
- * Classified engagement-count state (TDD §4.1, docs/TDD-engagement-count-display-states.md).
+ * Classified engagement-count state (TDD §4.1, docs/archive/specs/TDD-engagement-count-display-states.md).
  * Derived once in the query-hook `select` layer from raw `viewCount`/`playCount`/
  * `likeCount`/`likeAndViewCountsDisabled` — components must never branch on the raw
  * fields, only on `state.kind`.

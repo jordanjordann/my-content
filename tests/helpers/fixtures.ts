@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
  * Loader for the committed **real** API captures.
  *
  * Single source of truth is `.claude/context/fixtures/` — the directory the
- * RUNBOOK (§6) and `docs/HANDOFF-2026-07-22.md` already point every agent at.
+ * RUNBOOK (§6) and `docs/archive/handoffs/HANDOFF-2026-07-22.md` already point every agent at.
  * Tests read from there rather than keeping a second copy under `tests/`,
  * because two copies of a capture is two things that can drift, and the
  * agent-facing docs would still send readers to the `.claude` copy.

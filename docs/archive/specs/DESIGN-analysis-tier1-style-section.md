@@ -2,7 +2,7 @@
 
 **Status:** Confirmed by owner, 2026-07-22
 **Author:** Jessica (UI/UX)
-**Mockup:** [`docs/design/analysis-tier1-style-mockup.html`](./analysis-tier1-style-mockup.html) — open in a browser, toggle "Direction A" / "Direction B" at the top
+**Mockup:** [`docs/archive/specs/analysis-tier1-style-mockup.html`](./analysis-tier1-style-mockup.html) — open in a browser, toggle "Direction A" / "Direction B" at the top
 **Related:** PRD-analysis-schema-redesign.md §4.2, §4.3, §4.6, §8, §13 · TDD-analysis-schema-redesign.md §8.2 · GitHub #69 (BE), #70 (FE)
 
 This document is the citable record of what was decided for the Analysis Detail modal's Tier 1 style section and its relationship to the Tier 2 scorecard. The mockup HTML is the visual reference; this file is the decision log a developer can cite without opening a browser.
@@ -90,7 +90,7 @@ Flagging these as gaps the mockup illustrates but does not fully specify — a d
 
 ## 6. Sign-off record
 
-- Two directions presented in `docs/design/analysis-tier1-style-mockup.html`.
+- Two directions presented in `docs/archive/specs/analysis-tier1-style-mockup.html`.
 - Designer recommendation: Direction B.
 - Owner decision: **Direction A**, per rationale in §1 (attributed to the boss).
 - All sub-decisions in §2 are part of the approved proposal, not independently re-litigated.

@@ -4,7 +4,7 @@
 
 `.claude/context/fixtures/` — **not** here. Tests load them through
 `tests/helpers/fixtures.ts`. There is deliberately one copy: `docs/RUNBOOK.md` §6 and
-`docs/HANDOFF-2026-07-22.md` already point every agent at `.claude/context/fixtures/`, and a second
+`docs/archive/handoffs/HANDOFF-2026-07-22.md` already point every agent at `.claude/context/fixtures/`, and a second
 copy under `tests/` would be a second thing to drift.
 
 | Fixture set | Endpoint | Count |

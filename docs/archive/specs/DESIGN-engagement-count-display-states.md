@@ -2,7 +2,7 @@
 
 **Status:** Confirmed by owner, 2026-07-25 — approved for dev handoff
 **Author:** Jessica (UI/UX)
-**Mockup:** [`docs/design/engagement-count-display-states-mockup.html`](./engagement-count-display-states-mockup.html) — open in a browser. **Direction A is the shipped treatment**; Direction B is retained only as rejected history (see §4).
+**Mockup:** [`docs/archive/specs/engagement-count-display-states-mockup.html`](./engagement-count-display-states-mockup.html) — open in a browser. **Direction A is the shipped treatment**; Direction B is retained only as rejected history (see §4).
 **Related:** PRD-engagement-count-display-states.md §3, §4.2, §5 · GitHub #96 (FE), #71/#95 (BE — `like_and_view_counts_disabled`), #70 (FE — tooltip pattern being reused)
 
 This document is the citable record of the display treatment **confirmed** for the four engagement-count states across all three count-bearing surfaces. The mockup HTML is the visual reference; this file is the decision log a developer can cite without opening a browser. The four states and their high-level treatments are **owner-settled in the PRD (§3) and the #96 decision comment**; this doc specifies the *presentation* of those settled states, and all previously-open presentation questions are now resolved (see §4, §8).
@@ -147,4 +147,4 @@ This closes the former #96 Q3 open question. The mockup's carousel rows reflect 
 - **State 4 label:** **Direction A — quiet inline "plays" suffix — ships on all three surfaces** (list/table, cards, detail modal). Not a hybrid. Direction B (amber "PLAYS" chip) is **rejected**, retained in the mockup toggle as history only (see §4).
 - **Carousels:** **State 4 is Reels-only** — structural, not a preference: Instagram returns `video_play_count = null` for carousel children, so no play count exists to show (see §8).
 - **Info-icon color:** **info-blue** — owner-confirmed, verified non-conflicting with the app's error(red)/warning(amber) color grammar (see §2, §8).
-- Mockup `docs/design/engagement-count-display-states-mockup.html` updated to match: Direction B toggle labelled rejected, carousel rows show the settled Reels-only behaviour with no open-question callout, info icon rendered in info-blue.
+- Mockup `docs/archive/specs/engagement-count-display-states-mockup.html` updated to match: Direction B toggle labelled rejected, carousel rows show the settled Reels-only behaviour with no open-question callout, info icon rendered in info-blue.

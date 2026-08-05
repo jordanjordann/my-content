@@ -1,6 +1,6 @@
 BEGIN TRANSACTION;
 
--- Ticket #73 sub-ticket A (TDD `docs/TDD-fingerprint-read-override-api.md` §3 D2).
+-- Ticket #73 sub-ticket A (TDD `docs/archive/specs/TDD-fingerprint-read-override-api.md` §3 D2).
 -- `computed_at` records when `computed`/`consistency_index` were last
 -- (re)computed by `upsertFingerprint` — a fact distinct from `updated_at`,
 -- which also moves on a human-only `PATCH` via `patchFingerprintOverrides`.
