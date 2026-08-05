@@ -14,7 +14,9 @@ Reading conventions are inherited from the roadmap and used strictly:
 - **[CONFIRMED]** — explicit owner decision. Build to it.
 - **[RECOMMENDATION]** — my proposal. Owner has not ruled. **Do not treat as approved.**
 - **[OPEN]** — genuinely undecided. Nobody invents an answer.
-- **[VERIFY]** — an external-API fact this PRD needs that is **not** in `.claude/context/verified-facts.md`. Must be captured live before any code depends on it.
+- **[VERIFY]** — an external-API fact this PRD needs that is **not** in `.claude/context/verified-facts.md`. Must be captured live before any code depends on it. **V1–V3 are now approved to be captured (§10.2); they are not yet captured.** "Approved" is not "verified" — nothing may be built against an unverified shape.
+
+As of the 2026-08-05 revision, **every decision in §10 is [CONFIRMED]**. Remaining `[RECOMMENDATION]` language elsewhere in the document has been reconciled; if you find any, treat §10 as authoritative.
 
 ---
 
@@ -34,7 +36,8 @@ The analysis scorecard judges **content only**. Nothing in the product says whet
 
 | # | Criterion | How it is checked |
 |---|---|---|
-| S1 | For any analysis where a reach denominator is available, the table shows a performance score and a tier badge | Query: 0 rows with a usable reach denominator and a null performance score |
+| S1 | For any analysis where a usable denominator is available — reach for video, follower count for image-only content (§12) — the table shows a performance score and a tier badge | Query: 0 rows with a usable denominator and a null performance score |
+| S7 | **No user can mistake a follower-denominated engagement % for a reach-denominated one.** Every rendered engagement value carries its denominator in accessible text, and no sort or aggregate mixes the two | Component tests AC-20, AC-21; plus explicit designer sign-off at mockup review |
 | S2 | **Zero fabricated numbers.** Every numeral appearing in Gemini's performance prose exists in the computed input block handed to it | Automated: extract numerals from the prose fields, assert each is present in the stored computed-metrics block (rounding tolerance to be stated by the tech lead) |
 | S3 | Re-running the same analysis inputs twice at `temperature: 0` yields an identical performance score and identical computed ratios | Two runs, byte-diff the performance block. (This also discharges the determinism item still formally open from ticket #66 — see `verified-facts.md`, 2026-08-05 entry) |
 | S4 | An analysis whose like/view counts are disabled produces **no** performance score, an explicit unavailable state, and prose that says so | Manual + fixture test once a counts-disabled fixture exists ([VERIFY] V1) |
@@ -85,7 +88,7 @@ Three families of metric are in real use, and they disagree with each other by a
 - **Cost:** effectively zero. No extra API calls, no extra DB reads, a few hundred extra prompt tokens.
 - **Weakness, and it is fatal on its own:** it cannot see **reach itself**. A video shown to 200 people that got 20 likes scores 10% and looks superb. A video shown to 400,000 people that got 8,000 likes scores 2% and looks mediocre. The agency's actual question — *"did this post do well?"* — is mostly a question about **distribution**, and Option A is blind to distribution by construction.
 
-### 3.3 Option B — Tiered, graceful degradation [RECOMMENDATION]
+### 3.3 Option B — Tiered, graceful degradation [CONFIRMED — D1]
 
 Three tiers, evaluated together, presented in priority order. This is the boss's steer, and I agree with it with two amendments (§3.5).
 
@@ -93,7 +96,7 @@ Three tiers, evaluated together, presented in priority order. This is the boss's
 |---|---|---|---|
 | **1 — Engagement-per-reach** | `likes ÷ reach`, `comments ÷ reach` | reach + likes/comments from this post | Always, if the post exposes reach |
 | **2 — Creator's own baseline** | `this post's reach ÷ median reach of this creator's other analysed posts in the same bucket` → reported as **"3.2× typical reach"**; same treatment for engagement | ≥ N prior analyses of the same creator in the same comparability bucket | Once history exists |
-| **3 — Audience fallback** | `reach ÷ follower or subscriber count` | cached audience count | When there is no history; presented as **approximate**, never precise |
+| **3 — Audience fallback** | `reach ÷ follower or subscriber count` | cached audience count | When there is no history; presented as **approximate**, never precise. **Not applicable to image-only content**, which has no reach — see §12.5 |
 
 **Design intent: degrade gracefully.** A brand-new creator gets Tier 1 immediately. Tier 2 switches on once history exists and becomes the headline. Tier 3 covers the gap between them, explicitly labelled as the weakest read.
 
@@ -121,7 +124,7 @@ That second point is the strongest product argument in this PRD and I would not 
 
 ## 4. Inputs — what is fed to Gemini, and what is emphatically not
 
-### 4.1 The division of labour [RECOMMENDATION — owner must rule, decision D2]
+### 4.1 The division of labour [CONFIRMED — D2]
 
 - **Arithmetic happens in code.** All ratios, medians and multipliers are computed deterministically, stored, and frozen on the analysis row.
 - **Interpretation happens in Gemini.** It receives the computed numbers plus the video and produces the judgement.
@@ -159,7 +162,7 @@ Product requirements that follow:
 - **R-4.3.2** A ratio may only be computed between values of the **same reach kind**. Mixing a plays-denominated ratio into a views-denominated baseline is invalid and must fail loudly, not be averaged.
 - **R-4.3.3** `video_view_count === 0` on a top-level reel is **UNKNOWN**, not zero, unless `video_play_count` corroborates a genuine zero. A real zero-reach post is possible but vanishingly rare; the fixture proves the false-zero is common.
 
-### 4.4 Hidden, zero and absent counts — this is a product decision, and here it is [RECOMMENDATION, decision D3]
+### 4.4 Hidden, zero and absent counts [CONFIRMED — D3]
 
 **House rule, inherited from the live PRD §5.4 and non-negotiable: loud, honest failure. Never fabricated data.** A parser that invented a default score of `5` was treated as a serious bug. This feature must not reintroduce it under a new field name.
 
@@ -179,27 +182,27 @@ Behaviour:
 - **Gemini is told which inputs are unavailable and is instructed not to estimate them.** It may still comment on the content; it may not speculate about numbers it was not given.
 - **A missing performance layer must not fail the whole analysis.** The content scorecard is independent and still ships. This must not be conflated with the live PRD's rule that a *malformed* result fails loudly — absence of an input is a legitimate, expected state; a malformed model response is not.
 
-### 4.5 Post age / recency [RECOMMENDATION, decision D5]
+### 4.5 Post age / recency [CONFIRMED — D5; the 72h floor is an estimate, see caveat C1]
 
 A two-day-old reel and a two-year-old reel have had wildly different time to accumulate reach. **A ratio with no recency term systematically flatters old posts**, which is backwards for a tool meant to say what is working *now*.
 
 Recommendation — the honest minimum, not a fake model:
 
 1. **Pass post age explicitly** to Gemini, in days, alongside the ratios, and instruct it to weigh maturity in its verdict ("this is 3 days old; reach is still accumulating").
-2. **Maturity floor for precise claims.** Posts younger than a threshold (proposed: **72 hours**) get their verdict marked `provisional` in the contract and badged as such in the UI. The score is still produced; it is labelled as early.
+2. **Maturity floor for precise claims.** Posts younger than a threshold (**72 hours**, confirmed as a **starting value only** — see caveat C1 in §10.0; nobody has measured how long a post takes to settle, and it is expected to be tuned once real data exists) get their verdict marked `provisional` in the contract and badged as such in the UI. The score is still produced; it is labelled as early. **Implement it as a single named, configurable constant so tuning is a one-line change.**
 3. **Age-bounded baseline.** Tier 2 excludes posts under the maturity floor from the baseline median. Otherwise a creator who just posted five times this week gets a baseline made of immature posts.
 4. **Explicitly NOT doing:** inventing a views-per-day decay curve. We have **no longitudinal data** — the owner has ruled snapshots out (roadmap §3, 3B) — so any decay curve would be fitted to nothing. A views-per-day *velocity* number is available as an option (D5c) but I do not recommend leading with it: it makes brand-new posts look explosive and mature posts look dead, which is the same distortion in the opposite direction.
 
-### 4.6 Content-type comparability [RECOMMENDATION, decision D4]
+### 4.6 Content-type comparability [CONFIRMED — D4]
 
 Reels, carousels and YouTube Shorts **do not perform comparably** and must not share a scoring axis or a baseline.
 
 - **Reels / Shorts (video):** full Tier 1 + 2 + 3. Reach available.
 - **Video-bearing carousels:** reach exists per slide, not per post. A post-level reach is a **derived choice** (first slide? max? sum? — summing is wrong; it double-counts the same viewer). **Recommendation:** use the **first slide's** view count as post-level reach, label it as such, and drop confidence one level. Alternatives in D4.
-- **All-image carousels and single images:** **no reach exists in the payload at all.** Tier 1 and reach-based Tier 2 are impossible. These get Tier 3 only (engagement ÷ followers) at `LOW` confidence, or `UNAVAILABLE`. **This is a real product limitation, not a bug to fix later** — the data does not exist upstream.
+- **All-image carousels and single images:** **no reach exists in the payload at all.** Reach-denominated Tier 1 is impossible. **This is now fully resolved in §12** — they are scored on a follower-denominated engagement rate plus an untouched Tier 2, not excluded. Read §12 before implementing anything in this bullet.
 - **Baselines are bucketed.** A creator's median is computed within `(platform, content kind)`, never across. Consequence: cold start applies **per bucket**, so a creator with 5 reels and 2 carousels gets Tier 2 on reels only. That is correct, and it must be visible in the UI, not silent.
 
-### 4.7 YouTube: at parity — and this contradicts the roadmap's framing [RECOMMENDATION, decision D6]
+### 4.7 YouTube: at parity — and this contradicts the roadmap's framing [CONFIRMED — D6]
 
 The roadmap lists YouTube-at-parity as `[OPEN]`, reasoning that YouTube carries "structurally less context than Instagram (no audio flag, no dimensions/resolution)."
 
@@ -229,7 +232,7 @@ Frozen at analysis time. **Never recomputed** as the creator's audience later mo
 - Likes and comments, each with an availability state (§4.4)
 - Audience size **and** the age of the cached profile record, so staleness is inspectable
 - Post age in days at analysis time
-- Tier 1 ratios: engagement-per-reach, likes-per-reach, comments-per-reach
+- Tier 1 ratios: engagement-per-reach, likes-per-reach, comments-per-reach — **each carrying the required `denominator` discriminator (`REACH` / `FOLLOWERS`, R-12.2.2)**. For content kinds with no reach, the Tier 1 ratio is follower-denominated per §12.2 and no reach value is stored.
 - Tier 2: baseline median, sample size, bucket identity, resulting multiplier
 - Tier 3: reach-per-follower
 - Content kind and comparability bucket
@@ -244,7 +247,7 @@ Frozen at analysis time. **Never recomputed** as the creator's audience later mo
 - `drivers[]` — short Indonesian statements, each linking a **specific content trait to the measured performance** (e.g. *"hook 2 detik pertama langsung menyebut angka — kemungkinan besar ini yang menahan scroll"*). This is where the feature earns its keep; a bare number would not need Gemini at all.
 - `unavailableReason` — enum, when applicable (§4.4)
 
-### 5.3 Relationship to `overallScore` [RECOMMENDATION, decision D7]
+### 5.3 Relationship to `overallScore` [CONFIRMED — D7]
 
 **Keep them separate. Do not fold performance into `overallScore`.** They answer different questions, and collapsing them destroys the most useful signal this feature produces (§3.5, point 2): *good content that didn't travel*. Two axes, always shown as two.
 
@@ -288,10 +291,10 @@ Gherkin, phrased so each is actually checkable. **No screenshot-only criteria** 
 *When* reach is resolved,
 *Then* it comes from `video_view_count` with kind `VIEWS`, and the result is not `UNKNOWN`.
 
-**AC-6 — All-image carousel**
+**AC-6 — All-image carousel** *(superseded by §12; see AC-18 and AC-23)*
 *Given* `ig_carousel_all_images_10_slides.json`,
 *When* the analysis completes,
-*Then* Tier 1 and reach-based Tier 2 are `UNAVAILABLE` with reason `CONTENT_KIND_UNSUPPORTED`, and the row shows either Tier 3 at `LOW` confidence or no score at all — never a reach-based ratio.
+*Then* **no reach value and no reach kind is stored**, and the row is scored on the follower-denominated Tier 1 defined in §12.2 (plus Tier 2 where the bucket has history) — **never a reach-based ratio, and never an `UNAVAILABLE` state merely because the content kind is images**.
 
 **AC-7 — No fabricated numbers** (implements S2)
 *Given* any completed analysis with a performance block,
@@ -347,6 +350,8 @@ Gherkin, phrased so each is actually checkable. **No screenshot-only criteria** 
 
 - **`AnalysisGrid` / `AnalysisCard` are dead, unreachable code you have already decided to delete** (RUNBOOK §8.5; handoff item 3). **The table is the only view.** Nothing in 3C should be designed around a card layout, and the designer should not be shown one. `AnalysisGridSkeleton` is a **different, live** module — do not delete it by association.
 - **Desktop-only.** Not an oversight, a scope decision.
+- **The one constraint the designer must not design around: §12.3.** Two different engagement percentages exist in this table and they are **not comparable**. How they are distinguished is entirely the designer's call; **that they are unmistakably distinguished is a requirement, and the mockup review is where it gets signed off.**
+- **The column set in §8.3 is provisional until this mockup is reviewed** (caveat C2). The owner approved the *fields*; he has not yet seen the *table*. Expect and welcome cuts.
 
 ### 8.2 Columns that exist today and are never surfaced
 
@@ -359,7 +364,7 @@ Two things the owner should know:
 - **`engagement_rate` already exists as a stored `REAL` column and is written today.** Its denominator is not documented anywhere in the product docs. **3B supersedes it.** Whatever it currently means must be re-specified or dropped as part of the contract reset — otherwise the table would show two different, silently incompatible "engagement" numbers. Decision **D10**.
 - Confirming *which* of these the read paths actually select is a tech-lead check against the code. I am reporting the roadmap's claim plus the migration files, not a code audit.
 
-### 8.3 Recommended default columns [RECOMMENDATION, decision D9]
+### 8.3 Default columns [CONFIRMED — D9, provisional until mockup review per caveat C2]
 
 Ordered left to right. The goal is US-6: scan a creator's library and find what worked, without opening rows.
 
@@ -373,7 +378,7 @@ Ordered left to right. The goal is US-6: scan a creator's library and find what 
 | 6 | Likes / comments, with availability states | Same treatment. One combined cell or two — designer's call. |
 | 7 | **Performance score (1–5) + tier badge + confidence** | **3B's headline. The reason 3C waited for 3B.** |
 | 8 | **Baseline multiplier ("3.2×") when Tier 2 is available**, with `based on N videos` | The single most quotable number the product produces (§3.1, §3.5). |
-| 9 | Engagement-per-reach % | Tier 1. Pairs with #8 to give the good-content-vs-good-distribution read. |
+| 9 | Engagement % — **with its denominator unmistakably visible** (`REACH` vs `FOLLOWERS`) | Tier 1. Pairs with #8 to give the good-content-vs-good-distribution read. **R-12.3.1 applies here in full: a reel's 4% and an image carousel's 4% are different quantities and must not read as one column of comparable numbers.** The designer decides how; that it must be unmissable is not negotiable. |
 | 10 | Overall content score (1–5) | The existing quality axis. **Deliberately adjacent to #7 and never merged with it** (§5.3). |
 | 11 | `formatArchetype` + `hookType` badges | The two most decision-relevant Tier 1 style fields; they turn the table into "what kind of content works for this creator". |
 | 12 | Status | Failures must be visible, not silent. |
@@ -382,7 +387,8 @@ Ordered left to right. The goal is US-6: scan a creator's library and find what 
 
 ### 8.4 Behavioural requirements
 
-- **R-8.4.1** Sortable by performance score, baseline multiplier, reach, engagement-per-reach, overall score, and date.
+- **R-8.4.1** Sortable by performance score, baseline multiplier, reach, engagement, overall score, and date — **subject to R-12.3.2: an engagement sort must never interleave reach-denominated and follower-denominated values.**
+- **R-8.4.7** **The engagement denominator is visible without interaction** on every row that shows an engagement percentage (R-12.3.1). No hover, no legend, no prior knowledge of the content type required. **This is a hard constraint on the design, not a preference**; the mockup review must sign it off explicitly (caveat C2).
 - **R-8.4.2** Filterable by creator, platform, content kind, tier, and status.
 - **R-8.4.3** **Unavailable states render as their reason, not as blank or `0`.** "Counts hidden", "Not yet enough history", "No reach data for image posts". Precedent exists in the shipped engagement-count display states.
 - **R-8.4.4** A Tier 2 number never appears without its sample size.
@@ -410,15 +416,17 @@ Ordered left to right. The goal is US-6: scan a creator's library and find what 
 | Gemini output tokens | ~+300–600. Measured headroom is **83%** on a production-sized request; this stays comfortably clear of `MAX_TOKENS`. |
 | DB | One extra read per analysis (the creator's prior analyses, for the baseline). |
 | Deletion migration | Zero — 3 rows. |
-| **Unmeasured risk** | **Carousel token headroom has never been measured** (handoff, carried-forward item 6). The 83% figure comes from a single-video reel. A 10-slide carousel plus a longer prompt is the case that would actually bind. Measure before assuming — [VERIFY] V3. |
+| **Unmeasured risk** | **Carousel token headroom has never been measured** (`docs/HANDOFF-2026-08-05.md`, carried-forward item 6). The 83% figure comes from a single-video reel. A 10-slide carousel plus a longer prompt is the case that would actually bind. Measure before assuming — **V3, now approved (§10.2), and its measurement discharges that carried-forward item as well as this row.** Still unmeasured until someone runs it. |
 
 ### 9.2 Risks
 
-- **R1 — The counts-disabled payload shape is unverified** ([VERIFY] V1). Everything downstream is built defensively around the boolean flag, but the real payload is unseen. Capturing a genuine counts-disabled post costs 1 credit and needs owner approval.
-- **R2 — YouTube likes-hidden behaviour is unverified** ([VERIFY] V2). See §4.7.
+- **R1 — The counts-disabled payload shape is unverified** ([VERIFY] V1). Everything downstream is built defensively around the boolean flag, but the real payload is unseen. Capturing a genuine counts-disabled post costs ~1 credit and is **now approved (V1, §10.2)** — approved but **not yet captured**. Note §12.1's related finding: on an all-image carousel the flag is **absent entirely**, so absence must never be read as `false` (R-12.2.3).
+- **R2 — YouTube likes-hidden behaviour is unverified** ([VERIFY] V2, **now approved but not yet captured**). See §4.7. Until captured, a bare `0` on `likeCountInt` is `UNKNOWN`, not zero.
 - **R3 — The follower count is up to 7 days stale.** Accepted by the owner. Mitigated by Tier 2 being the headline (it does not use the follower count at all), and by never presenting Tier 3 as exact.
 - **R4 — Tier 2 on a 5-post baseline is statistically thin.** Same caveat the fingerprint carries. Mitigated by always showing the sample size, never by hiding it.
 - **R5 — The table gets too wide.** Mitigated by §8.3's explicit non-default list. If the designer pushes back, cut from the bottom of the default list, not from #7/#8.
+- **R6 — Two engagement percentages that look identical but are not comparable** (§12.3). **The highest-severity *product* risk introduced by §12**, because the failure is silent: nothing errors, a user simply draws a wrong conclusion and repeats it to a client. Mitigated by R-12.2.2 (a required denominator discriminator that must survive every layer, so dropping it is a type error), R-12.3.1–.3.3, AC-20/21, and explicit designer sign-off at mockup review.
+- **R7 — Slow Tier 2 cold start on image carousels** (§12.4). For a creator who rarely posts carousels, the bucket may sit under the minimum of 5 indefinitely, leaving image posts on a `MEDIUM`-confidence follower ratio with no baseline. **Accepted deliberately** — lowering the threshold would produce a number we could not defend. Mitigated by showing the state ("3 of 5"), never hiding it. Revisit when bulk ingestion (3A) lands.
 
 ### 9.3 Dependency on 3A (the only genuine one)
 
@@ -505,6 +513,166 @@ Recorded plainly rather than quietly worked around.
 1. **The roadmap's stated reason for questioning YouTube parity does not apply to 3B.** §3, 3B lists "[OPEN] whether YouTube is in scope at parity" and cites the missing audio flag and dimensions. Those are **content-analysis** context; for **performance** scoring YouTube is cleaner than Instagram (one unambiguous view count, confirmed numeric subscriber count). The question is still worth asking; the stated reasoning should not drive the answer. (§4.7)
 2. **The steer includes "shares/saves if available" — they are not available.** No captured ScrapeCreators payload for either platform exposes shares or saves. Tier 1 is likes and comments only. (§4.2)
 3. **There is no single "resolve reach" rule, and the roadmap's framing implies there is one.** §3, 3B correctly warns that view and play counts are distinct, but the reliability is **reversed between top-level reels and carousel children** (`verified-facts.md`, divergence 13). Any shared helper needs a branch, not a rule.
-4. **All-image carousels have no reach data at all.** Not mentioned in the roadmap's 3B section, and it means a whole content type can never receive a reach-based score on current data sources. (§4.6)
+4. **All-image carousels have no reach data at all.** Not mentioned in the roadmap's 3B section, and it means a whole content type can never receive a **reach-based** score on current data sources. **Resolved in §12** — they are scored on a different denominator rather than excluded. (§4.6, §12)
 5. **`analyses.engagement_rate` already exists and is populated**, with a denominator documented nowhere in the product docs. The roadmap describes 3B as adding performance scoring where "nothing captures whether a video performed" — true at the *product* level, but a computed engagement number is already sitting in the schema and must be reconciled, not ignored. (§8.2, D10)
 6. **`docs/PRD-analysis-schema-redesign.md` §9 still cites "2 rows in `analyses`, 1 in `profiles`."** The measured figure as of 2026-08-05 is **3 and 2**. Immaterial to any decision; noted for accuracy.
+7. **`verified-facts.md` overstates the `like_and_view_counts_disabled` fixture coverage.** Its OPEN-gap section states *"All five committed fixtures … have this field set to `false`."* **That is not true of `ig_carousel_all_images_10_slides.json`, where the field is ABSENT entirely** — verified 2026-08-05 by direct inspection; the string occurs zero times in the file. The practical effect is benign, because `adapter.ts` already tests `=== true` strictly and so does not coerce absent to `false`. But the documented claim is wrong and should be corrected. It also has a real product consequence: on an all-image carousel we **cannot tell whether counts are hidden** — we can only observe that likes and comments happen to be present. See §12.2. *(Reported for the tech lead; this PRD does not edit `verified-facts.md`.)*
+
+---
+
+## 12. All-image carousels — the resolution [CONFIRMED direction, pending the checks in §12.7]
+
+The first draft flagged that all-image carousels have no reach data on either platform and left it as a limitation. The owner asked directly what we do about it. **This section answers it.** It supersedes the corresponding bullet in §4.6.
+
+### 12.1 What I actually verified — no assumptions, no credits spent
+
+Everything below comes from the **committed** fixture `.claude/context/fixtures/scrapecreators-instagram/ig_carousel_all_images_10_slides.json` (captured under prior owner authorisation, `RUNBOOK.md` §6; source post `/p/DVtNQtmCQnO/`, 10 slides, every child `XDTGraphImage`) cross-checked against `.claude/context/verified-facts.md`. **Zero live API calls were made.** Field paths are given in full, from the response root.
+
+**Present and usable — the finding the resolution rests on:**
+
+| What | Field path | Value in the fixture |
+|---|---|---|
+| **Likes** | `data.xdt_shortcode_media.edge_media_preview_like.count` | `32313` |
+| **Comments** | `data.xdt_shortcode_media.edge_media_to_parent_comment.count` | `13840` |
+| Comments (duplicate #1) | `data.xdt_shortcode_media.edge_media_preview_comment.count` | `13840` — identical |
+| Comments (duplicate #2, **carousel-only flat field**) | `data.xdt_shortcode_media.comment_count` | `13840` — identical |
+| Post age | `data.xdt_shortcode_media.taken_at_timestamp` | `1773150940` (unix **seconds**) |
+| Caption | `data.xdt_shortcode_media.edge_media_to_caption.edges[0].node.text` | populated |
+| Slide count | `data.xdt_shortcode_media.edge_sidecar_to_children.edges[]` | length `10` |
+| Content-kind discriminators | `data.xdt_shortcode_media.__typename` / `.is_video` / children's `__typename` | `XDTGraphSidecar` / `false` / all `XDTGraphImage` |
+
+**Likes and comments are present. The resolution below therefore stands** (the collapse case in §12.6 does not apply).
+
+**Absent — confirmed by key-set inspection, not by inference:**
+
+- `data.xdt_shortcode_media.video_view_count` — **key not present**
+- `data.xdt_shortcode_media.video_play_count` — **key not present**
+- No reach-like field anywhere in the payload, top-level or per-child. Image children carry only 7 keys: `__typename, id, shortcode, display_url, video_url (null), is_video, dimensions`. **There is no per-slide impression, view or play count.**
+- Shares and saves — absent, as everywhere else (§4.2). Unchanged.
+
+**Two things the PRD had not accounted for, both of which matter:**
+
+1. **`like_and_view_counts_disabled` is ABSENT on this payload** — not `false`, absent. Every other committed Instagram fixture carries it as `false`. This is recorded as correction 7 in §11 and drives requirement **R-12.2.3** below.
+2. **The flat `comment_count` field exists only on this carousel shape**, duplicating `edge_media_to_parent_comment.count`. Already on record as divergence 3 in `verified-facts.md`. Harmless, but the implementation should pick **one** path and not treat three fields as three signals.
+
+**The `owner` block: confirmed a 5-key stub.** `data.xdt_shortcode_media.owner` contains exactly `id, username, full_name, is_verified, profile_pic_url`. **No `edge_followed_by`.** A reel or single-image post carries the full 17-key owner block including `edge_followed_by.count`; this carousel does not.
+
+**This is not a blocker, and it is important that nobody reads it as one.** It affects only *where the follower count is sourced*, not whether we have one. The pipeline already resolves the profile separately via `resolveProfile` against `/v1/instagram/profile`, where the follower count lives at `data.user.edge_followed_by.count` — verified live 2026-08-05 and present in the committed profile fixture. **No additional API call and no additional credit is introduced by §12**, because that profile resolution already happens today for every analysis. The only consequence is the one already accepted in §4.2 and R3: the follower count comes from a 7-day-TTL cache and is therefore **approximate**, and nothing may present it as exact.
+
+*Caveat on generality, stated rather than assumed:* this is **one** all-image-carousel sample. `verified-facts.md` has already been burned twice by generalising from a single carousel (the owner-stub and top-level-`dimensions` claims were both falsified by a second sample). I am asserting what this payload contains, not that every all-image carousel is identical. §12.7 turns that into a required defensive behaviour rather than an assumption.
+
+### 12.2 The resolution: substitute the denominator, do not drop the content type
+
+**[CONFIRMED] For all-image carousels and single images, the Tier 1 engagement metric is computed against the follower count instead of reach:**
+
+```
+engagement rate (follower-denominated) = (likes + comments) ÷ follower count
+```
+
+**I agree with this recommendation and want to be explicit about why, because "we could not get reach so we used followers" would be a bad reason.** This is not an improvisation to paper over a gap — it is **the standard Instagram engagement-rate definition**, and it exists precisely *because* image posts have never exposed reach publicly. It is the metric the industry adopted for exactly the situation we are in. §3.1 already documented it as family (1), "engagement rate by followers — the oldest convention, still the default on influencer rate cards", citing [Brandwatch](https://www.brandwatch.com/blog/social-media-engagement-rate/) and [Hootsuite](https://blog.hootsuite.com/calculate-engagement-rate/). The same research also explains why we do **not** prefer it where reach *is* available: reach fluctuates and most followers never see a given post, which is why engagement-by-reach is the better per-post measure for video. Both statements are true at once. **Use the best denominator available for the content type, and say which one you used.**
+
+Requirements:
+
+- **R-12.2.1** For a content kind with no reach field, the Tier 1 ratio is `(likes + comments) ÷ follower count`, computed in code (D2), stored in the computed block (§5.1) with an explicit denominator identifier of `FOLLOWERS`.
+- **R-12.2.2** Every stored engagement ratio carries a **`denominator` discriminator** — `REACH` or `FOLLOWERS` — as a required, non-nullable field alongside the existing reach `kind` (`PLAYS` / `VIEWS` / `UNKNOWN`, R-4.3.1). A ratio without a stated denominator is invalid and must fail loudly. **This field is the mechanism that makes §12.3 enforceable; it is not optional metadata.**
+- **R-12.2.3** Because `like_and_view_counts_disabled` may be **absent** on this payload shape (§12.1), absence must **never** be coerced to `false`. Absent means *we cannot tell*. Likes/comments are judged on their own presence: present and non-null ⇒ `AVAILABLE`; absent ⇒ `UNKNOWN`, and per D3 that produces **no score plus a visible reason**, not a zero.
+- **R-12.2.4** If the follower count is unavailable (no cached profile, profile resolution failed), the follower-denominated ratio is **not computed**. `unavailableReason` is `NO_AUDIENCE_DATA`. No substitute denominator may be invented.
+- **R-12.2.5** Confidence for a follower-denominated Tier 1 is capped at **`MEDIUM`**, never `HIGH`, because the denominator is a cached approximation rather than a same-capture measurement (R3).
+
+### 12.3 THE HARD REQUIREMENT: the two percentages are not comparable, and must never look comparable
+
+**This is the single most important requirement in §12, and it is directed at both the UI/UX designer and the tech lead.**
+
+Engagement-per-**reach** and engagement-per-**follower** both render as a percentage, and they are **not the same quantity, not on the same scale, and not comparable in either direction**. A reel at 4% and an image carousel at 4% mean entirely different things:
+
+- **4% of the people who actually saw it engaged** (reach-denominated), versus
+- **engagements equal to 4% of the follower base** (follower-denominated) — a number that can exceed 100% on a post that travels far beyond the followers, and that says nothing about how many people saw it.
+
+Presenting them as two cells in the same column, under the same header, in the same format, would be a **fabricated comparison** — the same class of error as labelling a play count "Views" (R-4.3.1), which this project already treats as a bug with a shipped test behind it.
+
+- **R-12.3.1 (binding)** Wherever an engagement ratio appears — **the analyses table, the detail view, any export, any tooltip, and the Gemini prompt** — the denominator must be **visibly and unambiguously distinguished**. A reader must be able to tell which quantity they are looking at **without hovering, without opening a legend, and without prior knowledge of the content type.**
+- **R-12.3.2 (binding)** Sorting, filtering and any baseline comparison must **never mix denominators**. A sort on "engagement" must not interleave reach-denominated and follower-denominated values in one ordering. This extends R-4.3.2 (same-kind ratios only) to cover the denominator axis as well. Mixing must fail loudly, not average.
+- **R-12.3.3 (binding)** No aggregate — no average, median, "typical engagement", or roll-up of any kind — may be computed across rows with different denominators.
+- **R-12.3.4** **The visual treatment is the designer's decision, not this PRD's.** Distinct columns, a persistent inline qualifier, differing units, separate sections — Jessica chooses. **What is not negotiable is the outcome:** a user must never be able to read the two as the same number. The mockup review (caveat C2) must explicitly sign this off, and the sign-off should be recorded.
+- **R-12.3.5** The tech lead should treat R-12.2.2's `denominator` discriminator as **required at every layer it crosses** — storage, the query/transform layer, the component props, and the prompt — so that dropping it is a type error rather than a silent presentation bug.
+
+### 12.4 Tier 2 survives untouched — and is probably the best signal a carousel has
+
+**Tier 2 never required reach.** It requires only a metric that is **comparable across that same creator's own posts**. Likes and comments satisfy that completely.
+
+So for an all-image carousel, Tier 2 reads: **"this post got 1.8× this creator's typical likes+comments for their image carousels."** That is meaningful, self-normalising, and immune to every objection raised against the follower denominator — the follower count does not appear in it at all, so staleness cannot touch it. **On a content type with no reach data, Tier 2 is plausibly the strongest signal available**, and the UI should not bury it beneath a weaker follower-denominated percentage.
+
+**Consistency with the confirmed D4 bucketing — and the cold-start cost, which is real:**
+
+- D4 confirms bucketing by `(platform, content kind)` with a **minimum of 5 per bucket**. An all-image carousel therefore compares only against **that creator's other all-image carousels** — correct, and required, since carousel engagement and reel engagement are not comparable either.
+- **R-12.4.1** The all-image-carousel bucket needs **its own 5 analysed posts**. It does not inherit, borrow or pool with the creator's reel bucket.
+- **Flagging this plainly, because it is a genuine cost of the confirmed decision:** for a creator who posts carousels rarely, this is a **slow cold start**. A creator with 20 reels and 3 image carousels gets Tier 2 on reels and **nothing** on carousels — and the carousels are exactly the posts where Tier 2 matters most, because they have no reach-based Tier 1 to fall back on. **In the worst case an image carousel shows only a `MEDIUM`-confidence follower-denominated ratio and no baseline.**
+- **R-12.4.2** That state must be **shown, not hidden**: "not enough carousel history yet — 3 of 5" (exact wording is the designer's). Per D3 and R-8.4.3, it renders as its reason, never as blank or `0`.
+- I am **not** recommending lowering the threshold for this bucket. D4 rejected a minimum of 3 for good reason, and a baseline built on two posts would be a number we could not defend in a client meeting. **The honest slow start is the right trade.** It is worth revisiting once bulk ingestion (3A) exists, since a batch import would fill several buckets at once — recorded in §9.3, not a 3B ticket.
+
+### 12.5 Net effect, and what Gemini is told
+
+**Image carousels lose one tier and keep two. They are not excluded from performance scoring.**
+
+| Tier | Reel / Short | Video-bearing carousel | **All-image carousel / single image** |
+|---|---|---|---|
+| **1 — engagement per reach** | Yes (`PLAYS` or `VIEWS`) | Yes, from the first slide, −1 confidence (D4) | **No — replaced by `(likes + comments) ÷ followers`, denominator `FOLLOWERS`, confidence ≤ `MEDIUM`** |
+| **2 — creator's own baseline** | Yes | Yes | **Yes, unchanged** — likes+comments vs. this creator's own all-image-carousel median, min 5 in bucket |
+| **3 — audience fallback (reach ÷ followers)** | Yes, demoted (§3.5) | Yes, demoted | **Not applicable** — there is no reach to divide. Tier 1 already uses the follower denominator; producing a second follower-denominated number would be a duplicate wearing a different label. |
+
+**What Gemini receives for an all-image carousel, stated plainly:**
+
+- **The follower-denominated engagement rate**, and **no reach figure of any kind**.
+- **R-12.5.1** The prompt must label it explicitly and unambiguously as **engagement relative to follower count**, and must state that **no reach/impression data exists for this post**. It must not be labelled "engagement rate" unqualified, and the word **"reach", "views" or "plays" must not appear** in connection with it.
+- **R-12.5.2** This follows the exact precedent already shipped for reach kind: a play count is labelled **PLAYS** and never "Views" (R-4.3.1, `user.engagementLabel.test.ts`). **The same discipline, the same enforcement mechanism, one new axis.** The performance prompt block is in scope for that test.
+- **R-12.5.3** The prompt must instruct Gemini **not to compare** a follower-denominated figure against any reach-denominated benchmark, its own prior knowledge of "typical engagement rates", or any other post's ratio with a different denominator. Combined with the D1 rejection of universal benchmarks (§3.4), the only legitimate comparison for this number is **the same creator's own bucket median** — i.e. Tier 2.
+- **R-12.5.4** Gemini's Indonesian prose must carry the distinction through to the reader. A verdict that says only *"engagement 4,2%"* is non-compliant; the denominator must be evident in the sentence.
+
+### 12.6 If the verification had gone the other way
+
+Recorded so the reasoning is auditable, and so that a future content type with genuinely no metrics is not forced into a shape that does not fit it.
+
+**Had likes and comments been absent from the all-image carousel payload, this resolution would have collapsed entirely** — there would have been no numerator, and no amount of denominator substitution would have produced a defensible number. The correct outcome would then have been the honest unavailable state confirmed in D3: `performanceScore: null`, `tierUsed: UNAVAILABLE`, `unavailableReason: CONTENT_KIND_UNSUPPORTED`, and UI text stating that Instagram exposes no performance data for this content type. **Never a fabricated number, never a zero standing in for an unknown.** They are present (§12.1), so this branch does not apply — but the rule it expresses is general and binding on any future content type.
+
+### 12.7 Checks this section requires (no new spend)
+
+- **R-12.7.1** Implementation must **detect** the absence of reach fields rather than assume it from `__typename`. A future or regional payload variant that *does* carry a reach field on an image carousel must be picked up, not ignored because we hard-coded "sidecars have no reach". Branch on **field presence**, per the single-sample caveat in §12.1.
+- **R-12.7.2** Conversely, an all-image carousel that unexpectedly lacks likes **or** comments must land in the §12.6 unavailable state, not compute a partial ratio from whichever field survived.
+- **R-12.7.3** All of §12 is verifiable against the **committed** fixture. **No part of §12 requires V1, V2 or V3, and no part of it justifies a live call.**
+
+### 12.8 Additional acceptance criteria
+
+**AC-18 — Follower-denominated Tier 1 on an all-image carousel**
+*Given* the committed fixture `ig_carousel_all_images_10_slides.json` (likes `32313` at `edge_media_preview_like.count`, comments `13840` at `edge_media_to_parent_comment.count`, no `video_view_count`, no `video_play_count`) and a resolved follower count,
+*When* the analysis completes,
+*Then* a Tier 1 ratio is stored equal to `(32313 + 13840) ÷ follower count`, its `denominator` field is `FOLLOWERS`, its confidence is at most `MEDIUM`, and **no reach value and no `PLAYS`/`VIEWS` reach kind is stored for that analysis**.
+
+**AC-19 — Absent hidden-counts flag is not read as `false`**
+*Given* the same fixture, in which the key `like_and_view_counts_disabled` is **absent**,
+*When* availability states are resolved,
+*Then* the code path evaluates `=== true` strictly, likes and comments are `AVAILABLE` on their own presence, and no branch treats the absent key as an affirmative "counts are visible" signal. Asserted directly against the fixture.
+
+**AC-20 — Denominators never mix in a sort**
+*Given* a table containing both reach-denominated and follower-denominated engagement values,
+*When* the user sorts by engagement,
+*Then* the two denominators are not interleaved into a single ordering (component test), and no aggregate is computed across them (R-12.3.3).
+
+**AC-21 — The distinction is visible without interaction**
+*Given* a rendered row for an all-image carousel and a rendered row for a reel, both showing an engagement percentage,
+*When* the rendered output is inspected with no hover, no tooltip and no legend,
+*Then* each row's engagement cell carries a denominator indicator in its accessible text. Asserted as a component test on the rendered text content — **not a screenshot**, per §6's rule.
+
+**AC-22 — Gemini is told the right thing**
+*Given* an all-image carousel analysis,
+*When* the assembled prompt is inspected,
+*Then* it contains the follower-denominated engagement figure explicitly labelled as relative to follower count, contains an explicit statement that no reach data exists for this post, and contains **no** reach/views/plays figure or label for that post. Enforced by extending `user.engagementLabel.test.ts` to the performance prompt block.
+
+**AC-23 — Tier 2 works with no reach**
+*Given* a creator with 5 prior completed all-image-carousel analyses in the same bucket,
+*When* a sixth all-image carousel is analysed,
+*Then* `tierUsed` is `CREATOR_BASELINE`, `basedOnVideos` is 5, the multiplier is computed from likes+comments against the bucket median, and **no reach value is involved in the computation**.
+
+**AC-24 — Carousel cold start is shown, not hidden**
+*Given* a creator with 3 all-image-carousel analyses (below the D4 minimum of 5) and 20 reel analyses,
+*When* a fourth all-image carousel is analysed,
+*Then* `tierUsed` is not `CREATOR_BASELINE`, the reel bucket is **not** used as a substitute baseline, and the UI renders an explicit insufficient-history reason rather than a blank cell or a `0`.
