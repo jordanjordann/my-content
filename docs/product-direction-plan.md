@@ -13,9 +13,12 @@
 
 Reading conventions used throughout:
 
-- **[CONFIRMED]** — an explicit decision from the owner. Build to it.
+- **[CONFIRMED]** — an explicit decision from the owner. Build to it. Note this means **decided**, not **done**.
+- **[SHIPPED]** — was [CONFIRMED] or [RECOMMENDATION], and has since actually been built and merged. Distinct from [CONFIRMED]: this is code on `main`, not an intention.
 - **[RECOMMENDATION]** — the boss's or tech lead's proposal. The owner has not objected but has not explicitly confirmed. Do not treat as approved.
 - **[OPEN]** — genuinely undecided. Nobody should invent an answer here.
+
+**Status as of 2026-08-05:** Phases 1 and 2 have **shipped**. Phase 4 is **partially shipped** — carousel multi-media and the "Red Flags" relabel are in; `gemini_file_uri` reuse and `metric_snapshots` are not. Phases 3 and 5 are **not started**. See the latest HANDOFF for full session detail, and `docs/RUNBOOK.md` for the live operational state.
 
 ---
 
@@ -66,22 +69,24 @@ Consequences:
 
 Three ingestion paths, not one. This affects the generation surface's input design and needs to be in the Q1.4/generation PRD.
 
-### Where generation lives [CONFIRMED]
+### Where generation lives [OPEN — see §5 OPEN 2]
 
-**Content generation lives under the creator's profile page.** Not a new top-level "Generate" surface.
+**The working proposal is: content generation lives inside the creator's profile page**, rather than as a new top-level "Generate" surface. This is a **proposal from the boss and tech lead, not an owner decision.** The owner has said he will make planning decisions of this kind later. Do not build against it as settled.
 
-This **resolves the previously-deferred Q2.8 (sidebar / app-shell IA) question** explicitly. `Sidebar.tsx` today has one section and one link; the answer to "how does the planner coexist with the app shell" is that it does not get its own shell entry — it hangs off the creator you are generating for, because generation is meaningless without a creator whose style you are generating in.
+The reasoning behind the proposal: generation is meaningless without a creator whose style you are generating in, so the natural home is the creator you are generating for rather than a standalone shell entry.
 
-**This promotes the profiles module significantly, and it is the largest sequencing change in this revision.** Profiles was previously placed "down the long line" (the owner's Q2.7 answer, and the last revision of this plan had it in the final phase). It is now the **home of the core feature**.
+**Q2.8 (sidebar / app-shell IA) remains deferred and open.** `Sidebar.tsx` today has one section and one link. If the proposal above is accepted, Q2.8 would resolve as a side effect — generation would take no shell entry of its own. But that is a *consequence of a decision not yet made*, not an answer in itself. Q2.8 stays open and is tracked as such.
 
-The creator profile page is **no longer a detail page**. It becomes a real destination holding:
+**[PROVISIONAL — contingent on [OPEN 2] being resolved]** If the proposal holds, it **promotes the profiles module significantly**, and that would be the largest sequencing change in this revision. Profiles was previously placed "down the long line" (the owner's Q2.7 answer, and an earlier revision of this plan had it in the final phase). Under the proposal it becomes the **home of the core feature** — but this promotion rests entirely on the proposal being confirmed, so treat the sequencing below as provisional.
+
+Under that proposal, the creator profile page would be **no longer a detail page**. It would become a real destination holding:
 
 - scraped **facts** (`profiles` — follower count, bio, account type),
 - the **editable style fingerprint** (the separate derived record from above),
 - **that creator's analyses**,
 - the **Generate** action.
 
-Sequencing consequence: the profiles-module work moves out of the long line and into the mainline plan — see §3 Phase 4. Nothing about generation can ship without it.
+Sequencing consequence **[PROVISIONAL — contingent on [OPEN 2] being resolved]**: if the proposal is confirmed, the profiles-module work moves out of the long line and into the mainline plan. Until then it stays where §3 Phase 5 puts it, blocked on [OPEN 2]. Either way, nothing about generation can ship without it.
 
 ### Bulk ingestion by profile [CONFIRMED] — NEW
 
@@ -95,21 +100,23 @@ One action instead of N manual pastes. **The same flow applies to any profile, i
 
 Three technical notes that constrain when and how this can be built:
 
-**(a) The profile endpoint exists; post listing is NOT verified.** A ScrapeCreators profile endpoint is **already integrated** — `lib/server/profiles/`, used today for follower count. **Whether ScrapeCreators can list a profile's recent posts is unverified.** Treat it as requiring verification before any ticket is written, and **do not guess at response shapes.** This repo has a documented history of exactly that bug class: the `trim=true` bug that broke **100% of live traffic**, and a dual-shape adapter built against a response shape that **never occurs**. Verification output goes into `.claude/context/verified-facts.md` (which still does not exist — see 2.2).
+**(a) The profile endpoint exists; post listing is NOT verified.** A ScrapeCreators profile endpoint is **already integrated** — `lib/server/profiles/`, used today for follower count. **Whether ScrapeCreators can list a profile's recent posts is unverified.** Treat it as requiring verification before any ticket is written, and **do not guess at response shapes.** This repo has a documented history of exactly that bug class: the `trim=true` bug that broke **100% of live traffic**, and a dual-shape adapter built against a response shape that **never occurs**. Verification output goes into `.claude/context/verified-facts.md`, **which now exists** and is the mandated source of live-verified external-API facts (see 2.2).
 
 **(b) CRITICAL DEPENDENCY: bulk ingestion is blocked on the job queue (Q2.3).** Analyzing 5–20 posts in one user action **cannot** run synchronously behind the existing `maxDuration = 300` HTTP request in `app/api/analyze/route.ts`. That loop is **serial**, and this is precisely the timeout failure mode the audit identified. Bulk ingest is therefore **not a standalone feature — it is the first real CONSUMER of the queue work.** "Add creator → auto-analyze their posts" **cannot ship before Q2.3 lands.** This strengthens the case for keeping Q2.3 at its current priority rather than sliding it.
 
 **(c) Cost implication.** N posts × (1–2 SC credits + one Gemini video analysis per post). At a 5-post minimum this is modest. The **ceiling** scales with how many posts an agency chooses to ingest per creator, and there is currently **no quota and no spend visibility** (Q2.4 — `credits_remaining` is returned by ScrapeCreators and discarded). **Bulk ingest is the point at which the missing cost controls start to actually matter.** They were deferrable while ingestion was one URL at a time; they stop being deferrable when one click spends 20 analyses.
 
-### The style fingerprint
+### The style fingerprint [SHIPPED]
 
-Answers Q2.7's open sub-question. All of the following is **[RECOMMENDATION]** — proposed by the boss, not objected to by the owner, but not explicitly confirmed:
+Answers Q2.7's open sub-question. This started as a **[RECOMMENDATION]** from the boss. **It has since been built and merged** — tickets **#72** (aggregation + recompute) and **#73** (read + human override API), both closed. What shipped:
 
-- **Derive it by AGGREGATING that creator's analyzed videos.** Do **not** run a separate analysis pass on profile metadata. Bio and profile picture tell you nothing about speaking tone; style lives in the content.
-- **Store it as a derived, versioned `profile_style` record** — computed and persisted, **not** computed on the fly at generation time. It is reused on every generation for that creator and is cheap to recompute when new analyses land.
-- **Keep it in a table SEPARATE from `profiles`.** `profiles` holds scraped **facts**; style is **inferred**. Mixing the two invites the exact bug class this repo has already hit twice — the nullable-boolean coercion bug in `lib/server/profiles/repository.ts` / `service.ts` where "unknown" silently became a concrete wrong value.
-- **Human-editable / overridable.** The user is an agency; they will want to correct *"no, this creator's tone is warmer than that."* Corrections improve every future generation and build trust. Cheap to build now, awkward to retrofit once generations depend on the record.
-- **Include caption/text style**, not just video style. Captions are where text voice lives and they are already stored on `analyses`.
+- **Derived by AGGREGATING that creator's analyzed videos.** No separate analysis pass on profile metadata — bio and profile picture tell you nothing about speaking tone; style lives in the content. **Built as specified.**
+- **Stored as a derived record** — computed and persisted, **not** computed on the fly at generation time. Reused on every generation for that creator, cheap to recompute when new analyses land. **Built as specified.**
+- **In a table SEPARATE from `profiles`** — `profile_style_fingerprints`, added by **migration `010_profile_style_fingerprints.sql`** (with `011_fingerprint_computed_at.sql` following). `profiles` holds scraped **facts**; style is **inferred**, and keeping them apart avoids the nullable-boolean coercion bug class this repo already hit twice in `lib/server/profiles/`. **Built as specified.**
+- **Human-editable / overridable — built.** The table uses a deliberate **two-JSON-column split**: `computed` (regenerated wholesale from the analyses) and `overrides` (human input, never clobbered by a recompute); reads merge them. The edit surface is **`PATCH /api/profiles/[id]/fingerprint`** (with `GET` alongside it), from ticket #73. This is the backstop that makes a thin 5-video sample safe to ship on — see the cold-start caveat below.
+- **Caption/text style included**, not just video style. Captions are where text voice lives and they are already stored on `analyses`. **Built as specified.**
+
+Remaining work here is **UI**, not data: there is no profile-page surface for viewing or editing the fingerprint yet. That sits in Phase 5 and inherits [OPEN 2]'s status.
 
 ### Cold start [CONFIRMED]
 
@@ -192,17 +199,17 @@ The relabel "Recurring Red Flags" → "Red Flags" is therefore correct for a *st
 
 Order below follows the owner's explicitly stated priorities. Deviations and additions are marked.
 
-### Phase 1 — Security & platform parity [APPROVED AND DISPATCHED — IN PROGRESS]
+### Phase 1 — Security & platform parity [COMPLETE — shipped]
 
-**Status:** the owner has **approved** this phase and it has been **dispatched to the team**. It is in progress, **not complete**. Currently in flight:
+**Status:** this phase is **done and merged.** All four workstreams landed:
 
-- **(a)** `proxy.ts` HMAC auth verification fix,
-- **(b)** rate limiting on `/api/auth/verify`,
-- **(c)** the `existingId` guard (Q3.7)
+- **(a)** `proxy.ts` HMAC auth verification fix — **shipped.** `proxy.ts` now calls `verifySessionToken(token)`; cookie presence alone no longer passes.
+- **(b)** rate limiting on `/api/auth/verify` — **shipped.** Per-client (`checkPinRateLimit`) plus a global backstop (`checkGlobalPinRateLimit`).
+- **(c)** the `existingId` guard (Q3.7) — **shipped.** `app/api/analyze/route.ts` rejects `existingId` when `urls.length > 1`. See [OPEN 3]'s resolution note in §5.
 
-— all three in **one PR by the backend developer**; and separately,
+— (a)–(c) landed in **one backend PR**; and separately,
 
-- **(d)** the YouTube work. **Feasibility verification is COMPLETE.** The full YouTube → ScrapeCreators migration was investigated and found **NOT VIABLE** (see 1.1). The owner's decision: **KEEP YouTube**, on a **hybrid** — `yt-dlp` retained for download, ScrapeCreators for metadata. Tickets **#53 → #54 → #57**, strictly serial, sequenced after the security fix.
+- **(d)** the YouTube work — **shipped.** Tickets **#53, #54 and #57 are all closed.** **Feasibility verification is COMPLETE.** The full YouTube → ScrapeCreators migration was investigated and found **NOT VIABLE** (see 1.1). The owner's decision: **KEEP YouTube**, on a **hybrid** — `yt-dlp` retained for download, ScrapeCreators for metadata. Tickets **#53 → #54 → #57**, strictly serial, sequenced after the security fix.
 
 #### 1.1 YouTube: hybrid `yt-dlp` (download) + ScrapeCreators (metadata) [CONFIRMED]
 
@@ -219,9 +226,9 @@ Owner, originally: *"we can make youtube similar flow like instagram using Scrap
 
 **Security — separate from the above, and confirmed exploitable.** The command injection in `lib/server/analysis/fetcher/youtube.ts` is **not theoretical: it was proven end-to-end**, with `$(hostname)` executed via a crafted URL. Because `yt-dlp` is being retained, this fix is **mandatory, not optional**. The fix in flight: **`execFile` / argv arrays at both call sites**, plus **end-anchoring the classifier regexes**.
 
-**Tickets — the chain is `#53 → #54 → #57`, strictly serial, after the security fix.**
+**Tickets — the chain was `#53 → #54 → #57`, strictly serial, after the security fix. All three are now closed and shipped.**
 
-- **#53** — ScrapeCreators **YouTube client** (`/v1/youtube/video` + `/v1/youtube/channel`). Its **mandatory first step** is capturing **live payloads** into `.claude/context/verified-facts.md` **before any field mapping** — no field names are to be guessed (see 2.2; the file still does not exist).
+- **#53** — ScrapeCreators **YouTube client** (`/v1/youtube/video` + `/v1/youtube/channel`). Its **mandatory first step** is capturing **live payloads** into `.claude/context/verified-facts.md` **before any field mapping** — no field names are to be guessed (see 2.2; the file now exists and carries those captured payloads).
 - **#54** — rewrite the YouTube fetcher's **metadata path** to ScrapeCreators, **keeping `yt-dlp` for video URL extraction**. Carries the **Shorts-only settled policy** statement and the classifier acceptance criteria.
 - **#57** — YouTube **profile resolution**: subscriber count → follower count → engagement rate, and removal of the Instagram-only pipeline guard (`if (classified.platform === "instagram")` in `lib/server/analysis/pipeline/index.ts`).
 
@@ -244,11 +251,11 @@ Neither is a regression against today's behaviour, but together they are a **rea
 
 **Downstream is unaffected** — the `MediaMetadata` interface absorbs the metadata-source swap. That is the whole point of it.
 
-**Cost: moderate.** New SC endpoints (video + channel), new adapter mapping, classifier regex anchoring, `execFile` conversion. Must be verified against real responses (see 2.2 below — `.claude/context/verified-facts.md` still does not exist).
+**Cost: moderate.** New SC endpoints (video + channel), new adapter mapping, classifier regex anchoring, `execFile` conversion. Must be verified against real responses (see 2.2 below — `.claude/context/verified-facts.md` now exists and holds them).
 
 **Unblocks:** honest cross-platform analysis; closes a **confirmed-exploitable** RCE.
 
-#### 1.2 Auth middleware + rate limiting [CONFIRMED — dispatched, in progress]
+#### 1.2 Auth middleware + rate limiting [SHIPPED]
 
 Owner: *"create a ticket for this too, we can implement this after this grilling session."*
 
@@ -259,23 +266,36 @@ Owner: *"create a ticket for this too, we can implement this after this grilling
 
 **Cost: cheap.** Hours, not days.
 
-#### 1.3 `existingId` guard (Q3.7) [IN PROGRESS — included in the dispatched Phase 1 PR]
+#### 1.3 `existingId` guard (Q3.7) [SHIPPED]
 
 Q3.7 was never answered in the questions doc and remains the **only unanswered question from the original set**. `app/api/analyze/route.ts` line ~45 passes the same `existingId` to every URL in the loop, so `{urls: [a,b,c], existingId: "x"}` makes three analyses fight over one row. Only reachable via the detail modal today, but it is an unguarded API contract.
 
-**Status change:** the boss proposed bundling the fix with the security work. The owner has since **approved the security work going ahead, and the `existingId` fix was included in that dispatch.** It is therefore **no longer merely a proposal** — it is in progress as part of Phase 1, in the same backend PR as 1.2.
+**Status: resolved and shipped.** The boss proposed bundling the fix with the security work; the owner approved the security work, the fix rode along in the same backend PR as 1.2, and it is now on `main`.
 
-Fix: reject `existingId` when `urls.length > 1`.
+Fix as shipped: `app/api/analyze/route.ts` rejects the request when `existingId` is a non-empty string and `urls.length > 1`, with an explicit error — *"existingId can only be used with a single URL. Re-analysis targets one existing row and cannot be applied to a batch."*
 
 **Cost: trivial.**
 
 ---
 
-### Phase 2 — The analysis contract (the core of the work)
+### Phase 2 — The analysis contract (the core of the work) [SHIPPED]
 
-This phase is where the product is actually decided. It needs **a dedicated PRD** — owner: *"We will need a separate PRD for this to plan in details."*
+This phase is where the product is actually decided. It needed **a dedicated PRD** — owner: *"We will need a separate PRD for this to plan in details."*
 
-**Status: the Q1.4 + Q1.5 PRD is being written now** by the project manager at **`docs/PRD-analysis-schema-redesign.md`**. In progress, not finished. It is the input to every ticket in this phase; do not write Phase 2 tickets ahead of it. It must absorb the confirmed cold-start minimum of **5 analyzed videos** (§1) and the style-first output contract below.
+**Status: the Q1.4 + Q1.5 PRD is complete and approved** at **`docs/PRD-analysis-schema-redesign.md`**, and **Phase 2 has shipped.** It absorbed the confirmed cold-start minimum of **5 analyzed videos** (§1) and the style-first output contract below.
+
+Tickets **#65 → #70** are all closed:
+
+- **#65** — taxonomy module: isomorphic enums, Indonesian labels, schema-version constant.
+- **#66** — Gemini structured output: `responseSchema`, `temperature: 0`, token budget.
+- **#67** — prompt rewrite: 5-band rubrics, Indonesian few-shots, discriminator rules.
+- **#68** — parser + validation rewrite: loud failure, no fabricated scores.
+- **#69** — pipeline + read-API wiring for the new contract, **migration `007_add_schema_version.sql`**.
+- **#70** — frontend: 1–5 scale, new scorecard dimensions, Tier 1 style section, and the **"Red Flags" relabel** (§4.3).
+
+Migrations **`007_add_schema_version.sql`** and **`008_delete_legacy_pre_redesign_analyses.sql`** landed with this phase. (Migrations 009–011 belong to the carousel and style-fingerprint work — see §4.1 and §1.)
+
+The old instruction *"do not write Phase 2 tickets ahead of the PRD"* is **retired** — the PRD is finished and the tickets it gated are merged.
 
 #### 2.1 Q1.4 + Q1.5 as ONE scope [CONFIRMED as next priority; the merge is the tech lead's position]
 
@@ -319,23 +339,28 @@ These are not the same thing and the schema design depends on keeping them apart
 
 **Unblocks:** everything about generation. Nothing downstream can be built on the current contract.
 
-#### 2.2 [RECOMMENDATION] Validation harness + tests — ALONGSIDE 2.1, not after
+#### 2.2 [SHIPPED] Validation harness + tests — was a [RECOMMENDATION] to run ALONGSIDE 2.1
 
 Owner answered **"yes"** to Q2.9 but placed it after the queue in the priority list.
 
 **The tech lead's position: it belongs in Phase 2, running in parallel with the schema redesign.** Reason: redesigning the schema without tests means you cannot distinguish a **prompt regression** from an **extraction bug**. You will be changing the prompt and the parser simultaneously, with no signal telling you which one broke.
 
-Current state: **zero test files in the entire repo.** No CI. GitHub issue **#36** ("[BE] Validation harness: verify ScrapeCreators mapping against real URLs") is still open. `.claude/context/verified-facts.md` **does not exist**, despite `AGENTS.md` mandating that all external-API work read it and halt if it is absent — which means every external-API ticket in this plan is technically blocked by its absence.
+Current state — **all four of the gaps this section originally recorded are now closed:**
 
-Minimum viable version:
+- **The repo has a real automated test suite.** vitest, run with `npm run test`. As re-measured on **2026-08-05**: **29 test files, 319 tests**. Two vitest projects (`node` and `jsdom`) run from one `vitest.config.ts`. The suite is **offline by construction** — `tests/setup/blockLiveFetch.ts` stubs `fetch` to throw unless a test explicitly opts in. Fixtures live in `.claude/context/fixtures/`. `docs/RUNBOOK.md` §7 is the live reference and is kept current; read the count there rather than trusting this line.
+- **CI exists** — `.github/workflows/ci.yml` (ticket **#83**, closed) runs test + typecheck + lint + build, with a hard no-live-API-calls guarantee.
+- **Issue #36** ("[BE] Validation harness: verify ScrapeCreators mapping against real URLs") is **closed**.
+- **`.claude/context/verified-facts.md` exists** and is the mandated source of live-verified external-API facts that `AGENTS.md` requires every external-API ticket to read. Nothing is blocked on its absence any more.
+
+The minimum viable version originally specified below has been delivered:
 
 - fixture-based tests for `lib/server/analysis/fetcher/adapter.ts` against captured real SC payloads (Instagram post, carousel, video-child, and the new SC YouTube video + channel metadata shapes),
 - golden-file tests for `lib/server/analysis/parser/analysis.ts` + `validation.ts`,
 - create `.claude/context/verified-facts.md` and populate it from the YouTube migration work in Phase 1.
 
-**Owner has not explicitly re-sequenced this. Flagged as a recommendation.**
+Originally flagged as a recommendation the owner had not re-sequenced. **It went ahead alongside Phase 2 and is now built.**
 
-**Cost: moderate, front-loaded.** Pays for itself inside Phase 2.
+**Cost: moderate, front-loaded.** Paid for itself inside Phase 2, as predicted.
 
 ---
 
@@ -357,17 +382,21 @@ Scope: job table + background worker + polling or SSE + a reaper for stale `pend
 
 ---
 
-### Phase 4 — Media & efficiency
+### Phase 4 — Media & efficiency [PARTIALLY SHIPPED]
 
-#### 4.1 Carousel multi-media analysis [CONFIRMED]
+4.1 (carousel) and 4.3 (the "Red Flags" relabel) have **shipped**. 4.2 (`gemini_file_uri` reuse) and 4.4 (`metric_snapshots`) are **still open and not built**.
+
+#### 4.1 Carousel multi-media analysis [SHIPPED]
 
 Owner: **a 7-slide carousel = ONE content analysis** — one holistic verdict on how the whole thing goes. **ALL slides included as input, both images AND videos.**
 
 **Explicit note, because the questions doc flagged this as a conflict: it is NOT a conflict with migration 005.** `migrations/005_enforce_single_content_analysis.sql` enforces **one CONTENT per analysis**. A carousel is still **one content** — it just has **multiple MEDIA PARTS** sent in a single Gemini call. The constraint holds unchanged.
 
-The real work is technical, not schematic. Today `lib/server/analysis/fetcher/adapter.ts` `resolveVideoChild()` takes the **first** video slide only; duration, audio and video URL all come from that one node. The download/upload path in `lib/server/analysis/downloader/` and `lib/server/analysis/gemini/` handles **exactly one video file end to end**.
+**Shipped via ticket #71 / PR #95, with `migrations/009_analysis_mode_images_only.sql`.** All slides now go to Gemini as **N media parts in one call**. The migration widens the `analysis_mode` CHECK to include `'images_only'` and adds `play_count`, `coauthor_producers` and `like_and_view_counts_disabled` (37 → 39 columns on `analyses`).
 
-Scope:
+The problem it fixed, recorded for context: `lib/server/analysis/fetcher/adapter.ts` `resolveVideoChild()` took the **first** video slide only — duration, audio and video URL all came from that one node — and the download/upload path in `lib/server/analysis/downloader/` and `lib/server/analysis/gemini/` handled **exactly one video file end to end**.
+
+Scope, as delivered:
 
 - generalize the media path from one file to **N media parts** per analysis (mixed images + videos),
 - N uploads, or inline image parts for images,
@@ -388,11 +417,11 @@ Owner: *"reuse the gemini_file_url."*
 
 **Cost: cheap.** Immediate saving on every re-analyze.
 
-#### 4.3 "Recurring Red Flags" → "Red Flags" [CONFIRMED]
+#### 4.3 "Recurring Red Flags" → "Red Flags" [SHIPPED]
 
-String change in `AnalysisPatternsSection.tsx`. See §2's factual correction for why: the output is neither recurring nor comparative.
+**Done.** Landed alongside ticket **#70** (the Phase 2 frontend ticket). The label now lives in `AnalysisRedFlagsSection.tsx` and reads **"Red Flags"**. See §2's factual correction for why: the output is neither recurring nor comparative.
 
-**Cost: trivial.** Can ship any time.
+**Cost: trivial**, as expected.
 
 #### 4.4 `metric_snapshots` groundwork [RECOMMENDATION — reduced scope]
 
@@ -439,7 +468,7 @@ Explicit list of premises in `product-direction-open-questions.md` that are now 
 
 ## 5. Open questions still blocking
 
-Two remain. **Do not invent answers.** [OPEN 1] has since been resolved and is kept below with its resolution recorded.
+**One remains — [OPEN 2]. Do not invent answers.** [OPEN 1] and [OPEN 3] have since been resolved and are kept below with their resolutions recorded.
 
 ### ~~[OPEN 1]~~ Cold-start minimum for the style fingerprint — **RESOLVED [CONFIRMED]**
 
@@ -459,9 +488,11 @@ A new top-level "Generate" surface, or hanging off a creator's profile page?
 
 The boss suspects **inside the profile**, now that generation is per-creator-style — which would incidentally resolve the previously-deferred Q2.8 sidebar question (`Sidebar.tsx` currently has one section, one link). **Not confirmed by the owner.** Blocking any generation UI work in Phase 5.
 
-### [OPEN 3] Q3.7 — `existingId` applied to every URL in the batch
+### ~~[OPEN 3]~~ Q3.7 — `existingId` applied to every URL in the batch — **RESOLVED [SHIPPED]**
 
-Never answered in the questions doc. The boss proposes bundling the fix with the Phase 1 security work. **Not yet approved.** Blocking nothing, but it is an open API-contract hole.
+**Approved and fixed.** The boss's proposal to bundle it with the Phase 1 security work was accepted; the guard shipped in the same backend PR. `app/api/analyze/route.ts` now rejects the request when `existingId` is present and `urls.length > 1`. See §3, 1.3. Original framing kept below for the record:
+
+Never answered in the questions doc. Blocking nothing, but it was an open API-contract hole.
 
 ---
 
