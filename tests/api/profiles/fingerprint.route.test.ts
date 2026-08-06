@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Client } from "@libsql/client";
 import type { StyleAttributes } from "@/lib/server/analysis/types";
+import { ANALYSIS_SCHEMA_VERSION } from "@/lib/server/analysis/schema";
 
 /**
  * Route-level tests for `app/api/profiles/[id]/fingerprint/route.ts`
@@ -73,7 +74,7 @@ async function insertAnalysis(
   },
 ): Promise<string> {
   const id = randomUUID();
-  const content = { schemaVersion: opts.schemaVersion ?? 2, style: buildStyle(opts.style) };
+  const content = { schemaVersion: opts.schemaVersion ?? ANALYSIS_SCHEMA_VERSION, style: buildStyle(opts.style) };
   await db.execute({
     sql: `
       INSERT INTO analyses (
@@ -157,7 +158,7 @@ describe("GET /api/profiles/[id]/fingerprint — cold start (D7)", () => {
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 4; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
 
     const response = await routeModule.GET(makeGetRequest(), makeParams(profileId));
@@ -173,7 +174,7 @@ describe("GET /api/profiles/[id]/fingerprint — cold start (D7)", () => {
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
     const { recomputeFingerprint } = await import("@/lib/server/fingerprint");
     await recomputeFingerprint(profileId);
@@ -193,7 +194,7 @@ describe("PATCH /api/profiles/[id]/fingerprint — override write + read-back", 
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
     const { recomputeFingerprint } = await import("@/lib/server/fingerprint");
     await recomputeFingerprint(profileId);
@@ -219,7 +220,7 @@ describe("PATCH /api/profiles/[id]/fingerprint — override write + read-back", 
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
     const { recomputeFingerprint, getFingerprintRow } = await import("@/lib/server/fingerprint");
     const beforeRow = await recomputeFingerprint(profileId);
@@ -239,7 +240,7 @@ describe("PATCH /api/profiles/[id]/fingerprint — override write + read-back", 
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
     const { recomputeFingerprint, getFingerprintRow } = await import("@/lib/server/fingerprint");
     await recomputeFingerprint(profileId);
@@ -249,7 +250,7 @@ describe("PATCH /api/profiles/[id]/fingerprint — override write + read-back", 
 
     // 6th analysis lands, recompute runs again (same service-level path
     // exercised by tests/server/fingerprint/service.test.ts).
-    await insertAnalysis(db, { profileId, schemaVersion: 2 });
+    await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     const recomputed = await recomputeFingerprint(profileId);
     expect(recomputed!.sampleSize).toBe(6);
 
@@ -268,7 +269,7 @@ describe("PATCH /api/profiles/[id]/fingerprint — override write + read-back", 
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
     const { recomputeFingerprint } = await import("@/lib/server/fingerprint");
     await recomputeFingerprint(profileId);
@@ -294,7 +295,7 @@ describe("PATCH /api/profiles/[id]/fingerprint — override write + read-back", 
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
     const { recomputeFingerprint, getFingerprintRow } = await import("@/lib/server/fingerprint");
     const computedRow = await recomputeFingerprint(profileId);
@@ -320,7 +321,7 @@ describe("PATCH /api/profiles/[id]/fingerprint — override write + read-back", 
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
     const { recomputeFingerprint } = await import("@/lib/server/fingerprint");
     await recomputeFingerprint(profileId);
@@ -336,7 +337,7 @@ describe("PATCH /api/profiles/[id]/fingerprint — override write + read-back", 
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 4; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
 
     const response = await routeModule.PATCH(
@@ -369,7 +370,7 @@ describe("PATCH /api/profiles/[id]/fingerprint — override write + read-back", 
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
     const { recomputeFingerprint } = await import("@/lib/server/fingerprint");
     await recomputeFingerprint(profileId);
@@ -383,7 +384,7 @@ describe("PATCH /api/profiles/[id]/fingerprint — override write + read-back", 
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
     const { recomputeFingerprint, getFingerprintRow } = await import("@/lib/server/fingerprint");
     await recomputeFingerprint(profileId);
@@ -405,7 +406,7 @@ describe("PATCH /api/profiles/[id]/fingerprint — override write + read-back", 
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
     const { recomputeFingerprint, getFingerprintRow } = await import("@/lib/server/fingerprint");
     await recomputeFingerprint(profileId);
@@ -432,7 +433,7 @@ describe("PATCH /api/profiles/[id]/fingerprint — override write + read-back", 
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
     const { recomputeFingerprint, getFingerprintRow } = await import("@/lib/server/fingerprint");
     await recomputeFingerprint(profileId);

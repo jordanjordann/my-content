@@ -72,7 +72,6 @@ vi.mock("@/lib/server/ollama", () => ({
 
 vi.mock("@/lib/server/profiles", () => ({
   resolveProfile: vi.fn().mockResolvedValue({ id: "profile-1", followerCount: 1000 }),
-  computeEngagementRate: () => null,
 }));
 
 vi.mock("@/lib/server/fingerprint", () => ({

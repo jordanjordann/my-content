@@ -12,7 +12,7 @@ import { MAX_VIDEO_SECONDS } from "@/lib/server/analysis/constants";
 import type { ProgressState } from "./progress";
 import { createProgress, updateProgress } from "./progress";
 import { summarizeCaptionToTitle } from "@/lib/server/ollama";
-import { resolveProfile, computeEngagementRate } from "@/lib/server/profiles";
+import { resolveProfile } from "@/lib/server/profiles";
 import type { Profile, ProfileInput } from "@/lib/server/profiles";
 import type { OwnerProfileHint } from "@/lib/server/analysis/types";
 import { recomputeFingerprint } from "@/lib/server/fingerprint";
@@ -114,25 +114,19 @@ export async function runAnalysis({
         ownerHint: toProfileInputHint(ownerHint),
       });
     } catch (error) {
-      // A profile failure must never fail an analysis — engagement rate
-      // simply comes out NULL.
+      // A profile failure must never fail an analysis — follower-dependent
+      // fields simply come out NULL.
       console.error("[PIPELINE] Profile resolve failed:", error);
       profile = null;
     }
 
     const followerCount = profile?.followerCount ?? null;
-    const engagementRate = computeEngagementRate({
-      likeCount: metadata.likeCount,
-      commentCount: metadata.commentCount,
-      followerCount,
-    });
 
-    // MediaMetadata.followerCount/.engagementRate are documented as "filled
-    // by pipeline after profile resolve" — buildUserPrompt() (and its
-    // engagement-context block) reads them straight off `metadata`, so they
-    // must be assigned here, not just passed separately to the DB write.
+    // MediaMetadata.followerCount is documented as "filled by pipeline
+    // after profile resolve" — buildUserPrompt() reads it straight off
+    // `metadata`, so it must be assigned here, not just passed separately
+    // to the DB write.
     metadata.followerCount = followerCount;
-    metadata.engagementRate = engagementRate;
 
     report("summarizing", 1, "Generating title from caption...");
     const generatedTitle = await summarizeCaptionToTitle(metadata.caption ?? "");
@@ -253,7 +247,7 @@ export async function runAnalysis({
             like_count = ?, comment_count = ?, has_audio = ?, audio_title = ?,
             audio_artist = ?, audio_id = ?, audio_is_original = ?,
             original_width = ?, original_height = ?, carousel_item_count = ?,
-            profile_id = ?, follower_count = ?, engagement_rate = ?,
+            profile_id = ?, follower_count = ?,
             analysis_mode = ?, coauthor_producers = ?, like_and_view_counts_disabled = ?,
             updated_at = datetime('now')
         WHERE id = ?
@@ -283,7 +277,6 @@ export async function runAnalysis({
         metadata.carouselItemCount ?? null,
         profile?.id ?? null,
         followerCount,
-        engagementRate,
         analysisMode,
         coauthorProducersJson,
         toDbBool(metadata.likeAndViewCountsDisabled),

@@ -7,5 +7,12 @@
  * `schemaVersion === undefined` reads as version 1 without a backfill.
  *
  * Increment on every future change to the analysis result shape.
+ *
+ * Bumped 2 -> 3 by ticket #139 (TDD §1.2, §5): migration 012 drops
+ * `engagement_rate` and adds the performance-block columns. This
+ * deliberately cold-starts every profile's style fingerprint (the
+ * fingerprint engine filters on `schema_version = ANALYSIS_SCHEMA_VERSION`
+ * completed rows) until 5 new schema-3 analyses exist per profile — an
+ * accepted consequence, not a bug (TDD §1.2 / E4).
  */
-export const ANALYSIS_SCHEMA_VERSION = 2;
+export const ANALYSIS_SCHEMA_VERSION = 3;

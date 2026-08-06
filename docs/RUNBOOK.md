@@ -182,7 +182,7 @@ essentially no production data to preserve as of the redesign's start. Do not bu
   a new forward migration.
 - Run with `npm run db:migrate`.
 
-**Current chain (001 → 011, as of ticket #115):**
+**Current chain (001 → 012, as of ticket #139):**
 
 | # | File | What it does |
 |---|---|---|
@@ -197,20 +197,20 @@ essentially no production data to preserve as of the redesign's start. Do not bu
 | 009 | `009_analysis_mode_images_only.sql` | Full rebuild (ticket #71 + PR #95 fix-round): widens `analysis_mode` CHECK to include `'images_only'`; adds `play_count`, `coauthor_producers` (JSON array of usernames), `like_and_view_counts_disabled` (nullable boolean). **37 → 39 columns on `analyses`**, no drops — see the migration file's own header comment and the `PRAGMA table_info`/`index_list` assertion test (§7) for the full before/after. |
 | 010 | `010_profile_style_fingerprints.sql` | Ticket #72 / PR #99. **New table only — `analyses` untouched.** `+ profile_style_fingerprints` (11 cols: `id`, `profile_id` → `profiles(id)`, `fingerprint_version`, `schema_version`, `sample_size`, `source_analysis_ids`, `computed`, `overrides`, `consistency_index`, `created_at`, `updated_at`) + `idx_profile_style_fingerprints_profile_id` (UNIQUE). Deliberately separate from `profiles` — that table holds scraped **facts**, this one holds **inference**. `computed` and `overrides` are two separate JSON columns on purpose so a recompute can never clobber a human correction; read-time merge is `{...computed, ...overrides}` per top-level key. No `is_stale` flag by design (`sample_size` + `source_analysis_ids` already answer it). |
 | 011 | `011_fingerprint_computed_at.sql` | Ticket #115 (`docs/archive/specs/TDD-fingerprint-read-override-api.md` §3 D2). `+ profile_style_fingerprints.computed_at` (nullable `TEXT`, backfilled `= updated_at` for existing rows) — **11 → 12 columns**, `analyses` untouched. Written ONLY by `upsertFingerprint` (never by the overrides writer), so it stays "last recompute time" even after a human `PATCH` moves `updated_at`. Nullable because SQLite's `ALTER TABLE ... ADD COLUMN` can't take a non-constant default (`datetime('now')`) or `NOT NULL` without one; `mapRow` reads `row.computed_at ?? row.updated_at` so a legacy row can never surface `null`. |
+| 012 | `012_performance_block.sql` | Ticket #139 (`docs/TDD-3A-3B-3C-phase-3.md` §1.1, §5.2). Full rebuild: **drops** `engagement_rate` (R-12.3.1 fix — `computeEngagementRate` relocates to `lib/server/analysis/performance/ratios.ts`, only the column is dropped) and **adds** the 17-column performance block (`perf_reach_value`, `perf_reach_kind`, `perf_reach_derived_from`, `perf_tier1_ratio`, `perf_tier1_denominator`, `perf_bucket_key`, `perf_baseline_median`, `perf_baseline_sample_size`, `perf_multiplier`, `perf_post_age_hours`, `audience_source_fetched_at`, `perf_tier_used`, `perf_confidence`, `perf_confidence_reason`, `perf_provisional`, `perf_unavailable_reason`, `performance_score`) — **39 → 55 columns** (38 survivors + 17 new; see the migration file's own header for the 14-vs-17 accounting). Existing `analyses` rows are deleted (owner ruling, no backward compatibility — `ANALYSIS_SCHEMA_VERSION` bumps 2 → 3 regardless). Adds `idx_analyses_profile_bucket` and `idx_analyses_performance_score` — **6 → 8 indexes**. `perf_tier1_denominator`'s CHECK is the one cross-column constraint in the table (R-12.2.2): both "denominator, if set, must be a valid enum value" and "ratio set requires denominator set" are enforced as independently-ANDed conditions, not a single ratio-IS-NULL short-circuit — see the migration file's own comment for the SQLite `NULL`-in-`CHECK` semantics that make the naive OR-form unsafe. The other five judgement/derivation enum columns (`perf_reach_derived_from`, `perf_tier_used`, `perf_confidence`, `perf_confidence_reason`, `perf_unavailable_reason`) each carry a single-column `CHECK(col IS NULL OR col IN (...))` (PR #151 review, non-blocking item 1 + owner ruling), the safe form per the same NULL-in-`CHECK` reasoning — no cross-column condition is introduced. |
 
-`analyses` has **39 named columns** and **6 explicitly-created indexes**
+`analyses` has **55 named columns** and **8 explicitly-created indexes**
 (`idx_analyses_updated_at`, `idx_analyses_title`, `idx_analyses_username`, `idx_analyses_platform`,
-`idx_analyses_profile_id`, `idx_analyses_schema_version`) — asserted by
-`tests/server/db/migrations.schema.test.ts`, which runs the **full 001→latest chain** (it globs
-`migrations/*.sql` and sorts, so it picks up new migrations automatically) against a fresh in-memory
-database rather than relying on hand-verification of each rebuild.
+`idx_analyses_profile_id`, `idx_analyses_schema_version`, `idx_analyses_profile_bucket`,
+`idx_analyses_performance_score`) — asserted by `tests/server/db/migrations.schema.test.ts`, which
+runs the **full 001→latest chain** (it globs `migrations/*.sql` and sorts, so it picks up new
+migrations automatically) against a fresh in-memory database rather than relying on
+hand-verification of each rebuild.
 
-**Re-derived 2026-08-03 against migration 010:** these two numbers are **still 39 and 6** — 010 is
-purely additive of a *new* table and does not touch `analyses`. `EXPECTED_ANALYSES_COLUMNS` in that
-test file lists exactly 39 entries and `EXPECTED_ANALYSES_INDEXES` exactly 6, and a third assertion
-independently checks that 009's `INSERT...SELECT` column lists are positionally aligned at 39 each.
-So the figure is correct, but the reason is "010 added a table, not columns" — not "the figure was
-re-confirmed to have changed."
+**Re-derived 2026-08-06 against migration 012 (ticket #139 / PR #151):** 39 → 55 columns, 6 → 8
+indexes. `EXPECTED_ANALYSES_COLUMNS` in that test file lists exactly 55 entries and
+`EXPECTED_ANALYSES_INDEXES` exactly 8, and a further assertion independently checks that 012's
+`INSERT...SELECT` column lists are positionally aligned at 55 each.
 
 `profile_style_fingerprints` (010, +011) has **12 columns** and **1 explicitly-created index**
 (`idx_profile_style_fingerprints_profile_id`, UNIQUE on `profile_id` — one fingerprint row per
@@ -356,8 +356,8 @@ read from `.claude/context/fixtures/` via `tests/helpers/fixtures.ts`, which thr
 path-naming error if a fixture file is missing. See §5 for why this matters (credits, and
 `/v1/youtube/channel` charging even on a miss).
 
-**Current state (re-measured 2026-08-05, ticket #123 + PR #126 review round 2 fixes): 29 test
-files, 319 tests total** — 26 files / 315 tests in the `node` project (25 files / 311 tests
+**Current state (re-measured 2026-08-06, ticket #139 / PR #151): 29 test
+files, 340 tests total** — 26 files / 336 tests in the `node` project (25 files / 311 tests
 unchanged from the original ticket, +1 file / 4 tests for
 `tests/config/vitestProjectGlobs.test.ts`, added during PR #126 review to pin the glob-routing
 fix), + 3 files / 4 tests in the `jsdom` project: `tests/lib/api/fingerprint/hooks.dom.test.tsx`
@@ -366,7 +366,9 @@ round 1 to pin the RTL auto-cleanup fix), and `tests/setup/reactActEnvironment.d
 (added during PR #126 review round 2 to pin the `IS_REACT_ACT_ENVIRONMENT` fix). The node-project
 figures above (19 → 237 in earlier editions of this doc) had already drifted upward from unrelated
 feature work between #115 and this ticket; the 311 figure is a fresh measurement, not a
-re-derivation of the old delta math.
+re-derivation of the old delta math. The further growth from 315 to 336 node-project tests reflects
+unrelated feature work landed between PR #126 and this branch (139-migration-012-performance-block,
+PR #151), not a re-derivation of the 311/315 delta math either.
 
 Layout — regenerated from `git ls-files`, including this PR's review-fix additions:
 

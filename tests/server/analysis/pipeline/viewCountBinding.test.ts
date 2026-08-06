@@ -80,7 +80,6 @@ vi.mock("@/lib/server/ollama", () => ({
 
 vi.mock("@/lib/server/profiles", () => ({
   resolveProfile: vi.fn().mockResolvedValue(null),
-  computeEngagementRate: () => null,
 }));
 
 describe("runAnalysis — analyses.view_count binding regression (review item 6)", () => {

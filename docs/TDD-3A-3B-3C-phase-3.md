@@ -392,7 +392,14 @@ Repo convention is **additive only, no down-migrations** (RUNBOOK §4). D10 requ
 asserts positional alignment of the `INSERT...SELECT` column lists — a rebuild keeps that assertion
 meaningful. All rows are deleted anyway (schema bump), so the `INSERT...SELECT` copies nothing.
 
-### 5.2 `analyses` — drop 1, add 14 (39 → 52 columns)
+### 5.2 `analyses` — drop 1, add 17 (39 → 55 columns)
+
+**Correction (PR #151 review):** this header previously read "drop 1, add 14 (39 → 52 columns)".
+The per-column table below lists 17 distinct new column names, not 14 — every one of them is
+referenced by name elsewhere in this document (§4's `perf_confidence_reason`, §6's
+`perf_tier1_ratio`/`perf_reach_value`, §7's full computed-block shape, §9.1's `ⓘ` tooltip fields) —
+so 38 (39 - 1) + 17 = 55 is the correct total, not 52. This is an arithmetic correction only; the
+per-column table itself (and every ruling in §0) is unchanged.
 
 `EXPECTED_ANALYSES_COLUMNS` must be updated in the same PR.
 
@@ -401,20 +408,20 @@ meaningful. All rows are deleted anyway (schema bump), so the `INSERT...SELECT` 
 | ~~`engagement_rate`~~ | — | **DROPPED** (D10). See §1.1 for the five files that go with it. |
 | `perf_reach_value` | `INTEGER` | nullable — absent for image-only content **by design**, not failure |
 | `perf_reach_kind` | `TEXT` | `CHECK(perf_reach_kind IS NULL OR perf_reach_kind IN ('PLAYS','VIEWS','UNKNOWN'))` |
-| `perf_reach_derived_from` | `TEXT` | `TOP_LEVEL` / `CAROUSEL_FIRST_SLIDE` / `NONE` |
+| `perf_reach_derived_from` | `TEXT` | `CHECK(perf_reach_derived_from IS NULL OR perf_reach_derived_from IN ('TOP_LEVEL','CAROUSEL_FIRST_SLIDE','NONE'))` |
 | `perf_tier1_ratio` | `REAL` | nullable |
-| `perf_tier1_denominator` | `TEXT` | **Required whenever the ratio exists** (R-12.2.2). `CHECK(perf_tier1_ratio IS NULL OR perf_tier1_denominator IN ('REACH','FOLLOWERS'))`. A ratio without a denominator is a **constraint violation**, not a lint. |
+| `perf_tier1_denominator` | `TEXT` | **Required whenever the ratio exists** (R-12.2.2). `CHECK((perf_tier1_denominator IS NULL OR perf_tier1_denominator IN ('REACH','FOLLOWERS')) AND (perf_tier1_ratio IS NULL OR perf_tier1_denominator IS NOT NULL))`. Two conditions ANDed, not a single `ratio IS NULL OR ...` short-circuit: the naive form `CHECK(perf_tier1_ratio IS NULL OR perf_tier1_denominator IN ('REACH','FOLLOWERS'))` is unsafe because SQLite's `IN` yields `NULL` (not `FALSE`) when the left operand is `NULL`, and a `CHECK` treats a `NULL` result as passing — that form silently accepts both `(0.5, NULL)` and `(NULL, 'BOGUS')`. A ratio without a denominator is a **constraint violation**, not a lint. |
 | `perf_bucket_key` | `TEXT` | `(platform, content kind)` bucket identity — D4 |
 | `perf_baseline_median` | `REAL` | nullable |
 | `perf_baseline_sample_size` | `INTEGER` | `basedOnVideos`; **never null when a Tier 2 figure exists** |
 | `perf_multiplier` | `REAL` | nullable |
 | `perf_post_age_hours` | `INTEGER` | at analysis time |
 | `audience_source_fetched_at` | `TEXT` | **§1.3** — copy of `profiles.last_fetched_at` at write time, so staleness stays inspectable after the cache refreshes (R-13.3.2, R-13.4.5) |
-| `perf_tier_used` | `TEXT` | **OR-13** — `CREATOR_BASELINE` / `REACH_ONLY` / `AUDIENCE_FALLBACK` / `UNAVAILABLE` |
-| `perf_confidence` | `TEXT` | **OR-13** — `HIGH` / `MEDIUM` / `LOW` / `NONE` |
-| `perf_confidence_reason` | `TEXT` | nullable — `CACHED_FOLLOWER_DENOMINATOR` / `CAROUSEL_FIRST_SLIDE` / `THIN_SAMPLE` (§4) |
+| `perf_tier_used` | `TEXT` | **OR-13** — `CHECK(perf_tier_used IS NULL OR perf_tier_used IN ('CREATOR_BASELINE','REACH_ONLY','AUDIENCE_FALLBACK','UNAVAILABLE'))` |
+| `perf_confidence` | `TEXT` | **OR-13** — `CHECK(perf_confidence IS NULL OR perf_confidence IN ('HIGH','MEDIUM','LOW','NONE'))` |
+| `perf_confidence_reason` | `TEXT` | nullable — `CHECK(perf_confidence_reason IS NULL OR perf_confidence_reason IN ('CACHED_FOLLOWER_DENOMINATOR','CAROUSEL_FIRST_SLIDE','THIN_SAMPLE'))` (§4) |
 | `perf_provisional` | `INTEGER` | nullable boolean, `toDbBool` convention |
-| `perf_unavailable_reason` | `TEXT` | **OR-13** — enum below |
+| `perf_unavailable_reason` | `TEXT` | **OR-13** — `CHECK(perf_unavailable_reason IS NULL OR perf_unavailable_reason IN ('REACH_HIDDEN','REACH_UNKNOWN','CONTENT_KIND_UNSUPPORTED','NO_AUDIENCE_DATA','INSUFFICIENT_HISTORY','CAUSE_NOT_DETERMINABLE'))` — enum below |
 | `performance_score` | `INTEGER` | **promoted to a column** — resolves the skeleton's open sub-question. R-8.4.1 requires it sortable and 3C paginates server-side (OR-8), so it cannot be a client-side sort over `json_extract`. Nullable. |
 
 `verdict` and `drivers[]` remain **model output inside `result_content` JSON**, exactly as `overallScore` and
@@ -1044,7 +1051,7 @@ Turso run — which is fine and is why all SQL in this document is kept libSQL-p
 
 ## 12. Testing strategy
 
-The suite is **29 files / 319 tests** across two vitest projects (RUNBOOK §7).
+The suite is **29 files / 340 tests** across two vitest projects (RUNBOOK §7).
 
 > **Load-bearing naming convention:** a jsdom test **must** be named `*.dom.test.ts(x)`. A plain `*.test.tsx`
 > matches **neither** project and **silently does not run at all**. Every 3C component test is a
@@ -1059,7 +1066,7 @@ The suite is **29 files / 319 tests** across two vitest projects (RUNBOOK §7).
 | prompt | node | AC-8, AC-22 — **extend** `user.engagementLabel.test.ts`, do not duplicate it |
 | **prose guard** | node | **§8** — a bare `4,1%` throws; a bare `4.1%` throws; a qualified `4,1% dari 482,1RB penayangan` passes; a fabricated numeral not in the block throws (proves the extractor non-vacuous) |
 | parser / validation | node | Contract v3; a missing performance field fails loudly; an *absent input* is **not** a parse failure (§5.4 — must not be conflated) |
-| migration | node | `migrations.schema.test.ts` — updated `EXPECTED_ANALYSES_COLUMNS` (39→52) and `EXPECTED_ANALYSES_INDEXES` (6→8), positional `INSERT...SELECT` alignment, AC-12 |
+| migration | node | `migrations.schema.test.ts` — updated `EXPECTED_ANALYSES_COLUMNS` (39→55) and `EXPECTED_ANALYSES_INDEXES` (6→8), positional `INSERT...SELECT` alignment, AC-12 |
 | S2 numeral extractor | node | AC-7 + AC-27 — handles both `,` and `.` decimal separators, and honours the **OR-10 allow-list** |
 | 3C cells | **jsdom** | AC-13, AC-14, AC-15, AC-16, AC-20, AC-21, AC-25 → AC-30 — all assert **rendered text content**; none is a screenshot |
 | absent-count derivation | node | **OR-11** — all three cases, plus a negative assertion that case 3 never says "Creator turned off counts" |
