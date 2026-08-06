@@ -453,8 +453,11 @@ now settled by measurement and is not reopenable on a "the model could just do i
 ## 5. 3B — migration **012** and the stored contract
 
 **Migration number is fixed at `012_performance_block.sql`.** Latest on `main` is `011_fingerprint_computed_at.sql`.
-3A's job table takes **`013`** (§10.2). This resolves the collision flagged in the skeleton: two agents in
-parallel worktrees would otherwise both create `012_`.
+**`013` is `013_reach_unavailable_reason.sql`** (OR-26 / §5.3 — ticket **#155**), and **3A's job table takes
+`014_jobs.sql`** (§10.2). ⚠️ An earlier revision of this line assigned `013` to 3A's job table; that is
+**superseded by OR-26** and the ordering-safety argument in §5.3 (the `013` rebuild issues `DROP TABLE
+analyses`, so a jobs table carrying `REFERENCES analyses(id)` must not precede it). This also resolves the
+collision flagged in the skeleton: two agents in parallel worktrees would otherwise both create `012_`.
 
 ### 5.1 Form
 
@@ -536,6 +539,11 @@ is a supported content kind, and a missing field is an `UNKNOWN`, not an unsuppo
 value may ever be written on the YouTube path at all.
 
 #### Migration **`013_reach_unavailable_reason.sql`** — and 3A renumbers to `014`
+
+**Ticket: [#155](https://github.com/jordanjordann/my-content/issues/155)** (3B-7). It carries the migration,
+the `ReachResult` boolean and the `reach.ts` change. It is **unblocked** (its inputs #151 and #152 are merged)
+and **blocks #143**, which consumes the boolean and writes the new enum value. #143 no longer carries the
+migration.
 
 Migration **012 is merged**, so its `CHECK` on `perf_unavailable_reason` is live. **SQLite cannot alter a
 `CHECK` in place**, so this is a **full `analyses` table rebuild** following 012's own pattern (which
@@ -1270,8 +1278,12 @@ The PRD is **wrong on `main`**. These edits are applied in the same PR as this T
   └► 3B-2 [BE] performance module: reach + availability + ratios     (fixture-driven, no spend)
        └► 3B-3 [BE] Tier 2 baseline + bucket noun + composite index
             └► 3B-4 [BE] contract v3: prompt block, prose guard, responseSchema, parser   [UNGATED — V3 captured, OR-19]
-                 └► 3B-5 [BE] judgement module + pipeline wiring + persistence
+                 └► 3B-5 [BE] judgement module + pipeline wiring + persistence   [also needs 3B-7]
                       └► 3B-6 [BE] read path + API response shape + server-side pagination
+
+3B-7 [BE] migration 013 + ReachResult boolean (OR-26, #155)   [needs only 3B-1 + 3B-2, both MERGED]
+  └► blocks 3B-5 (#143); should also precede 3B-6 (#144) so the read path types 7 values, not 6.
+     Runs in PARALLEL with 3B-3 (#141) and 3B-4 (#142) — no shared files.
 
 3C-1 [FE] table shell: 9 columns, group header, density, pagination, sort/sink, states   [needs 3B-6]
   ├► 3C-2 [FE] engagement Direction A cells + absent-count derivation
