@@ -5,6 +5,10 @@
 two steps out in the sequence and a stale backlog is worse than none.
 **Author:** John (tech lead)
 **Created:** 2026-08-06 · **Supersedes:** the skeleton on branch `tdd-phase-3-skeleton` (PR #135). **Close #135 unmerged; this is its successor at the same path.**
+**Amended:** 2026-08-06 (correction pass) — the original pass was written from a commit that predated the
+**V1**, **V3** and **V4** captures, the **V2 checkpoint**, and the owner's hosting reversal. Corrections land
+as **OR-19 … OR-25** (§0.6) and are threaded through **§1.7, §5.4, §8.4, §11.2, §12, §13, §14**. Nothing from
+the original pass is deleted; superseded claims are marked as superseded in place.
 
 **Primary inputs**
 
@@ -56,7 +60,7 @@ where a ruling contradicts the PRD, §14 amends the PRD rather than leaving two 
 |---|---|
 | **OR-14** | **O-1 answered: staff-facing**, not a single-user local tool. → Option B (container PaaS). |
 | **OR-15** | **O-2 answered: Vercel is NOT a requirement.** Explicitly released. Option C (Vercel + external worker) is therefore dominated and is dropped. **The tech lead must name a specific host** — see §11.2, recommendation **Fly.io**. |
-| **OR-16** | **D-3 / V4 APPROVED.** The second billed Gemini call for temperature-0 determinism is authorised and is being dispatched separately. **S3 / AC-10 is treated as discharged live; no ticket in this document runs it.** |
+| **OR-16** | **D-3 / V4 APPROVED.** The second billed Gemini call for temperature-0 determinism is authorised and is being dispatched separately. **S3 / AC-10 is treated as discharged live; no ticket in this document runs it.** ⚠️ **V4 has since run and AC-10 FAILED — see OR-22 and §14.7.** The "no ticket runs it" half stands; the assumption that it would pass does not. |
 
 ### 0.5 Sequencing
 
@@ -64,6 +68,20 @@ where a ruling contradicts the PRD, §14 amends the PRD rather than leaving two 
 |---|---|
 | **OR-17** | **`3B → 3C → deploy + Turso cutover → 3A queue`.** Deployment is explicitly **not** first. 3B and 3C build fine against the local SQLite file; PRD §9.3 confirms 3B/3A independence. The owner accepts that **nothing is usable by staff until deployment lands** and has chosen to build the value first. |
 | **OR-18** | **Tickets are filed for 3B and 3C only.** Deploy and 3A are covered as §10/§11 here and ticketed when 3C lands. |
+
+### 0.6 Correction pass — rulings from the V1/V2/V3/V4 captures and the hosting reversal (2026-08-06)
+
+Everything in §0.1–§0.5 was ruled **before** these captures existed. These seven rulings correct it.
+
+| # | Ruling |
+|---|---|
+| **OR-19** | **V1 and V3 are CAPTURED and merged — "approved but uncaptured" is stale everywhere it appears.** V3 measured **~85.5% output-token headroom on a real 10-slide video-bearing carousel run through the *production* pipeline** (`runAnalysis()` end to end), against the single-reel baseline of ~83%. The carousel is **equal or better**, not worse. **The PRD §9.1 risk framing — "a 10-slide carousel plus a longer prompt is the case that would actually bind `MAX_TOKENS`" — is empirically FALSE and is corrected (§14.6).** Consequently **ticket #142 (3B-4) is UNGATED**: its `[gated on V3]` condition is satisfied. **Only V2 remains uncaptured.** |
+| **OR-20** | **The `-1` sentinel is a binding implementation constraint, not a footnote.** V1 found that a genuinely counts-disabled Instagram post returns `edge_media_preview_like.count: **-1**` — not `0`, not `null`, not absent, and with `edges[]` still populated. The **existing** adapter is safe only because it gates on `like_and_view_counts_disabled === true` *before* reading the count. **Any new 3B code that reads the count before checking the flag computes a negative engagement ratio and presents it as real.** Rule: **a negative count is UNKNOWN, never data.** Specified in §1.7, enforced in §5.4, and added to ticket **#140**. |
+| **OR-21** | **YouTube hidden likes — the CONSERVATIVE rule, ruled without V2.** On `likeCountInt`, **`0`, `null` and field-absent ALL mean `UNKNOWN`.** No score is fabricated and no fake zero is stored. **The accepted cost, stated plainly: a genuinely zero-like video will read "unknown".** The owner considered that and accepted it deliberately — an under-claim is recoverable, a fabricated zero in a client deck is not. **3B is therefore NOT blocked on V2**; V2 remains open only as a future narrowing of this rule. |
+| **OR-22** | **V4: `temperature: 0` determinism is FALSE — and the drift is ACCEPTED, not engineered around.** Two `analyzeContent()` calls on byte-identical input diverged. **Stable:** `overallScore` and all 7 scorecard dimensions. **Drifted:** `formatArchetype` (`TEXT_SLIDESHOW` vs `CAROUSEL_STATIC`), `pacing` (`FAST` vs `SLOW`), `estimatedCutsPerMinute` (`20` vs `null`), `ctaType` ordering, `structureBeatMap` segmentation (10 beats vs 6) — **enums and numbers, not prose.** **AC-10 / S3 as written cannot pass and are corrected (§14.7)** — an acceptance criterion that is known-false is worse than none. **No reconciliation machinery, no versioned re-analysis records, no retry loops**: an analysis runs once and is stored, so the drift only surfaces if a user hits Re-analyze. **Documented in §13 (E8), not solved.** |
+| **OR-23** | **HOST REVERSAL — RAILWAY, not Fly.io.** The owner reviewed §11.2's Fly recommendation and **overrode it, explicitly on billing predictability**: he dislikes Fly's pay-as-you-go per-second billing and prefers a predictable flat floor. **This is a preference about billing, not a technical rebuttal** — the original analysis is preserved verbatim in §11.2 and the reasoning is not retracted. §11.2a records what the reversal costs (the Turso co-location tiebreaker is forfeited) and §11.2b records the verification that Railway can carry 3A's actual requirements. |
+| **OR-24** | **`performance_score` as a real column — CONFIRMED.** §5.2 stands as written. |
+| **OR-25** | **The prose guard fails loudly with no repair retry — CONFIRMED.** §8.2 stands as written; the owner understands and accepts that a violation burns a billed Gemini call and fails the analysis. |
 
 ---
 
@@ -174,10 +192,55 @@ The owner's ruling #9 was conditional on this check. **It passes. Derivation is 
 - **Source:** `lib/server/analysis/fetcher/adapter.ts:284` → `bool(raw.…) ?? undefined`, i.e. an absent key
   stays absent rather than becoming `false`. `:236` reads `=== true` strictly.
 
-**Three distinct values reach the client today: `true` / `false` / `null`.** The second discriminator the
+**Three distinct values reach the client today: `true` / `false` / `null`.** ⚠️ **What this section did NOT
+know at the time it was written is that the *count* field itself lies — see §1.7.** The second discriminator the
 three-case logic needs — "is this an all-image carousel" — is also available at render time from
 `analyses.analysis_mode` (`'images_only'`, migration 009 line 107) and, after 012, from
 `perf_reach_derived_from = 'NONE'`. **Nothing needs to be stored. §9.5 specifies the derivation.**
+
+### 1.7 **NEW TRAP (V1, OR-20) — `edge_media_preview_like.count` is `-1` on a counts-disabled post**
+
+Captured live 2026-08-06, fixture `.claude/context/fixtures/scrapecreators-instagram/ig_post_counts_disabled.json`.
+On a genuinely counts-disabled Instagram post the like-count field is **present, populated and actively wrong**:
+
+```json
+"edge_media_preview_like": { "count": -1, "edges": [ { "node": { "username": "..." } }, … ] }
+```
+
+**`-1`. Not `0`, not `null`, not absent** — and `edges[]` is still populated with real usernames, so an
+absence heuristic based on "is there any like data here" also fails. This is the one state the shipped
+`CountState` union (`lib/api/analyses/helpers.ts`, `classifyLikeCount`/`classifyViewCount`) does not name.
+
+**Why nothing is broken today, and why that is not reassurance.** `fetcher/adapter.ts` gates on
+`raw.like_and_view_counts_disabled === true` **before** reading the count, so `adaptPostResponse()` already
+returns `likeCount: null` on this exact fixture. The existing path is correct **by construction**. But 3B is
+**new, independently-written code that touches the same fields**, and the failure mode is silent and
+plausible-looking:
+
+| Naive code | Result on this payload | Why it is worse than a crash |
+|---|---|---|
+| `likes ?? 0` | `-1` survives (`-1` is not nullish) | a **negative** engagement ratio, rendered as a real figure |
+| `Math.max(likes, 0)` | `0` | a fabricated zero — Decision 6's forbidden fabrication, reached by "defensive" code |
+| `(likes + comments) / followers` | negative percentage | `4,1%` becomes `-0,2%` in an Indonesian client deck |
+
+**Binding rules, enforced by test, not by review (see §5.4 and ticket #140):**
+
+1. **Never read `edge_media_preview_like.count` before checking `like_and_view_counts_disabled`.** Not even
+   defensively. The flag is the discriminator; the count is not evidence about itself.
+2. **An explicit negative guard, independent of rule 1.** Any count `< 0` from any source resolves to
+   **`UNKNOWN`**, never to `0`, never to `HIDDEN`-by-inference, never clamped. Rule 1 is the primary defence;
+   rule 2 exists because rule 1 is a convention a future contributor can forget and rule 2 is a line of code
+   that cannot be.
+3. **Never clamp.** `Math.max(x, 0)` and `Math.abs(x)` on a count are both bugs — they convert a *signal that
+   we have no data* into *data*. `unavailableReason` is the correct output, not a number.
+
+**Comments are unaffected** — the flag is `like_and_view_counts_disabled`, and V1 confirms
+`edge_media_to_parent_comment.count: 1` is real and correctly not nulled. Do not widen the guard to comments.
+
+**Still open, and deliberately not assumed:** V1's sample is an `XDTGraphImage`, so it says nothing about
+whether a counts-disabled *video* still exposes `video_view_count`/`video_play_count`. `resolveReach()` must
+not key off the counts-disabled flag to decide anything about reach — it branches on **field presence**
+(R-12.7.1), which is already what §3 requires.
 
 ---
 
@@ -288,6 +351,18 @@ obedience rather than our arithmetic.
 They are passed to Gemini as **inputs it must not contradict**. `responseSchema` is narrowed to three fields
 in ticket **3B-4**.
 
+**V4 turns this from a well-argued preference into a measured necessity (OR-22).** OR-13 was argued on
+principle — mechanically-determined fields do not belong to a language model. V4 then measured what happens
+when the model *does* own such fields on this exact schema: on two byte-identical requests at
+`temperature: 0`, `formatArchetype` flipped `TEXT_SLIDESHOW` → `CAROUSEL_STATIC`, `pacing` flipped
+`FAST` → `SLOW`, `estimatedCutsPerMinute` went `20` → `null`, `ctaType` reordered, and `structureBeatMap`
+resegmented from 10 beats to 6. **Those are enums and numbers — structurally identical in kind to
+`tierUsed`, `confidence` and `unavailableReason`.** Had OR-13 gone the other way, a re-analysis could have
+silently reported a different *tier* for unchanged inputs, and `perf_confidence` — the field three separate
+pieces of UI copy are derived from — would have been a coin flip. The scorecard and `overallScore` were the
+fields that held steady; the classification enums were not. **The five relocated fields stay in code. This is
+now settled by measurement and is not reopenable on a "the model could just do it" argument.**
+
 **Confidence ladder (code, `judgement.ts`):**
 
 | Start | Demotion | Result |
@@ -368,13 +443,31 @@ the value exists to hold.
 
 ### 5.4 Availability states
 
-`resolveAvailability(field, raw)` → `AVAILABLE | HIDDEN | UNKNOWN | ZERO` (PRD §4.4). Two rules pinned by
-tests rather than by review:
+`resolveAvailability(field, raw)` → `AVAILABLE | HIDDEN | UNKNOWN | ZERO` (PRD §4.4). Four rules pinned by
+tests rather than by review. **The four-state model itself survives V1 unchanged** — `HIDDEN` is driven by the
+flag, not by the count — but the resolver's *input handling* is now pinned harder:
 
 - `like_and_view_counts_disabled` is read `=== true` **strictly**; absent is **not** `false`.
   `fetcher/adapter.ts:236` already does this correctly — the new code must not regress it (AC-19).
-- A bare `0` on YouTube's `likeCountInt` is `UNKNOWN` until **V2** is captured (R2) — the same false-zero
-  suspicion Instagram's `video_view_count` earns.
+- **`-1` — OR-20 / §1.7.** The flag is checked **first**. Independently, **any count `< 0` resolves to
+  `UNKNOWN`**. No clamping, no `?? 0`, no `Math.max`. This has a **dedicated test against the real V1 fixture**
+  `ig_post_counts_disabled.json`, and a second test asserting the guard fires on a synthetic `-1` **with the
+  disabled flag stripped** — i.e. proving the negative guard is load-bearing on its own and not merely shadowed
+  by the flag check.
+- **YouTube `likeCountInt` — OR-21, the conservative rule, now settled and no longer provisional.**
+  **`0`, `null` and field-absent ALL resolve to `UNKNOWN`.** Never `ZERO`, never a fabricated score.
+  This is the *ruled* behaviour, not a placeholder waiting on V2 — **3B is not blocked on V2** and no code
+  branches on "once V2 lands". The accepted cost is stated in OR-21: a genuinely zero-like video reads
+  "unknown". If V2 is ever captured it can only *narrow* this rule; nothing has to be rewritten to accept it.
+- **Provenance discipline on the YouTube rule.** The owner also surfaced a secondary claim, found via a
+  general web search and **not verified against a live payload**, that YouTube "typically returns null, 0, or
+  omits the field" for a hidden like count. It is recorded **here, in the TDD, explicitly labelled as an
+  unverified secondary source**, and it is deliberately **NOT written into `.claude/context/verified-facts.md`**
+  — that file is reserved for live-observed facts and putting a Google result in it would poison the one
+  artefact the codebase treats as authoritative (AGENTS.md, "External API Verification"). The claim changes
+  nothing operationally: OR-21 already covers all three shapes it names, plus any fourth shape it does not.
+  Also note V1's precedent — the analogous Instagram guess would have been `0`/`null`/absent, and the real
+  answer was `-1`. **Guessing the shape has already been wrong once on this exact question.**
 
 ---
 
@@ -530,13 +623,45 @@ Hence: extend `user.engagementLabel.test.ts` for Half A (**do not duplicate it**
 and add the runtime guard plus its own `prose/guard.test.ts` for Half B, including a **deliberately vacuous-proof
 case**: a fabricated bare `4,1%` must throw, and `4.1%` (dot separator) must throw too.
 
-### 8.4 Token budget
+### 8.4 Token budget — **V3 IS CAPTURED (OR-19); this section's original text is superseded**
 
-**Unverified for this shape.** V3 (approved, not yet captured) must measure a real multi-slide carousel with
-the extended prompt against `maxOutputTokens: 32768`. The 83% headroom figure in verified-facts is from a
-**single-video reel** and is not a bound for this case. **No code ships against an assumed headroom.** If V3
-shows insufficient headroom the mitigation is to shorten `drivers[]`, not to raise the budget past the
-model's real limit.
+> ~~**Unverified for this shape.** V3 (approved, not yet captured) must measure a real multi-slide carousel with
+> the extended prompt against `maxOutputTokens: 32768`. The 83% headroom figure in verified-facts is from a
+> **single-video reel** and is not a bound for this case. **No code ships against an assumed headroom.**~~
+> — written before V3 ran. Retained so the reasoning is auditable; the gate it describes is discharged.
+
+**Measured, 2026-08-06, through the real production pipeline** (`runAnalysis()` end to end on
+`/p/DZCPPJTjKVy/` — a 10-slide, 7-video + 3-image carousel; real fetch, real File API uploads, real
+`temperature: 0` / `maxOutputTokens: 32768` config, real parse, real row written):
+
+| | 10-slide carousel (V3) | Single 61s reel (2026-08-05 baseline) |
+|---|---|---|
+| `promptTokenCount` | **15,663** | 24,052 |
+| `candidatesTokenCount` | 2,192 | 1,574 |
+| `thoughtsTokenCount` | 2,566 | 3,994 |
+| **Output-budget spend** (candidates + thoughts) | **4,758 / 32,768** | 5,568 / 32,768 |
+| **Headroom remaining** | **~85.5%** | ~83% |
+
+**The carousel is cheaper on every token axis than the reel — equal or better headroom, not worse.** Sixty-one
+seconds of continuous video plus an audio track costs more input tokens than seven short slides plus three
+images. **The PRD's stated risk is not merely unproven, it is measured false, and §14.6 corrects the PRD
+rather than leaving a falsified risk row on `main`.**
+
+**Consequences, stated so nobody re-derives them:**
+
+- **Ticket #142 (3B-4) is UNGATED.** Its `[gated on V3]` condition is satisfied; the issue body has been
+  amended.
+- **The honest residual.** V3 measured the **current, pre-3B** contract, because 3B's extended prompt does not
+  exist yet. It does not measure §8.1's block. It falsifies *"carousels are the binding case"*; it does not
+  prove *"3B's prompt fits"*. Those are different claims and this document does not conflate them. n=1, same
+  single-sample caveat every carousel finding in `verified-facts.md` carries.
+- **What that residual is worth: very little, and here is the arithmetic.** §9.1 budgets ~+300–600 output
+  tokens for 3B. Against 28,010 free tokens on the worse of the two measured samples, that is under 2% of
+  remaining headroom. **This is no longer a gate; it is a thing to glance at.** 3B-4's implementer reads
+  `usageMetadata` off the first real extended-prompt run and appends it to `verified-facts.md` — a free
+  observation on a call that is being made anyway, not a new spend and not a blocker.
+- **Unchanged:** if headroom ever does bind, the mitigation is to **shorten `drivers[]`**, never to raise
+  `maxOutputTokens` past the model's real limit.
 
 ---
 
@@ -786,7 +911,14 @@ runs test/typecheck/lint/build and nothing else, and `TURSO_DATABASE_URL` is uns
 against a local SQLite file (`file:./my-content.db`). **This app is not deployed anywhere today.** The hosting
 choice is genuinely open, not a migration.
 
-### 11.2 Host recommendation — **Fly.io**
+### 11.2 Host recommendation — **Fly.io** ⚠️ **OVERRIDDEN BY THE OWNER — the host is RAILWAY (OR-23)**
+
+> **Read §11.2a and §11.2b for the decision that is actually in force.** The section below is the tech lead's
+> original recommendation and it is **preserved deliberately and in full**. The owner reviewed it and chose
+> Railway **on billing predictability** — he dislikes Fly's pay-as-you-go per-second model and wants a
+> predictable flat floor. **That is a preference about how the bill behaves, not a technical rebuttal of any
+> claim below**, and none of the reasoning below is retracted or was found wrong. It is kept so that if the
+> billing preference ever changes, the engineering case does not have to be rebuilt from scratch.
 
 OR-15 requires a named host, not a three-way shrug. **Recommendation: Fly.io.** Reasoning against the three
 criteria asked for:
@@ -827,13 +959,86 @@ Vercel-cron "worker-lite" (Option D) — a Gemini video analysis can exceed a cr
 is a binary in a bounded function, and there is no persistent `/tmp`; it buys serverless purity at the price
 of re-architecting the pipeline into resumable steps.
 
+### 11.2a **THE DECISION IN FORCE — Railway (OR-23), and what it costs**
+
+**The owner's reason, in his terms:** Fly bills pay-as-you-go per second on provisioned resources. He does
+not want that. He wants a **predictable flat floor** and is willing to pay for it. Railway's Hobby plan is
+**$5/mo which *includes* $5 of resource usage**, with overage billed as the delta
+([docs.railway.com/reference/pricing/plans](https://docs.railway.com/reference/pricing/plans)). **This is a
+legitimate basis for a decision and the tech lead is not relitigating it.**
+
+**One accuracy note, so the expectation is right rather than flattering:** Railway is *not* flat-rate
+underneath — it meters RAM at **$10/GB/mo**, vCPU at **$20/vCPU/mo**, egress at **$0.05/GB** and volumes at
+**$0.15/GB/mo**, quoted per-minute. What the $5 buys is a **floor with usage included**, i.e. the bill is
+*stable and predictable at our scale* rather than genuinely fixed. That is exactly the property asked for, and
+at our two-small-services shape we are plausibly inside the included $5 most months. But if the worker is
+later scaled to 1GB+ and run 24/7, the bill moves. **Recorded so "flat" is not later read as "capped".**
+
+**What is genuinely lost — the Turso co-location tiebreaker.** §11.2's third criterion broke a near-tie on the
+fact that **Turso runs on Fly's infrastructure**, so `primary_region` co-location was a one-line setting. On
+Railway that is gone: **every queue read becomes a cross-provider hop over the public internet.** Stated
+plainly because the queue's access pattern is the worst possible one for it — **many small, frequent reads**
+(a claim poll, a heartbeat write every 15s, a reaper scan), where per-query latency dominates and there is no
+payload size to amortise it against.
+
+**How much this actually costs, honestly scoped:**
+
+- **It is a latency tax on the queue's *polling*, not on user-facing analysis.** An analysis is dominated by a
+  video download, a Gemini File API upload and a multi-second `generateContent` call. Adding single-digit
+  milliseconds per DB round trip to that is noise. The reads it genuinely affects are the worker's idle poll
+  loop and the heartbeat — neither of which a human is waiting on.
+- **Region choice mitigates most of it.** Railway and Turso both offer US-East / EU-West / Asia-Southeast
+  metros. Same-metro cross-provider is a small single-digit-ms hop, not a cross-continent one. **Choose the
+  Railway region and the Turso primary in the same metro at deploy time — this is a deploy-ticket checklist
+  item, not an afterthought.**
+- **There is a real mitigation available if it does bite, and it is already in our dependency tree.**
+  `@libsql/client@0.17.4` (installed) supports **embedded replicas** — `syncUrl` / `syncInterval` /
+  `readYourWrites` are accepted options on the node `sqlite3` path (verified in
+  `node_modules/@libsql/client/lib-esm/sqlite3.js:33-51`). That turns reads into local-file reads with
+  background sync and makes the co-location question mostly moot. It requires a **Railway volume** for the
+  local file and it changes write/read-consistency semantics, so it is **not** adopted pre-emptively — it is
+  named here so that if queue latency ever shows up as a real problem, the fix is known and does not require
+  reversing the hosting decision.
+- **Egress cost:** the queue's reads are tiny; at $0.05/GB this is not a line item. Video downloads are
+  *ingress* and are not billed on that rate.
+
+**And a point that now counts in Railway's favour, carried forward from §11.2's own closing paragraph:** the
+tech lead's stated honest cost of choosing Fly was that *"Railway would be faster to first deploy"* — no
+`fly.toml`, no regions/volumes reasoning, less infrastructure surface. **That was true when it was written and
+it is a real benefit now that it is the chosen path**, particularly given OR-17 puts deployment after 3C, when
+the priority is getting staff onto the tool quickly. **This is not a consolation prize invented after the
+fact; it is the same sentence, unchanged, now on the other side of the ledger.**
+
+### 11.2b **Can Railway actually do what 3A needs? — verified against Railway's own docs. YES, no blockers.**
+
+Checked because a preference is only safe to accept once it is confirmed it does not silently break a
+requirement. **Nothing 3A needs is unsupported.** Every row is from Railway's primary documentation.
+
+| 3A requirement | Railway | Verdict |
+|---|---|---|
+| **A long-lived background worker that NEVER sleeps** — §10.4's whole process model | Railway's sleep feature ("app sleeping", now branded **Serverless**) is **OFF by default and toggled per-service** in *service settings → Deploy → Serverless* ([docs.railway.com/guides/optimize-usage](https://docs.railway.com/guides/optimize-usage)). We simply never enable it on the worker. | ✅ **Satisfied, and better than Render.** §11.2 disqualified Render because its free tier spins a service down after 15 minutes *on an inbound-traffic heuristic we do not control*. Railway's is an explicit opt-in switch — the same "under our control, not the platform's" property that made Fly's `auto_stop` acceptable. |
+| **The `yt-dlp` binary + ffmpeg** | Railway builds and deploys from a **user-supplied `Dockerfile`** at the source root ([docs.railway.com/guides/dockerfiles](https://docs.railway.com/guides/dockerfiles)); no documented restriction on installing system packages in the build. | ✅ **Satisfied.** §11.3's Dockerfile is written once and is **host-agnostic** — it is the same artefact under Fly or Railway. This was never the risky part. |
+| **Two processes from one image** (`next start` + `scripts/worker.ts`) | Multiple services from one repo, each with its own **custom start command** ([docs.railway.com/guides/services](https://docs.railway.com/guides/services), monorepo deployment). | ✅ **Satisfied.** The `fly.toml` `[processes]` block in §11.3 becomes two Railway services sharing one repo/Dockerfile. |
+| **A worker with no HTTP port / no public domain** | A public domain is opt-in on Railway; services communicate over private networking. | ✅ **Satisfied.** |
+| **SSE progress transport** (§10.4) | Needs a long-lived Node process, which the web service is. | ✅ **Satisfied** — this was a consequence of OR-14, not of the host. |
+| **Independent sizing of web vs worker** (the worker wants ~1GB for download + upload) | Per-service resource allocation, metered per GB/vCPU. | ✅ **Satisfied**, and the per-service split §11.2 wanted from Fly is available here too. |
+| **Turso cutover** | `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` + a `db:migrate` release step — **host-agnostic**, as §11.2 already said of all three candidates. | ✅ **Satisfied.** Only the co-location tiebreaker is lost (§11.2a), and the cutover work itself is unchanged. |
+
+**Conclusion: there is no technical blocker. OR-23 costs us one tiebreaker, not a capability.** Had Railway
+been unable to run an always-on worker or a custom binary, that would have been a genuine blocker and would
+have been escalated rather than absorbed — it is not.
+
 ### 11.3 What the deploy work contains
 
-`Dockerfile` (Node + `yt-dlp` + ffmpeg), `fly.toml` with two processes, Turso database + auth token, a
-release command running `db:migrate`, secret management for `GEMINI_API_KEY` / `SCRAPECREATORS_API_KEY`, a
-deploy step in `.github/workflows/ci.yml`, and a `.env.example` audit (RUNBOOK §3). Since OR-17 puts this
-**after** 3C, migrations 012 and 013 will both apply on the first Turso run — which is fine and is why all
-SQL in this document is kept libSQL-portable.
+**Updated for OR-23.** `Dockerfile` (Node + `yt-dlp` + ffmpeg — unchanged and host-agnostic), **two Railway
+services from the one repo/Dockerfile** with distinct start commands (`next start` and the worker entrypoint,
+§10.4) **replacing the `fly.toml` `[processes]` block**, **Serverless left OFF on the worker service** (§11.2b
+— this is the one setting that would silently break 3A if it were flipped, so it belongs in the deploy ticket
+as an explicit checked item, not as tribal knowledge), a Turso database + auth token **with its primary in the
+same metro as the Railway region** (§11.2a), a release command running `db:migrate`, secret management for
+`GEMINI_API_KEY` / `SCRAPECREATORS_API_KEY`, a deploy step in `.github/workflows/ci.yml`, and a `.env.example`
+audit (RUNBOOK §3). Since OR-17 puts this **after** 3C, migrations 012 and 013 will both apply on the first
+Turso run — which is fine and is why all SQL in this document is kept libSQL-portable.
 
 ---
 
@@ -848,7 +1053,7 @@ The suite is **29 files / 319 tests** across two vitest projects (RUNBOOK §7).
 | Layer | Project | What |
 |---|---|---|
 | `resolveReach` | node | AC-4 (false zero → 116,333 `PLAYS`), AC-5 (carousel reversal → `VIEWS`), AC-6/AC-18 (all-image → no reach, no kind). **All against committed fixtures — zero credits.** |
-| `resolveAvailability` | node | AC-19 (absent flag never read as `false`); YouTube bare `0` → `UNKNOWN` pending V2 |
+| `resolveAvailability` | node | AC-19 (absent flag never read as `false`); **OR-20** — the real V1 fixture `ig_post_counts_disabled.json` resolves `HIDDEN` and **never** yields `-1`/`0`, plus a synthetic `-1` **with the flag stripped** proving the negative guard stands alone (§1.7); **OR-21** — YouTube `likeCountInt` of `0`, `null` **and** absent all → `UNKNOWN` (settled, not pending V2) |
 | `ratios` / `baseline` | node | AC-1, AC-2, AC-23, AC-24 (no cross-bucket substitution), R-4.3.2 mixed-kind **throws**, `bucketNoun()` per bucket (OR-9) |
 | `judgement` | node | **OR-13** — the confidence ladder and all three demotion reasons; `provisional` boundary at `MATURITY_FLOOR_HOURS`; every `unavailableReason` branch |
 | prompt | node | AC-8, AC-22 — **extend** `user.engagementLabel.test.ts`, do not duplicate it |
@@ -860,8 +1065,17 @@ The suite is **29 files / 319 tests** across two vitest projects (RUNBOOK §7).
 | absent-count derivation | node | **OR-11** — all three cases, plus a negative assertion that case 3 never says "Creator turned off counts" |
 | copy lint | node | AC-29's negative assertion: string-search the UI copy source for any claim the maturity floor is measured or validated |
 
-**Gated on approved spends:** the counts-disabled Instagram fixture (V1), the likes-hidden YouTube fixture
-(V2), carousel token headroom (V3). **S3/AC-10 is discharged live by V4 (OR-16) and is not a ticket here.**
+~~**Gated on approved spends:** the counts-disabled Instagram fixture (V1), the likes-hidden YouTube fixture
+(V2), carousel token headroom (V3). **S3/AC-10 is discharged live by V4 (OR-16) and is not a ticket here.**~~
+
+**Verification status — CORRECTED 2026-08-06. Nothing in §12 is gated any more.**
+
+| | Status | Effect on this document |
+|---|---|---|
+| **V1** — counts-disabled Instagram post | ✅ **CAPTURED & COMMITTED** — `.claude/context/fixtures/scrapecreators-instagram/ig_post_counts_disabled.json` | **Ungates the availability tests**, and adds the `-1` trap (§1.7, OR-20). The fixture is real, so these are fixture tests at **zero credits**. |
+| **V2** — likes-hidden YouTube video | ⚠️ **NOT CAPTURED** — no candidate video found; **0 credits spent**. The blocker is discovery, not budget. | **Does NOT gate anything.** OR-21 rules the conservative behaviour outright. The test asserts the *ruled* rule, not a placeholder. **This is the only outstanding verification in Phase 3.** |
+| **V3** — carousel token headroom | ✅ **CAPTURED** — ~85.5% headroom, better than the reel (§8.4) | **Ungates ticket #142.** |
+| **V4** — `temperature: 0` determinism | ✅ **RUN — and it FAILED** (§13 E8, OR-22) | AC-10/S3 corrected (§14.7). Still not a ticket; strengthens §4/OR-13. |
 
 ---
 
@@ -869,9 +1083,17 @@ The suite is **29 files / 319 tests** across two vitest projects (RUNBOOK §7).
 
 PRD §9.2's R1–R7 are inherited unchanged. Engineering risks:
 
-- **E1 — Building against an unverified payload shape.** V1/V2 are approved but **not captured**. *Approved is
-  not verified.* No branch may key off an assumed counts-disabled shape.
-- **E2 — Carousel token headroom is unmeasured** and the extended prompt makes it worse. V3 gates 3B-4.
+- **E1 — Building against an unverified payload shape. ⚠️ REWRITTEN — V1 landed and it proved the risk was
+  real.** The original text said *"V1/V2 are approved but not captured; approved is not verified."* V1 is now
+  captured and it **falsified the shape everyone was defaulting to**: the counts-disabled like count is `-1`,
+  not `0`/`null`/absent (§1.7). The residual risk is now narrower and named: **(a)** V2 is still uncaptured —
+  handled by ruling conservatively (OR-21) rather than by guessing; **(b)** a counts-disabled *video* is still
+  unobserved, so no branch may infer anything about reach from the counts-disabled flag. **The lesson generalises
+  and is the reason OR-21 is worded the way it is: on this exact class of question, guessing the payload shape
+  has already been wrong once, with a value nobody proposed as a possibility.**
+- **E2 — Carousel token headroom. ⚠️ CLOSED as a risk (§8.4, OR-19).** Measured at ~85.5%, *better* than the
+  reel's 83%. The PRD's contrary framing is corrected in §14.6. Residual: V3 measured the pre-3B contract, and
+  3B's ~+300–600 output tokens are under 2% of the measured free budget. **No longer a gate on #142.**
 - **E3 — The transaction leak** (§1.5). The highest-probability way 3A ships a production defect.
 - **E4 — The fingerprint cold-starts** on the schema bump (§1.2). Not a bug; a consequence that will look like
   one if unannounced.
@@ -881,8 +1103,31 @@ PRD §9.2's R1–R7 are inherited unchanged. Engineering risks:
   wrong. Prove it non-vacuous by asserting it *fails* on a deliberately fabricated numeral, the way #123's
   demonstration test was proven.
 - **E7 — The prose guard is a runtime failure on a paid call.** If §8.1's pre-formatted strings drift, we
-  burn a Gemini call and fail the analysis. Accepted deliberately (§8.2): a loud failure is better than a
-  quietly unqualified percentage in a client deck.
+  burn a Gemini call and fail the analysis. Accepted deliberately (§8.2) and **now explicitly confirmed by the
+  owner with the cost understood (OR-25)**: a loud failure is better than a quietly unqualified percentage in
+  a client deck.
+- **E8 — NEW. Gemini output is non-deterministic at `temperature: 0`, and it moves the style fingerprint.**
+  Measured by V4 (OR-22). **The drift is accepted; this entry exists so the consequence is not discovered by
+  someone else later.**
+  - **What is stable:** `overallScore` and all 7 scorecard dimensions were identical across identical calls.
+    The commercially load-bearing scores are reproducible.
+  - **What drifts:** `formatArchetype`, `pacing`, `estimatedCutsPerMinute`, `ctaType` ordering,
+    `structureBeatMap` segmentation — **classification enums and numbers, not just prose.**
+  - **Why it is tolerable:** an analysis runs **once and is stored**. The drift is only observable if a user
+    triggers **Re-analyze** on the same content. There is no background re-run, no cache invalidation path
+    that would silently reclassify a row.
+  - **⚠️ The consequence somebody will hit — stated, not solved.** `formatArchetype` and `pacing` are
+    **inputs to the style fingerprint** (`lib/server/fingerprint/*`). Therefore **a re-analysis can legitimately
+    change a video's classification, and with it the creator's aggregate fingerprint**, with no change to the
+    underlying content and no bug anywhere. **Whoever builds the fingerprint UI needs to know this** — do not
+    present a fingerprint as a stable fact about a creator, and do not treat a changed classification after a
+    re-analysis as a defect to investigate. **This TDD notes it and does nothing about it, per OR-22.**
+  - **Explicitly NOT being built:** reconciliation machinery, versioned re-analysis records, retry-until-agree
+    loops, or an n-of-3 vote. All were considered and ruled out — they buy consistency in a field nobody has
+    complained about, at the price of multiplying the per-analysis Gemini spend.
+  - **Do not treat `temperature: 0` as a determinism guarantee for any field on this schema.** If a future
+    feature needs a literally-stable value, it must either compute it in code (the OR-13 pattern) or store and
+    reuse the first result.
 
 ---
 
@@ -897,6 +1142,8 @@ The PRD is **wrong on `main`**. These edits are applied in the same PR as this T
 | 14.3 | §13.4 R-13.4.1, §13.7 R-13.7.3, AC-28 | `based on N videos` → the pattern **`based on {N} {noun}`**, bucket-aware. | OR-9 |
 | 14.4 | §13.3 R-13.3.4, AC-27 | Adds a stated **allow-list**: config constants (`BASELINE_MIN_SAMPLE`, the profile cache TTL) are exempt and are **not** stored per row. | OR-10 |
 | 14.5 | §8.3 D9 | The 12-column default set is **superseded by the approved 9-column set** (§9.1); Status is cut; Style is optional and off by default. | OR-1, OR-4, OR-5 |
+| **14.6** | **§9.1 "Unmeasured risk" row; §9.2 R1, R2** | **The carousel headroom risk is measured and FALSE.** "A 10-slide carousel plus a longer prompt is the case that would actually bind" is replaced by the measured result: **~85.5% headroom on a real 10-slide carousel vs ~83% on the reel — better, not worse** (§8.4). R1 is updated from "approved but not yet captured" to **captured**, with the `-1` sentinel recorded. R2 is updated to record V2 as **uncaptured but no longer blocking**, under OR-21's conservative rule. | **OR-19, OR-20, OR-21** |
+| **14.7** | **§7 S3; §8 AC-10** | **AC-10 and S3 as written are FALSE and are corrected rather than left standing.** V4 measured non-identical output on byte-identical input at `temperature: 0`. The criterion is **narrowed to what code actually guarantees**: the **computed block** (which is deterministic because code produces it, OR-13) is byte-identical; **Gemini's judgement fields are NOT guaranteed identical**, and the drift is accepted (OR-22). An acceptance criterion known to be unpassable is worse than no criterion. | **OR-22** |
 
 ---
 
@@ -906,7 +1153,7 @@ The PRD is **wrong on `main`**. These edits are applied in the same PR as this T
 3B-1 [BE] migration 012 + engagement_rate removal + schema-test update   (blocks all of 3B)
   └► 3B-2 [BE] performance module: reach + availability + ratios     (fixture-driven, no spend)
        └► 3B-3 [BE] Tier 2 baseline + bucket noun + composite index
-            └► 3B-4 [BE] contract v3: prompt block, prose guard, responseSchema, parser   [gated on V3]
+            └► 3B-4 [BE] contract v3: prompt block, prose guard, responseSchema, parser   [UNGATED — V3 captured, OR-19]
                  └► 3B-5 [BE] judgement module + pipeline wiring + persistence
                       └► 3B-6 [BE] read path + API response shape + server-side pagination
 

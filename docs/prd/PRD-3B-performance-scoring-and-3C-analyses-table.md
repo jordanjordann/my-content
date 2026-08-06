@@ -1,6 +1,14 @@
 # PRD — Phase 3B (Performance / Engagement Scoring) + Phase 3C (Analyses Table Redesign)
 
 **Status:** **Owner-reviewed 2026-08-05.** All ten §10 decisions are now **[CONFIRMED]** — the owner accepted the recommended option on every one. All three verification spends (V1, V2, V3) are **approved**. Two caveats attach to the acceptances and are recorded in §10.0; §12 adds the resolution for all-image carousels that the first draft only flagged.
+
+> **⚠️ AMENDED 2026-08-06 — verification pass complete; three claims in this document were measured FALSE.**
+> **V1 CAPTURED** (counts-disabled Instagram → the like count is **`-1`**, §9.2 R1). **V3 CAPTURED** (carousel
+> headroom is **~85.5%, better than the reel** — §9.1's risk row is **falsified**, not merely unmeasured).
+> **V4 RUN and FAILED** (`temperature: 0` is **not** deterministic — **S3 and AC-10 are corrected**).
+> **V2 remains uncaptured but no longer blocks anything** (owner ruling: `0`/`null`/absent all mean `UNKNOWN`).
+> The corrected passages are marked in place. The binding decision record is
+> `docs/TDD-3A-3B-3C-phase-3.md` §0, rulings **OR-19 … OR-25**.
 **Owner:** Oden (product owner)
 **Author:** Dan (PM)
 **Created:** 2026-08-05
@@ -14,7 +22,7 @@ Reading conventions are inherited from the roadmap and used strictly:
 - **[CONFIRMED]** — explicit owner decision. Build to it.
 - **[RECOMMENDATION]** — my proposal. Owner has not ruled. **Do not treat as approved.**
 - **[OPEN]** — genuinely undecided. Nobody invents an answer.
-- **[VERIFY]** — an external-API fact this PRD needs that is **not** in `.claude/context/verified-facts.md`. Must be captured live before any code depends on it. **V1–V3 are now approved to be captured (§10.2); they are not yet captured.** "Approved" is not "verified" — nothing may be built against an unverified shape.
+- **[VERIFY]** — an external-API fact this PRD needs that is **not** in `.claude/context/verified-facts.md`. Must be captured live before any code depends on it. ~~**V1–V3 are now approved to be captured (§10.2); they are not yet captured.**~~ **UPDATED 2026-08-06: V1 and V3 are CAPTURED; V4 has run; only V2 remains uncaptured** (§10.2). "Approved" is not "verified" — nothing may be built against an unverified shape, and **V1 is the proof of why: the counts-disabled like count turned out to be `-1`, a value no one had proposed as a possibility.**
 
 As of the 2026-08-05 revision, **every decision in §10 is [CONFIRMED]**. Remaining `[RECOMMENDATION]` language elsewhere in the document has been reconciled; if you find any, treat §10 as authoritative.
 
@@ -38,10 +46,10 @@ The analysis scorecard judges **content only**. Nothing in the product says whet
 |---|---|---|
 | S1 | For any analysis where a usable denominator is available — reach for video, follower count for image-only content (§12) — the table shows a performance score and a tier badge | Query: 0 rows with a usable denominator and a null performance score |
 | S2 | **Zero fabricated numbers.** Every numeral appearing in Gemini's performance prose exists in the computed input block handed to it | Automated: extract numerals from the prose fields, assert each is present in the stored computed-metrics block (rounding tolerance to be stated by the tech lead) |
-| S3 | Re-running the same analysis inputs twice at `temperature: 0` yields an identical performance score and identical computed ratios | Two runs, byte-diff the performance block. (This also discharges the determinism item still formally open from ticket #66 — see `verified-facts.md`, 2026-08-05 entry) |
-| S4 | An analysis whose like/view counts are disabled produces **no** performance score, an explicit unavailable state, and prose that says so | Manual + fixture test once a counts-disabled fixture exists ([VERIFY] V1) |
+| S3 | ⚠️ **CORRECTED 2026-08-06 — the original wording was measured FALSE.** ~~Re-running the same analysis inputs twice at `temperature: 0` yields an identical performance score and identical computed ratios.~~ **Now:** re-running the same analysis inputs twice yields a **byte-identical *computed* block** (reach, ratios, denominators, tier, confidence, provisional, `unavailableReason`). **Gemini's judgement fields are explicitly NOT guaranteed identical.** | Two runs, byte-diff **the computed block only**. **V4 (`verified-facts.md`, 2026-08-06) ran this and found `temperature: 0` is NOT deterministic on this schema** — `formatArchetype`, `pacing`, `estimatedCutsPerMinute`, `ctaType` ordering and `structureBeatMap` all drifted between byte-identical requests, while `overallScore` and the full scorecard held. The determinism this criterion can honestly claim is the determinism **code** provides, not the model. The drift is **accepted** (TDD OR-22); see TDD §13 E8 for its consequence on the style fingerprint. |
+| S4 | An analysis whose like/view counts are disabled produces **no** performance score, an explicit unavailable state, and prose that says so | ✅ **The fixture now exists** — `ig_post_counts_disabled.json` (V1, captured 2026-08-06). This is a **zero-credit fixture test**, no longer a deferred one. It must also assert the `-1` sentinel never reaches a ratio (§9.2 R1). |
 | S5 | Reach is never mislabelled: a play count is never rendered or described as "Views" | Extend the existing `user.engagementLabel` test to the new performance prompt block |
-| S6 | Gemini output token usage stays under 50% of the `maxOutputTokens` budget on a production-sized request | Read `usageMetadata` from one live call; compare against the 83% headroom baseline already recorded in `verified-facts.md` |
+| S6 | Gemini output token usage stays under 50% of the `maxOutputTokens` budget on a production-sized request | Read `usageMetadata` from one live call. **Two baselines now exist in `verified-facts.md`: ~83% headroom on a single reel and ~85.5% on a 10-slide carousel (V3, 2026-08-06).** Both are far inside the 50% criterion — actual spend was 5,568 and 4,758 tokens against 32,768. Compare against the **carousel** figure, since it is the more media-heavy request. |
 | S7 | **No user can mistake a follower-denominated engagement % for a reach-denominated one.** Every rendered engagement value carries its denominator in accessible text, and no sort or aggregate mixes the two | Component tests AC-20, AC-21; plus explicit designer sign-off at mockup review |
 | S8 | **Every displayed score can be explained on the surface it appears on** (§13). No score, and no absent score, renders without its metric, its inputs, its evidence base and — where applicable — its reason | Component tests AC-25 to AC-30, each asserting rendered text content |
 
@@ -145,7 +153,7 @@ Every item below must reach the prompt with an explicit **availability state** (
 | **Likes** | `edge_media_preview_like.count` (IG) / `likeCountInt` (YT) | Both confirmed in `verified-facts.md` |
 | **Comments** | `edge_media_to_parent_comment.count` (IG) / `commentCountInt` (YT) | Both confirmed |
 | **Shares / saves** | — | **NOT AVAILABLE.** Neither ScrapeCreators endpoint exposes shares or saves in any captured payload. The steer mentions "shares/saves if available" — **they are not available.** Do not model them, do not leave a nullable field for them, do not let a prompt ask Gemini to guess at them. Recorded so it is not rediscovered mid-ticket. |
-| **Counts-hidden flag** | `like_and_view_counts_disabled` (IG) | Field name confirmed; **the shape of a real counts-disabled payload is NOT verified** — [VERIFY] V1 |
+| **Counts-hidden flag** | `like_and_view_counts_disabled` (IG) | ✅ **VERIFIED 2026-08-06 (V1).** Flag confirmed at `data.xdt_shortcode_media.like_and_view_counts_disabled: true`. **⚠️ And the like count alongside it is `-1`, with `edges[]` still populated** — read the flag first, and treat any negative count as `UNKNOWN` (§9.2 R1, TDD §1.7). |
 | **Audience size** | `profiles.follower_count` (IG) / `subscriberCount` (YT) | IG nesting `edge_followed_by.count` confirmed live 2026-08-05. YT `subscriberCount` confirmed numeric. **7-day-TTL cache ⇒ approximate; nothing may present it as exact.** |
 | **Post age** | `taken_at_timestamp` (IG, unix **seconds**) / `publishDate` (YT, **ISO-8601 with offset**) | Two different formats — confirmed in `verified-facts.md`. See §4.5 |
 | **Content kind** | `analysis_mode` + media type | Drives comparability bucketing, §4.6 |
@@ -218,7 +226,7 @@ The roadmap lists YouTube-at-parity as `[OPEN]`, reasoning that YouTube carries 
 
 **Recommendation: YouTube is in scope at full parity for 3B.** Two caveats to record:
 
-- **[VERIFY] V2 — YouTube likes-hidden behaviour is unverified.** A YouTube creator can hide the like count. Whether `likeCountInt` comes back `0`, `null`, or absent in that case is **not in `verified-facts.md`**. Do not guess. Until captured, treat YouTube likes with the same false-zero suspicion as Instagram's `video_view_count` (R-4.3.3) and set `UNKNOWN` on a bare 0.
+- **[VERIFY] V2 — YouTube likes-hidden behaviour is still unverified, and is now RULED rather than pending.** A YouTube creator can hide the like count per-video. Whether `likeCountInt` comes back `0`, `null`, or absent is **still not in `verified-facts.md`** — V2 was attempted 2026-08-06 and no candidate video could be found (0 credits spent). **Do not guess. Owner ruling (TDD OR-21), binding: `0`, `null` AND field-absent all mean `UNKNOWN`.** This is deliberately shape-agnostic — it is correct under whichever of the three shapes V2 would have revealed, which is precisely why 3B does not wait for it. **Accepted cost: a genuinely zero-like video reads "unknown".** Same false-zero suspicion as Instagram's `video_view_count` (R-4.3.3), applied harder. *(A secondary, Google-sourced claim that YouTube "typically returns null, 0, or omits the field" is recorded in TDD §5.4 **labelled as unverified**; it is deliberately kept out of `verified-facts.md`, which holds live observations only.)*
 - **Cost asymmetry, already known:** ~2 SC credits per YouTube analysis vs 1 for Instagram (roadmap §3, 1.1), and `/v1/youtube/channel` charges **even on a not-found handle**. No *new* cost from 3B — the channel call already happens for follower resolution.
 
 ---
@@ -328,10 +336,27 @@ Gherkin, phrased so each is actually checkable. **No screenshot-only criteria** 
 *When* the creator's follower count later changes and the profile cache refreshes,
 *Then* the stored performance score, ratios and audience number are **byte-identical** to before.
 
-**AC-10 — Determinism**
+**AC-10 — Determinism** ⚠️ **CORRECTED 2026-08-06 (V4). The original half of this criterion cannot pass.**
+
+~~*Then* the computed block is byte-identical **and `performanceScore` is identical**.~~
+
 *Given* identical inputs,
 *When* the analysis runs twice at `temperature: 0`,
-*Then* the computed block is byte-identical and `performanceScore` is identical.
+*Then* **the computed block is byte-identical** — because code, not Gemini, produces every field in it
+(§5.2 as amended; TDD OR-13).
+
+**`performanceScore`, `verdict` and `drivers[]` are explicitly excluded from this guarantee.** V4 measured
+two byte-identical `analyzeContent()` requests at `temperature: 0` returning non-identical output — and the
+divergence was **not confined to prose**: `formatArchetype` flipped `TEXT_SLIDESHOW` → `CAROUSEL_STATIC`,
+`pacing` flipped `FAST` → `SLOW`, `estimatedCutsPerMinute` went `20` → `null`, `ctaType` reordered and
+`structureBeatMap` resegmented from 10 beats to 6. These are enums and numbers. `overallScore` and all 7
+scorecard dimensions were stable, but stability was **observed, not guaranteed**, on n=2.
+
+**This drift is accepted, not defended against** (TDD OR-22): an analysis runs once and is stored, so it is
+only observable via Re-analyze. **Its one real consequence is recorded in TDD §13 E8** — `formatArchetype`
+and `pacing` feed the style fingerprint, so a re-analysis can legitimately change a creator's classification.
+**Do not write a test asserting `performanceScore` is reproducible; it would be a flaky test asserting a
+false claim.**
 
 **AC-11 — Maturity**
 *Given* a post under the confirmed maturity floor (D5),
@@ -439,12 +464,12 @@ Ordered left to right. The goal is US-6: scan a creator's library and find what 
 | Gemini output tokens | ~+300–600. Measured headroom is **83%** on a production-sized request; this stays comfortably clear of `MAX_TOKENS`. |
 | DB | One extra read per analysis (the creator's prior analyses, for the baseline). |
 | Deletion migration | Zero — 3 rows. |
-| **Unmeasured risk** | **Carousel token headroom has never been measured** (`docs/HANDOFF-2026-08-05.md`, carried-forward item 6). The 83% figure comes from a single-video reel. A 10-slide carousel plus a longer prompt is the case that would actually bind. Measure before assuming — **V3, now approved (§10.2), and its measurement discharges that carried-forward item as well as this row.** Still unmeasured until someone runs it. |
+| ~~**Unmeasured risk**~~ → **MEASURED, and the risk framing was WRONG** | ⚠️ **CORRECTED 2026-08-06 by V3.** This row previously read: *"Carousel token headroom has never been measured… a 10-slide carousel plus a longer prompt is the case that would actually bind."* **That is empirically false.** V3 ran a real 10-slide video-bearing carousel through the **production** pipeline (`runAnalysis()` end to end) and measured **~85.5% output-token headroom (4,758 of 32,768 spent)** against the single-reel baseline of **~83%**. **The carousel was cheaper on every token axis than the reel** — `promptTokenCount` 15,663 vs 24,052, candidates 2,192 vs 1,574, thoughts 2,566 vs 3,994. Sixty-one seconds of continuous video plus audio costs more than seven short slides plus three images. **Do not carry "carousels are the higher-risk case for `MAX_TOKENS`" into implementation.** This discharges `docs/HANDOFF-2026-08-05.md` carried-forward item 6. **Residual, stated honestly:** V3 measured the *current, pre-3B* contract, so it falsifies *"carousels bind"* without proving *"3B's longer prompt fits"* — but 3B's budgeted +300–600 output tokens is under 2% of the 28,010 measured free tokens, so this is an observation to record on the first real 3B run, **not a gate**. n=1. See TDD §8.4. |
 
 ### 9.2 Risks
 
-- **R1 — The counts-disabled payload shape is unverified** ([VERIFY] V1). Everything downstream is built defensively around the boolean flag, but the real payload is unseen. Capturing a genuine counts-disabled post costs ~1 credit and is **now approved (V1, §10.2)** — approved but **not yet captured**. Note §12.1's related finding: on an all-image carousel the flag is **absent entirely**, so absence must never be read as `false` (R-12.2.3).
-- **R2 — YouTube likes-hidden behaviour is unverified** ([VERIFY] V2, **now approved but not yet captured**). See §4.7. Until captured, a bare `0` on `likeCountInt` is `UNKNOWN`, not zero.
+- **R1 — ⚠️ RESOLVED 2026-08-06 — V1 IS CAPTURED, and it found something worse than expected.** ~~The counts-disabled payload shape is unverified… approved but not yet captured.~~ Fixture committed at `.claude/context/fixtures/scrapecreators-instagram/ig_post_counts_disabled.json`. **The finding: on a genuinely counts-disabled post, `edge_media_preview_like.count` is `-1`** — not `0`, not `null`, not absent — **with `edges[]` still populated with real usernames.** The shipped adapter is safe only because it gates on `like_and_view_counts_disabled === true` *before* reading the count. **New 3B code that reads the count first produces a negative engagement ratio and renders it as real.** Binding rule: **a negative count is `UNKNOWN`, never data; never `?? 0`, never `Math.max(x, 0)`.** See TDD §1.7 / OR-20 and ticket #140. §12.1's finding stands unchanged: on an all-image carousel the flag is absent entirely, so absence must never be read as `false` (R-12.2.3). **Still open:** V1's sample is an image post, so a counts-disabled *video* remains unobserved — nothing may infer reach behaviour from the flag.
+- **R2 — YouTube likes-hidden behaviour is UNCAPTURED, and is now RULED rather than blocking** ([VERIFY] V2). **0 credits were spent** — the blocker is finding a real candidate video, not budget. **Owner ruling (TDD OR-21), binding and not provisional: on `likeCountInt`, `0`, `null` and field-absent ALL mean `UNKNOWN`.** No score is fabricated, no fake zero is stored. **The accepted cost, deliberately taken: a genuinely zero-like video will read "unknown".** **3B is NOT blocked on V2**; if V2 is ever captured it can only narrow this rule, and nothing has to be rewritten to accept it. See §4.7.
 - **R3 — The follower count is up to 7 days stale.** Accepted by the owner. Mitigated by Tier 2 being the headline (it does not use the follower count at all), and by never presenting Tier 3 as exact.
 - **R4 — Tier 2 on a 5-post baseline is statistically thin.** Same caveat the fingerprint carries. Mitigated by always showing the sample size, never by hiding it.
 - **R5 — The table gets too wide.** Mitigated by §8.3's explicit non-default list. If the designer pushes back, cut from the bottom of the default list, not from #7/#8.
@@ -496,7 +521,7 @@ All three parts: post age in days is passed to Gemini and weighed in the verdict
 **D6 — YouTube scope. [CONFIRMED → full parity]**
 YouTube is in scope for 3B at full parity. §4.7's reasoning stands: for *performance* scoring YouTube's data is cleaner than Instagram's — one unambiguous view count, confirmed-numeric subscriber count, no play-vs-view trap.
 *Rejected:* (b) Tier 3 only, (c) excluded — both were justified by missing *content-analysis* context (audio flag, dimensions), which is irrelevant to this feature.
-*Caveat carried:* V2 (below) is now approved and must be captured before code depends on YouTube's likes-hidden shape.
+*Caveat carried:* ~~V2 (below) is now approved and must be captured before code depends on YouTube's likes-hidden shape.~~ **UPDATED 2026-08-06:** V2 could not be captured. Code still may not depend on the *shape*; it depends instead on the **shape-agnostic** OR-21 rule (`0` / `null` / absent → `UNKNOWN`). **Not a blocker.**
 
 **D7 — Score composition. [CONFIRMED → separate axis]**
 `performanceScore` stays a **separate axis from `overallScore`**. Two axes, always rendered as two, never merged, never averaged into a single headline number.
@@ -517,17 +542,21 @@ The 12-column set was accepted *as the basis for design*, provisional per caveat
 
 ### 10.2 Verification spends — all three [APPROVED]
 
+**⚠️ STATUS UPDATED 2026-08-06 — three of the four have now run. Actual spend and outcome recorded here so
+"Approved" is never again mistaken for "verified".**
+
 | ID | What | Cost | Status |
 |---|---|---|---|
-| **V1** | Capture one genuinely counts-disabled Instagram post | ~1 SC credit | **Approved** |
-| **V2** | Capture one YouTube video with likes hidden | ~1 SC credit | **Approved** |
-| **V3** | One live Gemini call on a **multi-slide carousel**, reading `usageMetadata`, to measure output-token headroom for the extended contract | 1 billed Gemini call | **Approved** |
+| **V1** | Capture one genuinely counts-disabled Instagram post | ~1 SC credit approved · **1 spent** | ✅ **CAPTURED** — `ig_post_counts_disabled.json`. **Finding: `edge_media_preview_like.count` is `-1`.** See §9.2 R1. |
+| **V2** | Capture one YouTube video with likes hidden | ~1 SC credit approved · **0 spent** | ⚠️ **NOT CAPTURED** — no candidate video found; discovery blocker, not budget. **No longer blocking:** owner ruled the conservative rule (§9.2 R2, TDD OR-21). **The only outstanding verification in Phase 3.** |
+| **V3** | One live Gemini call on a **multi-slide carousel**, reading `usageMetadata`, to measure output-token headroom for the extended contract | 1 Gemini call approved · **1 Gemini call + 2 SC credits spent** (a stale worktree DB forced one retry — recorded, not rounded down) | ✅ **CAPTURED** — **~85.5% headroom, better than the reel's ~83%.** §9.1's risk row is **falsified**. Ungates TDD ticket 3B-4 (#142). |
+| **V4** | Two `analyzeContent()` calls on identical input at `temperature: 0` (approved separately, TDD OR-16) | 2 Gemini calls approved · **4 spent** (a script was re-run by mistake — recorded plainly) | ✅ **RUN — and it FAILED.** `temperature: 0` is **not** deterministic on this schema. **S3 and AC-10 are corrected.** Drift accepted (TDD OR-22, §13 E8). |
 
 **These are for the tech lead / developers to execute during implementation. No PM or docs work should spend them.**
 
 **V3 also discharges a pre-existing carried-forward unknown.** Carousel token headroom has been unverified since the analysis schema redesign — `docs/HANDOFF-2026-08-05.md` carried-forward item 6 records that the only live measurement (~83% headroom) was taken on a **single-video reel**, not a multi-slide carousel. V3's measurement closes that item as well as 3B's own risk; whoever runs it should update `.claude/context/verified-facts.md` and strike the handoff item in the same pass.
 
-**Until V1 and V2 land, no code may depend on the *shape* of a counts-disabled Instagram payload or a likes-hidden YouTube payload** — only on the documented boolean flag and on defensive `UNKNOWN` handling. That constraint is unchanged by the approval; the approval only means the captures may now be made.
+~~**Until V1 and V2 land, no code may depend on the *shape* of a counts-disabled Instagram payload or a likes-hidden YouTube payload**~~ — **UPDATED 2026-08-06.** V1 has landed: code may now depend on the **committed fixture**, and must depend on it, including the **`-1` sentinel** (§9.2 R1). V2 has not landed and code still may **not** assume any shape for a likes-hidden YouTube payload — but it no longer waits on it either: **`0`, `null` and absent are all `UNKNOWN`** (TDD OR-21), which is shape-agnostic by construction and would survive any of the three shapes V2 might reveal.
 
 ---
 
@@ -773,7 +802,7 @@ The product computes **different metrics for different content types** (§12). A
   **What the app says instead:** it states **what it does know** — that Instagram published no performance data for this post — and **does not speculate as to why**. The honest form is a statement of the observation, not a diagnosis.
   - **R-13.5.3a** A distinct stored reason is required for *cause not determinable*, separate from *counts confirmed hidden*. **Two different facts must not share one enum value**, or the UI is structurally unable to tell the truth.
   - **R-13.5.3b** Absent must **never** be coerced to `false` to produce a more confident-sounding sentence (R-12.2.3). **A tidier UI string is not a reason to assert a fact we do not have.**
-  - **R-13.5.3c** If V1 (§10.2) later establishes the real counts-disabled payload shape and it turns out the flag *is* reliably present on this shape, this requirement may be revisited. **Until then it stands. Approved is not verified.**
+  - **R-13.5.3c** ~~If V1 (§10.2) later establishes the real counts-disabled payload shape and it turns out the flag *is* reliably present on this shape, this requirement may be revisited.~~ **RESOLVED 2026-08-06 — V1 has landed and R-13.5.3 STANDS, unrevised.** V1's sample is a **single image post**, not an all-image carousel, so it says nothing about whether the flag is reliably present on the carousel shape §12.1 describes. The three-case derivation (TDD §9.5, OR-11) is therefore still required in full, **including its mandatory case 3**. V1 in fact *strengthens* the requirement: the payload carried an actively-misleading `-1` like count alongside the flag, which is exactly the kind of thing that makes inferring a cause from surrounding data unsafe.
 - **R-13.5.4** An absent score **never renders as `0`, as an em-dash, or as an empty cell** — restating D3 and R-8.4.3 at the surface, because this is exactly the rule that erodes first under layout pressure.
 
 ### 13.6 Comparability — the app must make the misread impossible, not merely be correct underneath

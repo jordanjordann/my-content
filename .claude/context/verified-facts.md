@@ -1883,5 +1883,5 @@ a deliberate 4-call design.
 exact post-session `credits_remaining` was not independently re-checked (that would itself be a
 balance-check-only call, which is exactly what the task instructions prohibit) — the ~31984 figure
 above is arithmetic from the one directly-observed reading (31986 after V1) minus V3's two calls, not
-a second live reading. V4 made no ScrapeCreators calls at all, so it does not change this figure.</new_string>
+a second live reading. V4 made no ScrapeCreators calls at all, so it does not change this figure.
 
