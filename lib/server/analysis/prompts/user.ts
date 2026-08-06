@@ -108,10 +108,6 @@ function buildContextBlock(metadata: MediaMetadata): string | null {
     lines.push(`- Creator followers: ${formatCount(metadata.followerCount)}`);
   }
 
-  if (metadata.engagementRate != null) {
-    lines.push(`- Engagement rate: ${formatPercent(metadata.engagementRate)}`);
-  }
-
   if (
     metadata.mediaType === "reel" &&
     displayedViewCount != null &&

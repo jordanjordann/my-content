@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Client } from "@libsql/client";
 import type { StyleAttributes } from "@/lib/server/analysis/types";
+import { ANALYSIS_SCHEMA_VERSION } from "@/lib/server/analysis/schema";
 
 /**
  * DB-level tests for the fingerprint module (repository.ts + service.ts).
@@ -67,7 +68,7 @@ async function insertAnalysis(
   },
 ): Promise<string> {
   const id = randomUUID();
-  const content = { schemaVersion: opts.schemaVersion ?? 2, style: buildStyle(opts.style) };
+  const content = { schemaVersion: opts.schemaVersion ?? ANALYSIS_SCHEMA_VERSION, style: buildStyle(opts.style) };
   await db.execute({
     sql: `
       INSERT INTO analyses (
@@ -105,12 +106,12 @@ afterEach(() => {
 });
 
 describe("recomputeFingerprint — cold start (Step 6)", () => {
-  it("writes no row at 4 completed schema_version=2 analyses", async () => {
+  it(`writes no row at 4 completed schema_version=${ANALYSIS_SCHEMA_VERSION} analyses`, async () => {
     const { recomputeFingerprint, getFingerprintRow } = await import("@/lib/server/fingerprint");
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 4; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
 
     const result = await recomputeFingerprint(profileId);
@@ -123,7 +124,7 @@ describe("recomputeFingerprint — cold start (Step 6)", () => {
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
 
     const result = await recomputeFingerprint(profileId);
@@ -133,15 +134,15 @@ describe("recomputeFingerprint — cold start (Step 6)", () => {
 });
 
 describe("recomputeFingerprint — schema_version filtering (Step 8)", () => {
-  it("counts only schema_version = 2 rows, ignoring other versions", async () => {
+  it(`counts only schema_version = ${ANALYSIS_SCHEMA_VERSION} rows, ignoring other versions`, async () => {
     const { recomputeFingerprint } = await import("@/lib/server/fingerprint");
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
     // Two legacy/other-version rows that must NOT count toward the corpus.
-    await insertAnalysis(db, { profileId, schemaVersion: 1 });
+    await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION - 1 });
     await insertAnalysis(db, { profileId, schemaVersion: null });
 
     const result = await recomputeFingerprint(profileId);
@@ -153,9 +154,9 @@ describe("recomputeFingerprint — schema_version filtering (Step 8)", () => {
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
-    await insertAnalysis(db, { profileId, schemaVersion: 2, status: "pending" });
+    await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION, status: "pending" });
 
     const result = await recomputeFingerprint(profileId);
     expect(result!.sampleSize).toBe(5);
@@ -170,14 +171,14 @@ describe("recomputeFingerprint — override-safe recompute (Step 2)", () => {
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
 
     await recomputeFingerprint(profileId);
     await setFingerprintOverrides(profileId, { audienceCalloutRate: 0.99 });
 
     // A 6th analysis lands; recompute runs again.
-    await insertAnalysis(db, { profileId, schemaVersion: 2 });
+    await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     await recomputeFingerprint(profileId);
 
     const row = await getFingerprintRow(profileId);
@@ -196,7 +197,7 @@ describe("recomputeFingerprint — override-safe recompute (Step 2)", () => {
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
 
     const computedResult = await recomputeFingerprint(profileId);
@@ -207,7 +208,7 @@ describe("recomputeFingerprint — override-safe recompute (Step 2)", () => {
     // A 6th analysis lands; recompute runs again and rewrites `computed`/
     // `consistency_index` underneath the override — the override column
     // itself is never touched.
-    await insertAnalysis(db, { profileId, schemaVersion: 2 });
+    await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     await recomputeFingerprint(profileId);
 
     const row = await getFingerprintRow(profileId);
@@ -228,7 +229,7 @@ describe("recomputeFingerprint — override-safe recompute (Step 2)", () => {
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
     await recomputeFingerprint(profileId);
 
@@ -244,11 +245,11 @@ describe("recomputeFingerprint — co-authored posts count at equal weight (owne
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     for (let i = 0; i < 3; i++) {
-      await insertAnalysis(db, { profileId, schemaVersion: 2 });
+      await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
     // 2 co-authored posts, same as the giorrando sample in the ticket body.
-    await insertAnalysis(db, { profileId, schemaVersion: 2, coauthorProducers: ["sandiuno"] });
-    await insertAnalysis(db, { profileId, schemaVersion: 2, coauthorProducers: ["someoneElse"] });
+    await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION, coauthorProducers: ["sandiuno"] });
+    await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION, coauthorProducers: ["someoneElse"] });
 
     const result = await recomputeFingerprint(profileId);
     expect(result).not.toBeNull();

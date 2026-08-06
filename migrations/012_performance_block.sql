@@ -1,0 +1,171 @@
+BEGIN TRANSACTION;
+
+-- Ticket 3B-1 / #139 (TDD docs/TDD-3A-3B-3C-phase-3.md §1.1, §5, OR-12).
+--
+-- Two things land in this migration:
+--
+-- 1. `engagement_rate` is DROPPED (D10). This is a bug fix, not cleanup:
+--    the column fed a follower-denominated ratio into the Gemini prompt
+--    under the bare, unqualified label "Engagement rate" on every content
+--    type — a live R-12.3.1 violation (TDD §1.1). The FUNCTION that
+--    computed it (`computeEngagementRate`, formerly
+--    `lib/server/profiles/helpers.ts`) is relocated, not deleted, to
+--    `lib/server/analysis/performance/ratios.ts` as 3B's follower-
+--    denominated Tier 1 primitive (OR-12) — nothing in this migration
+--    concerns the function, only the column.
+--
+-- 2. The performance-block schema (TDD §5.2) is added: reach + kind +
+--    derivedFrom, Tier 1 ratio + its required denominator, Tier 2 bucket/
+--    baseline/multiplier, post age, the audience snapshot's own staleness
+--    timestamp (`audience_source_fetched_at` — §1.3, copied from
+--    `profiles.last_fetched_at` at analysis write time because that
+--    profile-level value is overwritten on the next refresh and a
+--    completed analysis would otherwise be unable to recover how stale
+--    its own denominator was), the tier/confidence/provisional/
+--    unavailable-reason judgement fields computed in code (OR-13), and
+--    `performance_score` PROMOTED to a real column — 3C paginates
+--    server-side (OR-8) and a `json_extract` sort is not viable.
+--
+--    NOTE (flagged in ticket #139's PR, not silently corrected): the TDD
+--    header and the ticket both say "drop 1, add 14 (39 -> 52 columns)".
+--    The actual §5.2 table lists 17 distinct new column names (not 14),
+--    which the rest of the TDD depends on by name in multiple other
+--    sections (§4's `perf_confidence_reason`, §6's `perf_tier1_ratio`/
+--    `perf_reach_value`, §7's full computed-block shape, §9.1's `ⓘ`
+--    tooltip fields). The per-column table, not the summary arithmetic, is
+--    treated as authoritative here — 38 (39 - 1) + 17 = 55 columns, not
+--    52. See the PR description for the full accounting.
+--
+-- Repo convention is additive-only, no down-migrations (RUNBOOK §4). D10
+-- requires a drop, so — following the 009 precedent — this is a FULL
+-- TABLE REBUILD rather than an in-place `ALTER TABLE ... DROP COLUMN`,
+-- which keeps `tests/server/db/migrations.schema.test.ts`'s positional
+-- insert/copy column-list assertion meaningful for future rebuilds.
+--
+-- Existing analyses are DELETED, not migrated forward (owner ruling, no
+-- backward compatibility — recorded in ticket #139). They cannot carry a
+-- meaningful value for any of the new perf_* columns, and the
+-- ANALYSIS_SCHEMA_VERSION bump (2 -> 3, lib/server/analysis/schema) makes
+-- them unreadable by the fingerprint engine's schema_version filter
+-- regardless. `profile_style_fingerprints` has 0 rows today, so nothing
+-- downstream is destroyed — the fingerprint engine simply cold-starts
+-- until 5 new schema-3 analyses exist per profile (TDD §1.2, accepted
+-- consequence, not a bug). The DELETE below runs before the rebuild so the
+-- copy-forward statement further down — kept for positional-alignment
+-- symmetry with the 009 test pattern — genuinely moves zero rows, matching
+-- TDD §5.1's own description ("the copy moves nothing").
+DELETE FROM analyses;
+
+CREATE TABLE analyses_new (
+  id                     TEXT PRIMARY KEY,
+  prompt                 TEXT,
+  raw_gemini             TEXT,
+  status                 TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'completed', 'failed')),
+  created_at             TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at             TEXT NOT NULL DEFAULT (datetime('now')),
+  title                  TEXT,
+  url                    TEXT NOT NULL,
+  platform               TEXT NOT NULL CHECK(platform IN ('instagram', 'youtube')),
+  media_type             TEXT NOT NULL CHECK(media_type IN ('reel', 'post', 'carousel', 'short')),
+  username               TEXT,
+  thumbnail_url          TEXT,
+  video_url              TEXT,
+  duration_sec           INTEGER,
+  view_count             INTEGER,
+  post_date              TEXT,
+  caption                TEXT,
+  gemini_file_uri        TEXT,
+  gemini_file_expires_at TEXT,
+  result_content         TEXT,
+  result_created_at      TEXT,
+  like_count             INTEGER,
+  comment_count          INTEGER,
+  has_audio              INTEGER,
+  audio_title            TEXT,
+  audio_artist           TEXT,
+  audio_id               TEXT,
+  audio_is_original      INTEGER,
+  original_width         INTEGER,
+  original_height        INTEGER,
+  carousel_item_count    INTEGER,
+  profile_id             TEXT REFERENCES profiles(id),
+  follower_count         INTEGER,
+  analysis_mode          TEXT CHECK(analysis_mode IN ('full_video', 'images_only', 'metadata_only')),
+  schema_version         INTEGER,
+  play_count             INTEGER,
+  coauthor_producers     TEXT,
+  like_and_view_counts_disabled INTEGER,
+  -- --- Performance block (TDD §5.2) — new in this migration ---
+  perf_reach_value       INTEGER,
+  perf_reach_kind        TEXT CHECK(perf_reach_kind IS NULL OR perf_reach_kind IN ('PLAYS', 'VIEWS', 'UNKNOWN')),
+  perf_reach_derived_from TEXT,
+  perf_tier1_ratio        REAL,
+  -- R-12.2.2: a ratio without a denominator is a constraint violation, not
+  -- a lint (ticket #139 implementation step 3). NOTE the explicit
+  -- `IS NOT NULL AND ... IN (...)` rather than a bare `perf_tier1_ratio IS
+  -- NULL OR perf_tier1_denominator IN (...)` — SQLite's `x IN (...)`
+  -- evaluates to NULL (not FALSE) when `x` is NULL, and `FALSE OR NULL` is
+  -- NULL, which a CHECK constraint treats as PASSING, not failing. The
+  -- naive form silently admits exactly the row this constraint exists to
+  -- reject (verified against a live `:memory:` insert before writing this
+  -- comment).
+  perf_tier1_denominator  TEXT CHECK(
+    perf_tier1_ratio IS NULL
+    OR (perf_tier1_denominator IS NOT NULL AND perf_tier1_denominator IN ('REACH', 'FOLLOWERS'))
+  ),
+  perf_bucket_key         TEXT,
+  perf_baseline_median    REAL,
+  perf_baseline_sample_size INTEGER,
+  perf_multiplier         REAL,
+  perf_post_age_hours     INTEGER,
+  audience_source_fetched_at TEXT,
+  perf_tier_used          TEXT,
+  perf_confidence         TEXT,
+  perf_confidence_reason  TEXT,
+  perf_provisional        INTEGER,
+  perf_unavailable_reason TEXT,
+  performance_score       INTEGER
+);
+
+INSERT INTO analyses_new (
+  id, prompt, raw_gemini, status, created_at, updated_at, title, url,
+  platform, media_type, username, thumbnail_url, video_url, duration_sec,
+  view_count, post_date, caption, gemini_file_uri, gemini_file_expires_at,
+  result_content, result_created_at, like_count, comment_count, has_audio,
+  audio_title, audio_artist, audio_id, audio_is_original, original_width,
+  original_height, carousel_item_count, profile_id, follower_count,
+  analysis_mode, schema_version, play_count, coauthor_producers,
+  like_and_view_counts_disabled,
+  perf_reach_value, perf_reach_kind, perf_reach_derived_from,
+  perf_tier1_ratio, perf_tier1_denominator, perf_bucket_key,
+  perf_baseline_median, perf_baseline_sample_size, perf_multiplier,
+  perf_post_age_hours, audience_source_fetched_at, perf_tier_used,
+  perf_confidence, perf_confidence_reason, perf_provisional,
+  perf_unavailable_reason, performance_score
+)
+SELECT
+  id, prompt, raw_gemini, status, created_at, updated_at, title, url,
+  platform, media_type, username, thumbnail_url, video_url, duration_sec,
+  view_count, post_date, caption, gemini_file_uri, gemini_file_expires_at,
+  result_content, result_created_at, like_count, comment_count, has_audio,
+  audio_title, audio_artist, audio_id, audio_is_original, original_width,
+  original_height, carousel_item_count, profile_id, follower_count,
+  analysis_mode, schema_version, play_count, coauthor_producers,
+  like_and_view_counts_disabled,
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+  NULL, NULL, NULL, NULL, NULL
+FROM analyses;
+
+DROP TABLE analyses;
+ALTER TABLE analyses_new RENAME TO analyses;
+
+CREATE INDEX idx_analyses_updated_at ON analyses(updated_at DESC);
+CREATE INDEX idx_analyses_title ON analyses(title);
+CREATE INDEX idx_analyses_username ON analyses(username);
+CREATE INDEX idx_analyses_platform ON analyses(platform);
+CREATE INDEX idx_analyses_profile_id ON analyses(profile_id);
+CREATE INDEX idx_analyses_schema_version ON analyses(schema_version);
+CREATE INDEX idx_analyses_profile_bucket ON analyses(profile_id, perf_bucket_key, status);
+CREATE INDEX idx_analyses_performance_score ON analyses(performance_score);
+
+COMMIT;

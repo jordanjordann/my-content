@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Client } from "@libsql/client";
 import type { StyleAttributes } from "@/lib/server/analysis/types";
+import { ANALYSIS_SCHEMA_VERSION } from "@/lib/server/analysis/schema";
 
 /**
  * Ticket #115 (TDD `docs/archive/specs/TDD-fingerprint-read-override-api.md` §3
@@ -74,14 +75,20 @@ async function insertAnalysis(
   opts: { profileId: string; schemaVersion?: number | null; status?: string; style?: Partial<StyleAttributes> },
 ): Promise<string> {
   const id = randomUUID();
-  const content = { schemaVersion: opts.schemaVersion ?? 2, style: buildStyle(opts.style) };
+  const content = { schemaVersion: opts.schemaVersion ?? ANALYSIS_SCHEMA_VERSION, style: buildStyle(opts.style) };
   await db.execute({
     sql: `
       INSERT INTO analyses (
         id, prompt, url, platform, media_type, profile_id, status, schema_version, result_content
       ) VALUES (?, 'p', 'https://instagram.com/reel/x', 'instagram', 'reel', ?, ?, ?, ?)
     `,
-    args: [id, opts.profileId, opts.status ?? "completed", opts.schemaVersion ?? 2, JSON.stringify(content)],
+    args: [
+      id,
+      opts.profileId,
+      opts.status ?? "completed",
+      opts.schemaVersion ?? ANALYSIS_SCHEMA_VERSION,
+      JSON.stringify(content),
+    ],
   });
   return id;
 }
@@ -448,11 +455,11 @@ describe("countCompletedV2Analyses (D7)", () => {
     for (let i = 0; i < 4; i++) {
       await insertAnalysis(db, { profileId });
     }
-    await insertAnalysis(db, { profileId, schemaVersion: 1 }); // must not count
+    await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION - 1 }); // must not count
     await insertAnalysis(db, { profileId, status: "pending" }); // must not count
 
-    const rows = await getCompletedV2Analyses(profileId, 2);
-    const count = await countCompletedV2Analyses(profileId, 2);
+    const rows = await getCompletedV2Analyses(profileId, ANALYSIS_SCHEMA_VERSION);
+    const count = await countCompletedV2Analyses(profileId, ANALYSIS_SCHEMA_VERSION);
 
     expect(count).toBe(rows.length);
     expect(count).toBe(4);

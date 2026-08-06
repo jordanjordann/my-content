@@ -31,7 +31,6 @@ export interface MediaMetadata {
   // `UC...` channel id.
   externalId?: string | null;
   followerCount?: number | null; // filled by pipeline after profile resolve
-  engagementRate?: number | null; // filled by pipeline after profile resolve
 
   /**
    * Ticket #71, Q4=(c). `video_play_count` — persisted alongside
