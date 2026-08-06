@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Phase 3C — Analyses Table — Mockup (PROPOSED, not approved)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          /* DARK values — this app is hard-locked to dark mode (RUNBOOK 8.4).
+             These are stand-ins for the app's semantic tokens, chosen to
+             reproduce the ratios already measured in HANDOFF-2026-08-05:
+             --card resolves to rgb(3,10,23); text-accent on card = 7.57:1;
+             bg-primary/10 + text-primary = 6.04:1. Re-measure against the
+             real tokens before shipping. */
+          background: '#02060f',
+          card:       '#030a17',
+          hover:      '#0a1120',
+          mutedbg:    '#111a2c',
+          border:     '#1c2740',
+          fg:         '#e6edf7',
+          mutedfg:    '#94a3b8',
+          accent:     '#d99126',  /* reach-denominated  — 7.58:1 on card */
+          primary:    '#8092e7',  /* performance / tier — 6.78:1 on card */
+          teal:       '#3fd0bb',  /* follower-denominated — 10.33:1 on card */
+          rose:       '#fda4af',  /* failed / destructive — 10.48:1 on card */
+          pip:        '#5c6c86',  /* unfilled pip track — 3.72:1 on card */
+        }
+      }
+    }
+  }
+</script>
+<style>
+  body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  .num { font-variant-numeric: tabular-nums; }
+  .thumb { background: linear-gradient(140deg,#1b2740,#0d1626); }
+  .pip { display:inline-block; width:7px; height:7px; border-radius:2px; background:#5c6c86; margin-right:2px; }
+  .pip.on { background:#8092e7; }
+  .pip.onm { background:#94a3b8; }
+  /* Explain affordance — reuses the shipped #70 tooltip interaction:
+     hover AND keyboard focus, role="tooltip" + aria-describedby, Escape to dismiss. */
+  .ex { display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;
+        border-radius:9999px;font-size:9px;font-style:italic;font-weight:700;line-height:1;
+        color:#8092e7;border:1px solid #8092e7;cursor:help;user-select:none;vertical-align:middle; }
+  .ex:focus-visible { outline:2px solid #8092e7; outline-offset:2px; }
+  .pop { position:absolute; left:0; top:calc(100% + 8px); width:330px; padding:12px 14px;
+         border-radius:10px; background:#0a1120; border:1px solid #2b3a56; color:#e6edf7;
+         font-size:11.5px; line-height:1.5; box-shadow:0 16px 44px rgba(0,0,0,.6); z-index:60;
+         opacity:0; visibility:hidden; text-align:left; font-weight:400; }
+  .popwrap { position:relative; display:inline-block; }
+  .popwrap:hover .pop, .ex:focus + .pop, .ex:focus-visible + .pop { opacity:1; visibility:visible; }
+  tbody tr:hover { background:#0a1120; }
+  .skel { background:linear-gradient(90deg,#111a2c 25%,#1c2740 50%,#111a2c 75%); background-size:200% 100%;
+          animation:sh 1.4s infinite; border-radius:4px; }
+  @keyframes sh { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  .hidden-x { display:none !important; }
+</style>
+</head>
+<body class="bg-background text-fg">
+
+<!-- ============ REVIEW CONTROLS — not part of the app ============ -->
+<div class="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur px-6 py-3 flex flex-wrap items-center gap-3">
+  <span class="text-sm font-semibold">Phase 3C — <span class="text-accent">PROPOSED, NOT APPROVED</span></span>
+  <span class="text-xs text-mutedfg">Engagement split:</span>
+  <button onclick="dir('a')" id="ba" class="px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-background">Direction A — two columns (recommended)</button>
+  <button onclick="dir('b')" id="bb" class="px-3 py-1.5 rounded-md text-xs font-medium bg-mutedbg text-mutedfg">Direction B — one column, different units</button>
+  <span class="text-xs text-mutedfg ml-4">Density:</span>
+  <button onclick="den('c')" id="dc" class="px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-background">Comfortable</button>
+  <button onclick="den('k')" id="dk" class="px-3 py-1.5 rounded-md text-xs font-medium bg-mutedbg text-mutedfg">Compact</button>
+</div>
+
+<div class="mx-auto max-w-[1400px] p-6 space-y-8">
+
+<!-- ============ LEGEND ============ -->
+<section class="rounded-xl border border-border bg-card p-5">
+  <h1 class="text-base font-semibold">The two engagement percentages are NOT comparable</h1>
+  <p class="text-xs text-mutedfg mt-1 max-w-4xl">PRD §12.3 / R6 — the highest-severity product risk in this feature. Nothing errors; a user simply draws a wrong conclusion and repeats it to a client. The distinction must be readable with <b class="text-fg">no hover, no legend, no tooltip and no prior knowledge of content types</b>.</p>
+  <div class="grid grid-cols-2 gap-4 mt-4">
+    <div class="rounded-lg border border-border p-4">
+      <div class="text-[10px] uppercase tracking-wider text-accent font-semibold">Reach-denominated</div>
+      <div class="mt-1.5 text-2xl font-semibold num">4.1<span class="text-base">%</span></div>
+      <div class="text-[11px] text-accent mt-0.5">of 482.1K views</div>
+      <p class="text-[11px] text-mutedfg mt-2">Of the people who actually saw it, 4.1% engaged. Same post, same capture, same instant — exact.</p>
+    </div>
+    <div class="rounded-lg border border-border p-4">
+      <div class="text-[10px] uppercase tracking-wider text-teal font-semibold">Follower-denominated</div>
+      <div class="mt-1.5 text-2xl font-semibold num">&asymp;16.2<span class="text-base">%</span></div>
+      <div class="text-[11px] text-teal mt-0.5">of 284K followers</div>
+      <p class="text-[11px] text-mutedfg mt-2">Engagements equal to 16.2% of the follower base. Can exceed 100%. Says nothing about how many people saw it. The <b class="text-fg">&asymp;</b> is truthful, not decorative — the follower count is up to a week stale.</p>
+    </div>
+  </div>
+  <p class="text-[11px] text-mutedfg mt-3">Separated on <b class="text-fg">four</b> channels: different column · different header · different always-visible qualifier text · <b class="text-fg">&asymp;</b> prefix. Colour is a redundant fifth channel only — this table loses nothing in greyscale (WCAG 1.4.1).</p>
+</section>
+
+<!-- ============ FILTER BAR ============ -->
+<section class="rounded-xl border border-border bg-card">
+  <div class="px-4 py-3 border-b border-border flex flex-wrap items-center gap-2">
+    <span class="text-[11px] text-mutedfg mr-1">Filter</span>
+    <button class="px-2.5 py-1 rounded-md text-[11px] bg-mutedbg text-fg border border-border">Creator &#9662;</button>
+    <button class="px-2.5 py-1 rounded-md text-[11px] bg-mutedbg text-fg border border-border">Platform &#9662;</button>
+    <button class="px-2.5 py-1 rounded-md text-[11px] bg-mutedbg text-fg border border-border">Content kind &#9662;</button>
+    <button class="px-2.5 py-1 rounded-md text-[11px] bg-mutedbg text-fg border border-border">Tier &#9662;</button>
+    <button class="px-2.5 py-1 rounded-md text-[11px] bg-mutedbg text-fg border border-border">Status &#9662;</button>
+    <span class="px-2.5 py-1 rounded-md text-[11px] bg-primary/20 text-primary border border-primary/40">@dapurbunda &times;</span>
+    <button class="text-[11px] text-mutedfg underline underline-offset-2">Clear all</button>
+    <div class="ml-auto flex items-center gap-2">
+      <input placeholder="Search captions…" class="bg-background border border-border rounded-md px-2.5 py-1 text-[11px] text-fg placeholder:text-mutedfg w-48" />
+      <button class="px-2.5 py-1 rounded-md text-[11px] bg-mutedbg text-fg border border-border">Columns &#9662;</button>
+    </div>
+  </div>
+  <div class="px-4 py-2 text-[11px] text-mutedfg border-b border-border">Showing <span class="text-fg">7</span> of 118 analyses</div>
+
+  <!-- ============ THE TABLE ============ -->
+  <div class="overflow-x-auto">
+  <table class="w-full text-left border-collapse">
+    <caption class="sr-only">Analysed posts, with content and performance scores</caption>
+    <thead class="text-[10px] uppercase tracking-wider text-mutedfg">
+      <!-- group header row -->
+      <tr class="border-b border-border/60">
+        <th colspan="4"></th>
+        <th colspan="2" class="px-3 pt-2.5 pb-1 text-center text-primary border-x border-border/60">Scores</th>
+        <th colspan="3"></th>
+      </tr>
+      <tr class="border-b border-border">
+        <th class="px-3 py-2 font-semibold w-[300px]">Content</th>
+        <th class="px-3 py-2 font-semibold w-[140px]">Creator</th>
+        <th class="px-3 py-2 font-semibold w-[108px]" aria-sort="descending">Posted &#9662;</th>
+        <th class="px-3 py-2 font-semibold w-[132px]">Counts</th>
+        <th class="px-3 py-2 font-semibold w-[84px] border-l border-border/60">Content</th>
+        <th class="px-3 py-2 font-semibold w-[156px] border-r border-border/60">Performance</th>
+        <th class="px-3 py-2 font-semibold w-[128px]">vs their usual</th>
+        <th class="px-3 py-2 font-semibold w-[116px] text-accent" data-a>Eng. / reach</th>
+        <th class="px-3 py-2 font-semibold w-[124px] text-teal" data-a>Eng. / followers</th>
+        <th class="px-3 py-2 font-semibold w-[180px] hidden-x" data-b>Engagement</th>
+      </tr>
+    </thead>
+    <tbody class="text-[12.5px] align-top divide-y divide-border/60">
+
+      <!-- ROW 1 — reel, Tier 1 + Tier 2, high confidence -->
+      <tr>
+        <td class="px-3 py-3">
+          <div class="flex gap-2.5">
+            <div class="thumb w-11 h-14 rounded shrink-0 relative">
+              <span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Reel</span>
+            </div>
+            <div class="min-w-0">
+              <div class="font-medium truncate">Nasi Goreng Kampung 5 Menit</div>
+              <div class="text-[11px] text-mutedfg truncate" data-l2>resep andalan anak kos, cuma 5 bahan…</div>
+            </div>
+          </div>
+        </td>
+        <td class="px-3 py-3"><div class="truncate">@dapurbunda</div><div class="text-[11px] text-mutedfg" data-l2>Instagram</div></td>
+        <td class="px-3 py-3 num"><div>12 Jul</div><div class="text-[11px] text-mutedfg">25d ago</div></td>
+        <td class="px-3 py-3 num"><div>482.1K <span class="text-[11px] font-normal text-mutedfg">views</span></div><div class="text-[11px] text-mutedfg" data-l2>31.4K &middot; 1.2K</div></td>
+        <td class="px-3 py-3 border-l border-border/60"><div class="num font-semibold">4 <span class="ml-0.5" aria-hidden="true"><i class="pip onm"></i><i class="pip onm"></i><i class="pip onm"></i><i class="pip onm"></i><i class="pip"></i></span></div></td>
+        <td class="px-3 py-3 border-r border-border/60">
+          <div class="num font-semibold text-primary">4 <span class="ml-0.5" aria-hidden="true"><i class="pip on"></i><i class="pip on"></i><i class="pip on"></i><i class="pip on"></i><i class="pip"></i></span></div>
+          <div class="text-[11px] text-mutedfg mt-0.5">vs their usual
+            <span class="popwrap"><span class="ex" tabindex="0" role="button" aria-label="How was this score worked out?" aria-describedby="p1">i</span>
+            <span class="pop" id="p1" role="tooltip">
+              <b class="text-fg">How this score was reached</b><br/>
+              <span class="text-mutedfg">The 1&ndash;5 is a judgement of the numbers below, not a number we measured.</span>
+              <div class="mt-2 num text-[11px] space-y-0.5">
+                <div class="flex justify-between"><span class="text-mutedfg">Likes</span><span>31,412</span></div>
+                <div class="flex justify-between"><span class="text-mutedfg">Comments</span><span>1,204</span></div>
+                <div class="flex justify-between"><span class="text-mutedfg">Measured against</span><span>482,100 views</span></div>
+                <div class="flex justify-between border-t border-border mt-1 pt-1"><span class="text-mutedfg">Engagement</span><span class="text-accent">6.8% of views</span></div>
+                <div class="flex justify-between"><span class="text-mutedfg">Their usual (7 reels)</span><span>151K views</span></div>
+                <div class="flex justify-between"><span class="text-mutedfg">This post</span><span class="text-primary">3.2&times; their usual</span></div>
+              </div>
+              <div class="mt-2 text-mutedfg">Both readings: the people who saw it engaged, <i>and</i> it travelled. Strong on both.</div>
+              <div class="mt-2 pt-2 border-t border-border text-mutedfg">Measured 12 Jul 2026. These numbers are frozen at the time of analysis and don&rsquo;t update.</div>
+            </span></span>
+          </div>
+          <div class="text-[11px] text-mutedfg">high confidence</div>
+        </td>
+        <td class="px-3 py-3"><div class="num font-semibold">3.2&times;</div><div class="text-[11px] text-mutedfg">based on 7 reels</div></td>
+        <td class="px-3 py-3" data-a><div class="num font-semibold">4.1%</div><div class="text-[11px] text-accent">of 482.1K views</div></td>
+        <td class="px-3 py-3" data-a><div class="text-mutedfg">&mdash;</div><div class="text-[11px] text-mutedfg">no follower measure here</div></td>
+        <td class="px-3 py-3 hidden-x" data-b><div class="num font-semibold">4.1%</div><div class="text-[11px] text-accent">of 482.1K views</div></td>
+      </tr>
+
+      <!-- ROW 2 — all-image carousel, follower-denominated -->
+      <tr>
+        <td class="px-3 py-3">
+          <div class="flex gap-2.5">
+            <div class="thumb w-11 h-14 rounded shrink-0 relative">
+              <span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Carousel &times;10</span>
+            </div>
+            <div class="min-w-0">
+              <div class="font-medium truncate">10 Ide Konten Ramadan untuk UMKM</div>
+              <div class="mt-0.5"><span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-300/10 text-slate-300">Images only</span></div>
+            </div>
+          </div>
+        </td>
+        <td class="px-3 py-3"><div class="truncate">@dapurbunda</div><div class="text-[11px] text-mutedfg" data-l2>Instagram</div></td>
+        <td class="px-3 py-3 num"><div>9 Jul</div><div class="text-[11px] text-mutedfg">28d ago</div></td>
+        <td class="px-3 py-3"><div class="text-mutedfg text-[11px]">not published for image posts</div><div class="text-[11px] text-mutedfg num mt-0.5" data-l2>32.3K &middot; 13.8K</div></td>
+        <td class="px-3 py-3 border-l border-border/60"><div class="num font-semibold">3 <span class="ml-0.5" aria-hidden="true"><i class="pip onm"></i><i class="pip onm"></i><i class="pip onm"></i><i class="pip"></i><i class="pip"></i></span></div></td>
+        <td class="px-3 py-3 border-r border-border/60">
+          <div class="num font-semibold text-primary">3 <span class="ml-0.5" aria-hidden="true"><i class="pip on"></i><i class="pip on"></i><i class="pip on"></i><i class="pip"></i><i class="pip"></i></span></div>
+          <div class="text-[11px] text-mutedfg mt-0.5">vs their usual
+            <span class="popwrap"><span class="ex" tabindex="0" role="button" aria-label="How was this score worked out?" aria-describedby="p2">i</span>
+            <span class="pop" id="p2" role="tooltip">
+              <b class="text-fg">Why this is measured against followers</b><br/>
+              <span class="text-mutedfg">Instagram doesn&rsquo;t publish reach or view data for image-only posts, so this is measured against the creator&rsquo;s follower count instead. That&rsquo;s a limit of what Instagram exposes, not a shortcut &mdash; it&rsquo;s also the standard way image engagement is quoted.</span>
+              <div class="mt-2 num text-[11px] space-y-0.5">
+                <div class="flex justify-between"><span class="text-mutedfg">Likes</span><span>32,313</span></div>
+                <div class="flex justify-between"><span class="text-mutedfg">Comments</span><span>13,840</span></div>
+                <div class="flex justify-between"><span class="text-mutedfg">Measured against</span><span>284,100 followers</span></div>
+                <div class="flex justify-between border-t border-border mt-1 pt-1"><span class="text-mutedfg">Engagement</span><span class="text-teal">&asymp;16.2% of followers</span></div>
+              </div>
+              <div class="mt-2 text-mutedfg">Follower count from a profile record cached 3 days ago. It may have changed since. <b class="text-fg">Medium confidence</b> &mdash; measured against a follower count that may be up to a week old.</div>
+              <div class="mt-2 pt-2 border-t border-border text-mutedfg">Comparable only to this creator&rsquo;s own image carousels. Measured 9 Jul 2026 and frozen.</div>
+            </span></span>
+          </div>
+          <div class="text-[11px] text-mutedfg">medium confidence</div>
+        </td>
+        <td class="px-3 py-3"><div class="num font-semibold">1.8&times;</div><div class="text-[11px] text-mutedfg">based on 6 carousels</div></td>
+        <td class="px-3 py-3" data-a><div class="text-mutedfg">&mdash;</div><div class="text-[11px] text-mutedfg">not published for image posts</div></td>
+        <td class="px-3 py-3" data-a><div class="num font-semibold">&asymp;16.2%</div><div class="text-[11px] text-teal">of 284K followers</div></td>
+        <td class="px-3 py-3 hidden-x" data-b><div class="num font-semibold">162 <span class="text-[11px] font-normal">per 1K followers</span></div><div class="text-[11px] text-teal">284K followers &middot; approximate</div></td>
+      </tr>
+
+      <!-- ROW 3 — video-bearing carousel, first-slide reach -->
+      <tr>
+        <td class="px-3 py-3">
+          <div class="flex gap-2.5">
+            <div class="thumb w-11 h-14 rounded shrink-0 relative">
+              <span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Carousel &times;10</span>
+            </div>
+            <div class="min-w-0"><div class="font-medium truncate">Tutorial Sambal Matah &mdash; 3 versi</div>
+            <div class="text-[11px] text-mutedfg truncate" data-l2>slide 1 video, sisanya foto step-by-step</div></div>
+          </div>
+        </td>
+        <td class="px-3 py-3"><div class="truncate">@warungmbaksri</div><div class="text-[11px] text-mutedfg" data-l2>Instagram</div></td>
+        <td class="px-3 py-3 num"><div>2 Aug</div><div class="text-[11px] text-mutedfg">4d ago</div></td>
+        <td class="px-3 py-3 num"><div>88.2K <span class="text-[11px] font-normal text-mutedfg">views</span></div><div class="text-[11px] text-mutedfg" data-l2>5.1K &middot; 302</div></td>
+        <td class="px-3 py-3 border-l border-border/60"><div class="num font-semibold">4 <span class="ml-0.5" aria-hidden="true"><i class="pip onm"></i><i class="pip onm"></i><i class="pip onm"></i><i class="pip onm"></i><i class="pip"></i></span></div></td>
+        <td class="px-3 py-3 border-r border-border/60">
+          <div class="num font-semibold text-primary">3 <span class="ml-0.5" aria-hidden="true"><i class="pip on"></i><i class="pip on"></i><i class="pip on"></i><i class="pip"></i><i class="pip"></i></span></div>
+          <div class="text-[11px] text-mutedfg mt-0.5">of who saw it
+            <span class="popwrap"><span class="ex" tabindex="0" role="button" aria-label="How was this score worked out?" aria-describedby="p3">i</span>
+            <span class="pop" id="p3" role="tooltip">
+              <b class="text-fg">Why the confidence is lower</b><br/>
+              <span class="text-mutedfg">Instagram publishes views per slide, not per post. This uses the first slide&rsquo;s view count as the post&rsquo;s reach, which is why the confidence is one level lower.</span>
+              <div class="mt-2 text-mutedfg">No baseline yet &mdash; we compare a post against this creator&rsquo;s other posts of the same kind, and there are 2 video carousels analysed so far. We need 5. It&rsquo;ll fill in on its own.</div>
+              <div class="mt-2 pt-2 border-t border-border text-mutedfg">Measured 6 Aug 2026 and frozen.</div>
+            </span></span>
+          </div>
+          <div class="text-[11px] text-mutedfg">medium confidence</div>
+        </td>
+        <td class="px-3 py-3"><div class="text-mutedfg text-[11px]">not enough history yet</div><div class="text-[11px] text-mutedfg num">2 of 5 carousels</div></td>
+        <td class="px-3 py-3" data-a><div class="num font-semibold">6.1%</div><div class="text-[11px] text-accent">of 88.2K views &middot; first slide only</div></td>
+        <td class="px-3 py-3" data-a><div class="text-mutedfg">&mdash;</div><div class="text-[11px] text-mutedfg">no follower measure here</div></td>
+        <td class="px-3 py-3 hidden-x" data-b><div class="num font-semibold">6.1%</div><div class="text-[11px] text-accent">of 88.2K views &middot; first slide only</div></td>
+      </tr>
+
+      <!-- ROW 4 — provisional / early -->
+      <tr>
+        <td class="px-3 py-3">
+          <div class="flex gap-2.5">
+            <div class="thumb w-11 h-14 rounded shrink-0 relative"><span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Reel</span></div>
+            <div class="min-w-0"><div class="font-medium truncate">POV: Anak Kos Gajian</div>
+            <div class="text-[11px] text-mutedfg truncate" data-l2>trend audio, 9 detik</div></div>
+          </div>
+        </td>
+        <td class="px-3 py-3"><div class="truncate">@dapurbunda</div><div class="text-[11px] text-mutedfg" data-l2>Instagram</div></td>
+        <td class="px-3 py-3 num"><div>4 Aug</div>
+          <div class="text-[11px] mt-0.5"><span class="text-mutedfg">2d ago &middot; </span><span class="px-1.5 py-0.5 rounded bg-accent/20 text-accent font-semibold text-[10px]">Early</span></div></td>
+        <td class="px-3 py-3 num"><div>18.4K <span class="text-[11px] font-normal text-mutedfg">plays</span></div><div class="text-[11px] text-mutedfg" data-l2>2.1K &middot; 88</div></td>
+        <td class="px-3 py-3 border-l border-border/60"><div class="num font-semibold">3 <span class="ml-0.5" aria-hidden="true"><i class="pip onm"></i><i class="pip onm"></i><i class="pip onm"></i><i class="pip"></i><i class="pip"></i></span></div></td>
+        <td class="px-3 py-3 border-r border-border/60">
+          <div class="num font-semibold text-primary">2 <span class="ml-0.5" aria-hidden="true"><i class="pip on"></i><i class="pip on"></i><i class="pip"></i><i class="pip"></i><i class="pip"></i></span></div>
+          <div class="text-[11px] text-mutedfg mt-0.5">vs their usual
+            <span class="popwrap"><span class="ex" tabindex="0" role="button" aria-label="How was this score worked out?" aria-describedby="p4">i</span>
+            <span class="pop" id="p4" role="tooltip">
+              <b class="text-fg">This is an early read</b><br/>
+              <span class="text-mutedfg">This post is 2 days old and still picking up reach. The score is an early read and may change. We mark posts as early for their first few days.</span>
+              <div class="mt-2 text-mutedfg">It reached 0.4&times; this creator&rsquo;s usual for reels &mdash; but 2 days is not long enough to call that.</div>
+              <div class="mt-2 pt-2 border-t border-border text-mutedfg">Measured 6 Aug 2026 and frozen. Early posts are excluded from other posts&rsquo; baselines.</div>
+            </span></span>
+          </div>
+          <div class="text-[11px] text-mutedfg">low confidence</div>
+        </td>
+        <td class="px-3 py-3"><div class="num font-semibold">0.4&times;</div><div class="text-[11px] text-mutedfg">based on 7 reels</div></td>
+        <td class="px-3 py-3" data-a><div class="num font-semibold">11.9%</div><div class="text-[11px] text-accent">of 18.4K plays</div></td>
+        <td class="px-3 py-3" data-a><div class="text-mutedfg">&mdash;</div><div class="text-[11px] text-mutedfg">no follower measure here</div></td>
+        <td class="px-3 py-3 hidden-x" data-b><div class="num font-semibold">11.9%</div><div class="text-[11px] text-accent">of 18.4K plays</div></td>
+      </tr>
+
+      <!-- SINK DIVIDER -->
+      <tr class="bg-mutedbg/40">
+        <td colspan="10" class="px-3 py-1.5 text-[10.5px] uppercase tracking-wider text-mutedfg border-y border-border">
+          3 posts with no performance score &mdash; sorted separately
+        </td>
+      </tr>
+
+      <!-- ROW 5 — counts hidden -->
+      <tr>
+        <td class="px-3 py-3">
+          <div class="flex gap-2.5">
+            <div class="thumb w-11 h-14 rounded shrink-0 relative"><span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Reel</span></div>
+            <div class="min-w-0"><div class="font-medium truncate">Kolaborasi Brand X</div>
+            <div class="text-[11px] text-mutedfg truncate" data-l2>paid partnership</div></div>
+          </div>
+        </td>
+        <td class="px-3 py-3"><div class="truncate">@kulinerjakarta</div><div class="text-[11px] text-mutedfg" data-l2>Instagram</div></td>
+        <td class="px-3 py-3 num"><div>1 Jul</div><div class="text-[11px] text-mutedfg">36d ago</div></td>
+        <td class="px-3 py-3"><div class="text-mutedfg">Hidden</div><div class="text-[11px] text-mutedfg" data-l2>Hidden &middot; Hidden</div></td>
+        <td class="px-3 py-3 border-l border-border/60"><div class="num font-semibold">4 <span class="ml-0.5" aria-hidden="true"><i class="pip onm"></i><i class="pip onm"></i><i class="pip onm"></i><i class="pip onm"></i><i class="pip"></i></span></div></td>
+        <td class="px-3 py-3 border-r border-border/60">
+          <div class="text-[11.5px]">Creator hid the counts
+            <span class="popwrap"><span class="ex" tabindex="0" role="button" aria-label="Why is there no score?" aria-describedby="p5">i</span>
+            <span class="pop" id="p5" role="tooltip"><b class="text-fg">Why there&rsquo;s no score</b><br/>
+              <span class="text-mutedfg">This creator turned off view and like counts on this post. That&rsquo;s their setting &mdash; it isn&rsquo;t zero, and it isn&rsquo;t missing data. There&rsquo;s nothing we can do about it.</span>
+              <div class="mt-2 text-mutedfg">The content scorecard is unaffected &mdash; the video was still analysed.</div></span></span>
+          </div>
+        </td>
+        <td class="px-3 py-3"><div class="text-mutedfg text-[11px]">no reach to compare</div></td>
+        <td class="px-3 py-3" data-a><div class="text-mutedfg text-[11px]">counts hidden</div></td>
+        <td class="px-3 py-3" data-a><div class="text-mutedfg text-[11px]">counts hidden</div></td>
+        <td class="px-3 py-3 hidden-x" data-b><div class="text-mutedfg text-[11px]">counts hidden</div></td>
+      </tr>
+
+      <!-- ROW 6 — cause NOT determinable (R-13.5.3) -->
+      <tr>
+        <td class="px-3 py-3">
+          <div class="flex gap-2.5">
+            <div class="thumb w-11 h-14 rounded shrink-0 relative"><span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Carousel &times;10</span></div>
+            <div class="min-w-0"><div class="font-medium truncate">Rekap Menu Mingguan</div>
+            <div class="mt-0.5"><span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-300/10 text-slate-300">Images only</span></div></div>
+          </div>
+        </td>
+        <td class="px-3 py-3"><div class="truncate">@kulinerjakarta</div><div class="text-[11px] text-mutedfg" data-l2>Instagram</div></td>
+        <td class="px-3 py-3 num"><div>21 Jun</div><div class="text-[11px] text-mutedfg">46d ago</div></td>
+        <td class="px-3 py-3"><div class="text-mutedfg">&mdash;</div><div class="text-[11px] text-mutedfg" data-l2>&mdash; &middot; &mdash;</div></td>
+        <td class="px-3 py-3 border-l border-border/60"><div class="num font-semibold">3 <span class="ml-0.5" aria-hidden="true"><i class="pip onm"></i><i class="pip onm"></i><i class="pip onm"></i><i class="pip"></i><i class="pip"></i></span></div></td>
+        <td class="px-3 py-3 border-r border-border/60">
+          <div class="text-[11.5px]">No performance data published
+            <span class="popwrap"><span class="ex" tabindex="0" role="button" aria-label="Why is there no score?" aria-describedby="p6">i</span>
+            <span class="pop" id="p6" role="tooltip"><b class="text-fg">Why there&rsquo;s no score</b><br/>
+              <span class="text-mutedfg">Instagram published no view, like or comment data for this post. <b class="text-fg">We can&rsquo;t tell</b> whether the creator turned the counts off or whether Instagram simply didn&rsquo;t return them &mdash; so we&rsquo;re not going to guess.</span>
+              <div class="mt-2 text-rose">This row deliberately does NOT say &ldquo;creator hid the counts&rdquo;. The hidden-counts flag is absent from this payload shape, so the cause is not determinable (PRD R-13.5.3). AC-30 asserts this negatively.</div></span></span>
+          </div>
+        </td>
+        <td class="px-3 py-3"><div class="text-mutedfg text-[11px]">nothing to compare</div></td>
+        <td class="px-3 py-3" data-a><div class="text-mutedfg text-[11px]">not published for image posts</div></td>
+        <td class="px-3 py-3" data-a><div class="text-mutedfg text-[11px]">no counts published</div></td>
+        <td class="px-3 py-3 hidden-x" data-b><div class="text-mutedfg text-[11px]">no counts published</div></td>
+      </tr>
+
+      <!-- ROW 7 — FAILED (replaces the Status column) -->
+      <tr class="relative">
+        <td class="px-3 py-3 border-l-[3px] border-l-rose">
+          <div class="flex gap-2.5">
+            <div class="thumb w-11 h-14 rounded shrink-0 opacity-40"></div>
+            <div class="min-w-0"><div class="font-medium truncate text-mutedfg">instagram.com/reel/DXk9…</div>
+            <div class="text-[11px] text-rose truncate">Analysis failed &mdash; the post could not be fetched</div></div>
+          </div>
+        </td>
+        <td class="px-3 py-3 text-mutedfg"><div class="truncate">@kulinerjakarta</div><div class="text-[11px]" data-l2>Instagram</div></td>
+        <td class="px-3 py-3 text-mutedfg num"><div>&mdash;</div></td>
+        <td class="px-3 py-3 text-mutedfg"><div>&mdash;</div></td>
+        <td class="px-3 py-3 text-mutedfg border-l border-border/60">&mdash;</td>
+        <td class="px-3 py-3 border-r border-border/60"><div class="text-[11.5px] text-mutedfg">Not analysed</div></td>
+        <td class="px-3 py-3 text-mutedfg">&mdash;</td>
+        <td class="px-3 py-3 text-mutedfg" data-a>&mdash;</td>
+        <td class="px-3 py-3 text-mutedfg" data-a>&mdash;</td>
+        <td class="px-3 py-3 text-mutedfg hidden-x" data-b>&mdash;</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="px-4 py-2.5 text-[11px] text-mutedfg border-t border-border flex items-center justify-between">
+    <span>No totals &mdash; these posts are measured against different things.</span>
+    <span>Page 1 of 3</span>
+  </div>
+</section>
+
+<!-- ============ STATES ============ -->
+<section class="grid grid-cols-2 gap-5">
+  <div class="rounded-xl border border-border bg-card">
+    <div class="px-4 py-2.5 text-[10px] uppercase tracking-wider text-mutedfg border-b border-border">Loading &mdash; skeleton in the real column grid, never a spinner</div>
+    <div class="p-4 space-y-3">
+      <div class="flex gap-3 text-[10px] uppercase tracking-wider text-mutedfg"><span class="w-[220px]">Content</span><span class="w-[90px]">Creator</span><span class="w-[70px]">Posted</span><span class="w-[80px]">Counts</span><span class="w-[110px]">Scores</span></div>
+      <div class="flex gap-3 items-center"><div class="skel w-9 h-11"></div><div class="space-y-1.5 w-[170px]"><div class="skel h-2.5 w-full"></div><div class="skel h-2 w-2/3"></div></div><div class="skel h-2.5 w-[80px]"></div><div class="skel h-2.5 w-[60px]"></div><div class="skel h-2.5 w-[70px]"></div><div class="skel h-2.5 w-[100px]"></div></div>
+      <div class="flex gap-3 items-center"><div class="skel w-9 h-11"></div><div class="space-y-1.5 w-[170px]"><div class="skel h-2.5 w-5/6"></div><div class="skel h-2 w-1/2"></div></div><div class="skel h-2.5 w-[80px]"></div><div class="skel h-2.5 w-[60px]"></div><div class="skel h-2.5 w-[70px]"></div><div class="skel h-2.5 w-[100px]"></div></div>
+      <div class="flex gap-3 items-center"><div class="skel w-9 h-11"></div><div class="space-y-1.5 w-[170px]"><div class="skel h-2.5 w-full"></div><div class="skel h-2 w-3/5"></div></div><div class="skel h-2.5 w-[80px]"></div><div class="skel h-2.5 w-[60px]"></div><div class="skel h-2.5 w-[70px]"></div><div class="skel h-2.5 w-[100px]"></div></div>
+    </div>
+  </div>
+
+  <div class="rounded-xl border border-border bg-card">
+    <div class="px-4 py-2.5 text-[10px] uppercase tracking-wider text-mutedfg border-b border-border">Empty &mdash; nothing analysed yet</div>
+    <div class="px-4 py-10 text-center">
+      <div class="text-sm font-semibold">No analyses yet</div>
+      <p class="text-[12px] text-mutedfg mt-1.5 max-w-sm mx-auto">Paste an Instagram or YouTube link and we&rsquo;ll break down what&rsquo;s in the content and how it performed.</p>
+      <button class="mt-4 px-3.5 py-1.5 rounded-md text-[12px] font-medium bg-primary text-background">Analyse a post</button>
+      <p class="text-[10.5px] text-mutedfg mt-3">Column headers stay rendered above this block so the shape of the table is learnable before data lands.</p>
+    </div>
+  </div>
+
+  <div class="rounded-xl border border-border bg-card">
+    <div class="px-4 py-2.5 text-[10px] uppercase tracking-wider text-mutedfg border-b border-border">Empty &mdash; no rows match the filters (a DIFFERENT state)</div>
+    <div class="px-4 py-10 text-center">
+      <div class="text-sm font-semibold">No analyses match these filters</div>
+      <p class="text-[12px] text-mutedfg mt-1.5">Creator: @dapurbunda &middot; Kind: Carousel &middot; Tier: Compared to their usual</p>
+      <button class="mt-4 px-3.5 py-1.5 rounded-md text-[12px] font-medium bg-mutedbg text-fg border border-border">Clear all filters</button>
+      <p class="text-[10.5px] text-mutedfg mt-3">Never the same block as &ldquo;nothing analysed yet&rdquo; &mdash; offering &ldquo;Analyse a post&rdquo; to someone who over-filtered is a small insult.</p>
+    </div>
+  </div>
+
+  <div class="rounded-xl border border-border bg-card">
+    <div class="px-4 py-2.5 text-[10px] uppercase tracking-wider text-mutedfg border-b border-border">Error</div>
+    <div class="px-4 py-10 text-center">
+      <div class="text-sm font-semibold text-rose">Couldn&rsquo;t load analyses</div>
+      <p class="text-[12px] text-mutedfg mt-1.5">The request timed out. Nothing was lost &mdash; your analyses are still there.</p>
+      <button class="mt-4 px-3.5 py-1.5 rounded-md text-[12px] font-medium bg-rose/20 text-rose border border-rose/40">Try again</button>
+      <p class="text-[10.5px] text-mutedfg mt-3">Distinguished from the empty states by colour <b class="text-fg">and</b> by having a retry action.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CONTRAST ============ -->
+<section class="rounded-xl border border-border bg-card p-5">
+  <h2 class="text-sm font-semibold">Contrast &mdash; computed in gamma-encoded sRGB (RUNBOOK &sect;8.4)</h2>
+  <p class="text-[11px] text-mutedfg mt-1">Alpha composited on gamma-encoded 0&ndash;255 values <i>before</i> linearisation. Measured against all four surfaces the element renders on. This codebase shipped the linear-vs-gamma error twice; these values use the correct method. <b class="text-fg">Re-measure against the real tokens before merging</b> and record the ratios in the PR body (AC-17).</p>
+  <table class="w-full text-[11px] mt-3 num">
+    <thead class="text-mutedfg text-[10px] uppercase tracking-wider"><tr><th class="text-left py-1.5">Role</th><th class="text-left">Value</th><th class="text-right">background</th><th class="text-right">card</th><th class="text-right">row hover</th><th class="text-right">muted</th></tr></thead>
+    <tbody class="divide-y divide-border/60">
+      <tr><td class="py-1.5">Cell text</td><td>#e6edf7</td><td class="text-right">17.21</td><td class="text-right">16.82</td><td class="text-right">16.00</td><td class="text-right">14.75</td></tr>
+      <tr><td class="py-1.5">Line-2 qualifier (full opacity, NOT /70 or /80)</td><td>#94a3b8</td><td class="text-right">7.91</td><td class="text-right">7.73</td><td class="text-right">7.35</td><td class="text-right">6.78</td></tr>
+      <tr><td class="py-1.5">Reach qualifier</td><td>#d99126</td><td class="text-right">7.75</td><td class="text-right">7.58</td><td class="text-right">7.21</td><td class="text-right">6.65</td></tr>
+      <tr><td class="py-1.5">Follower qualifier</td><td>#3fd0bb</td><td class="text-right">10.58</td><td class="text-right">10.33</td><td class="text-right">9.83</td><td class="text-right">9.07</td></tr>
+      <tr><td class="py-1.5">Performance numeral</td><td>#8092e7</td><td class="text-right">6.94</td><td class="text-right">6.78</td><td class="text-right">6.45</td><td class="text-right">5.95</td></tr>
+      <tr><td class="py-1.5">Failed row text</td><td>#fda4af</td><td class="text-right">10.72</td><td class="text-right">10.48</td><td class="text-right">9.97</td><td class="text-right">9.19</td></tr>
+      <tr><td class="py-1.5">Badge: bg-primary/12 + text-primary <span class="text-accent">&larr; tightest</span></td><td>on tint</td><td class="text-right">6.10</td><td class="text-right">5.91</td><td class="text-right">5.51</td><td class="text-right">5.00</td></tr>
+      <tr><td class="py-1.5">Badge: bg-accent/12 + text-accent</td><td>on tint</td><td class="text-right">6.80</td><td class="text-right">6.61</td><td class="text-right">6.18</td><td class="text-right">5.60</td></tr>
+      <tr><td class="py-1.5">Badge: bg-teal/12 + text-teal</td><td>on tint</td><td class="text-right">8.96</td><td class="text-right">8.58</td><td class="text-right">7.97</td><td class="text-right">7.17</td></tr>
+      <tr><td class="py-1.5">Pip track (non-text, 3:1 floor; formally decorative)</td><td>#5c6c86</td><td class="text-right">3.86</td><td class="text-right">3.72</td><td class="text-right">3.54</td><td class="text-right">3.27</td></tr>
+    </tbody>
+  </table>
+  <p class="text-[11px] text-mutedfg mt-3">Greyscale check: every distinction colour reinforces is also carried by text or shape &mdash; different column, different header, different qualifier words, the <b class="text-fg">&asymp;</b> prefix, the words <i>rough</i> / <i>Early</i> / <i>Analysis failed</i>, and full sentences on absent scores.</p>
+</section>
+
+<p class="text-[11px] text-mutedfg pb-6">This mockup is <b class="text-accent">PROPOSED and NOT APPROVED</b>. It is the caveat-C2 review checkpoint. No developer should build from it until the owner has ruled on the open questions in <code>DESIGN-3C-analyses-table.md</code> &sect;11.</p>
+
+</div>
+
+<script>
+  function dir(d){
+    document.querySelectorAll('[data-a]').forEach(function(e){ e.classList.toggle('hidden-x', d!=='a'); });
+    document.querySelectorAll('[data-b]').forEach(function(e){ e.classList.toggle('hidden-x', d!=='b'); });
+    document.getElementById('ba').className = 'px-3 py-1.5 rounded-md text-xs font-medium ' + (d==='a'?'bg-primary text-background':'bg-mutedbg text-mutedfg');
+    document.getElementById('bb').className = 'px-3 py-1.5 rounded-md text-xs font-medium ' + (d==='b'?'bg-primary text-background':'bg-mutedbg text-mutedfg');
+  }
+  function den(m){
+    document.querySelectorAll('[data-l2]').forEach(function(e){ e.classList.toggle('hidden-x', m!=='c'); });
+    document.querySelectorAll('tbody td').forEach(function(e){
+      e.classList.toggle('py-3', m==='c'); e.classList.toggle('py-1.5', m==='k');
+    });
+    document.getElementById('dc').className = 'px-3 py-1.5 rounded-md text-xs font-medium ' + (m==='c'?'bg-primary text-background':'bg-mutedbg text-mutedfg');
+    document.getElementById('dk').className = 'px-3 py-1.5 rounded-md text-xs font-medium ' + (m==='k'?'bg-primary text-background':'bg-mutedbg text-mutedfg');
+  }
+  document.addEventListener('keydown', function(e){ if(e.key === 'Escape' && document.activeElement) document.activeElement.blur(); });
+</script>
+</body>
+</html>

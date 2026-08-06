@@ -95,7 +95,7 @@ Two density modes. **Comfortable is the default** because §13.7's requirements 
 
 ### 3.2 Compact — 40px rows (opt-in)
 
-Single line per cell. Line 2 content is **not** dropped — it is inlined and abbreviated: `4.1% of reach`, `3.2× / 7`, `4 · vs their usual`. What Compact actually loses is the caption snippet's second line and the likes/comments line, both of which are non-load-bearing for comparability.
+Row padding halves and the non-load-bearing second lines drop out. **What Compact loses:** the caption snippet, the platform word (the creator handle stays), and the likes/comments line. **What Compact keeps, unconditionally:** every denominator qualifier (`of 482.1K views`, `of 284K followers`), every tier phrase, every confidence word, every `based on N …`, every cold-start progress figure, the `Early` badge, the post age, and every absent-score reason.
 
 **Rule: no density mode may drop a denominator, a tier, a sample size, a provisional badge, or an absent-score reason.** If it cannot fit them, it is not a legal density mode. The mockup shows Compact obeying this.
 
