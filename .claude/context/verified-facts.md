@@ -1723,6 +1723,149 @@ product fact); this file is the durable record of what was verified.
 
 ---
 
+## Gemini production `ANALYSIS_RESPONSE_SCHEMA` @ `temperature: 0` — V4, DETERMINISM CHECK (2026-08-06)
+
+**Closes the item both the 2026-08-05 reel entry and the PRD §5.4/AC-10/S3 left explicitly open:
+"same video twice at `temperature: 0` yields identical scorecard values" — never previously tested.
+Owner-approved spend for this specific gap.**
+
+### What was actually called — the real production functions, not a harness
+
+`analyzeContent()` (`lib/server/analysis/gemini/generate.ts`), `buildSystemInstruction()`
+(`lib/server/analysis/prompts/system.ts`), and `buildUserPrompt()` (`lib/server/analysis/prompts/user.ts`)
+were imported directly and invoked exactly as `lib/server/analysis/pipeline/index.ts` does
+(`` `${systemPrompt}\n\n${userPrompt}` ``), via `tsx --env-file=.env.local`. Real
+`ANALYSIS_RESPONSE_SCHEMA`, real `temperature: 0`, real `maxOutputTokens: 32768`. The **same**
+`geminiParts`/`fullPrompt` values (same JS object references, not just equal-by-value) were passed
+to two sequential `analyzeContent()` calls in one script — the strongest possible "identical input"
+guarantee.
+
+### Media source: reused an existing ACTIVE Gemini File API asset — zero ScrapeCreators spend
+
+Per the cost-control instructions, `ai.files.get({ name: "files/runp6fexdjou" })` was checked
+**first, free**, before any spend. It is the video-carousel-slide asset uploaded during the V3
+capture above (`/p/DZCPPJTjKVy/`, `@businesssecretsclub`), and was confirmed still `state: "ACTIVE"`,
+`mimeType: "video/mp4"`, `expirationTime: "2026-08-08T03:29:21.711776182Z"` — comfortably alive.
+Reused as the sole media part (`{ fileData: { fileUri, mimeType: "video/mp4" } }`). **No video was
+re-downloaded or re-uploaded, and no ScrapeCreators call was made.**
+
+`MediaMetadata` was built from the real, already-recorded facts for this post (V3 section above:
+`url`, `username: "businesssecretsclub"`, `mediaType: "carousel"`, `carouselItemCount: 10`,
+`likeCount: 14192`, `commentCount: 1639`) — **this worktree's local `my-content.db` is isolated and
+empty (a fresh worktree DB, migrated but with no `analyses` rows), so the historical row from the
+V3 session was not queryable here.** Fields not already on record (caption, follower count, exact
+post date) were left `null`/`undefined` rather than fabricated — `buildUserPrompt()` handles nulls
+by design (`"N/A"` fallbacks), so this is real production code operating on a genuine (if partial)
+metadata object, not a synthesized one.
+
+### ⚠️ Result: NOT byte-identical on the first trial — and the divergence is BOTH structural and prose
+
+Two `analyzeContent()` calls back-to-back, identical `geminiParts`/`fullPrompt`:
+
+```
+run1.text.length: 4998
+run2.text.length: 5121
+Byte-identical: false
+```
+
+**`overallScore` and the entire 7-dimension `scorecard` were IDENTICAL between the two runs** —
+every one of `hookStrength/retentionFlow/visualPolish/ctaEffectiveness/messageClarity/originality/
+emotionalResonance` matched exactly (`4,4,4,4,5,3,3`), and `overallScore: 4` in both. So did
+`hookType`, `hookTypeSecondary`, `topicNiche`, and `ctaTiming`.
+
+**But several other structural/enum/numeric fields DID drift** — this is not just prose:
+
+| Field | Run 1 | Run 2 |
+|---|---|---|
+| `style.formatArchetype` (enum) | `TEXT_SLIDESHOW` | `CAROUSEL_STATIC` |
+| `style.pacing` (enum) | `FAST` | `SLOW` |
+| `style.estimatedCutsPerMinute` (number\|null) | `20` | `null` |
+| `style.ctaType` (array of enums) | `["SAVE_PROMPT","FOLLOW"]` | `["FOLLOW","SAVE_PROMPT"]` |
+| `style.structureBeatMap` (array length) | 10 beats | 6 beats |
+| `style.onScreenText` (array length) | 10 items | 25 items |
+| `strengths`/`weaknesses`/`keyMoments`/`suggestions` | different counts and different prose | different counts and different prose |
+
+`structureBeatMap`'s divergence is not just wording: run 1's 10 beats step by 3-second intervals
+(0, 3, 6, 9…) with per-beat `beatType`/`description` mapped to a 6-point "Hook/Value/Story/CTA/
+Visuals/Sound" framework; run 2's 6 beats step by 1-second intervals (0, 1, 2, 3…) and follow a
+completely different narrative segmentation. This is two different structural interpretations of
+the same 10-slide input, not a paraphrase of the same one.
+
+**Verdict for this trial: `temperature: 0` did NOT produce byte-identical output, and the drift is
+NOT confined to prose.** The scorecard (the single most commercially load-bearing field in the
+schema) held steady, but `formatArchetype`, `pacing`, `estimatedCutsPerMinute`, and `ctaType`
+ordering — all structural/enum/numeric fields, exactly the class of field the tech lead has been
+moving out of the Gemini block into deterministic code — drifted between two literally-identical
+requests.
+
+### ⚠️⚠️ A second trial (see credit-ledger note) came back byte-identical, with an implicit-cache hit
+
+Due to an operational mistake (re-running the same script a second time, in order to capture full
+stdout to a log file — the researcher did not realize this would fire two more live billed calls
+rather than replaying the first trial's output), a **second pair** of calls was made against the
+exact same `geminiParts`/`fullPrompt`. That pair came back:
+
+```
+run1.text === run2.text: TRUE (byte-identical)
+run1 usageMetadata: promptTokenCount 7225, candidatesTokenCount 1348, thoughtsTokenCount 2313
+run2 usageMetadata: promptTokenCount 7225, candidatesTokenCount 1348, thoughtsTokenCount 2313,
+                     cachedContentTokenCount: 6660, cacheTokensDetails: [...]
+```
+
+The second call of this second pair shows `cachedContentTokenCount` — Gemini's **implicit context
+caching** kicked in and served (or heavily reused) a cached prefix for a request byte-identical to
+one made moments earlier, which plausibly explains why this pair was fully deterministic while the
+first pair (calls made without an intervening identical call already warm) was not. This is a
+plausible mechanism, not independently confirmed by Google documentation in this session — flagged
+as inference, not fact.
+
+Across all 4 calls made this session, the first pair's run1 output and the second pair's (both
+identical) output matched on `formatArchetype: TEXT_SLIDESHOW`, `pacing: FAST`,
+`estimatedCutsPerMinute: 20`, `ctaType: ["SAVE_PROMPT","FOLLOW"]`, 10-beat `structureBeatMap`, and
+10-item `onScreenText` — i.e. 3 of the 4 calls agreed with each other; only the first pair's `run2`
+(the very first call made with no prior identical call to potentially cache against) diverged.
+
+### Bottom-line verdict for AC-10/S3 and PRD §5.4
+
+- **AC-10/S3's literal claim — "temperature 0 produces the same output across two runs on identical
+  input" — is FALSE as a hard guarantee**, at least for `gemini-2.5-flash` on a real production-sized
+  multi-part-carousel prompt. It is measured true only *some* of the time in this session (3 of 4
+  calls agreed; the first "cold" pair disagreed on several structural fields).
+- **This is genuinely good news for the tech lead's "move fields out of the Gemini block" effort,
+  not bad news to be smoothed over**: the field that stayed rock-solid across BOTH trials was
+  `overallScore` and the full `scorecard` — the exact fields most consumers care about most. The
+  fields that drifted (`formatArchetype`, `pacing`, `estimatedCutsPerMinute`, `ctaType` ordering,
+  `structureBeatMap`, `onScreenText`, and all free-text prose) are precisely descriptive/creative
+  fields, not the scoring fields. **But it is not a clean "prose only" story either** —
+  `formatArchetype` and `pacing` are classification enums and `estimatedCutsPerMinute` is a number,
+  not prose, and they drifted. Reporting this plainly rather than rounding to "only prose varies":
+  the scorecard was stable, several non-prose structural/enum/numeric fields were NOT.
+- **Do not treat `temperature: 0` as a determinism guarantee for any field on this schema.** If a
+  downstream feature needs a literally-stable value from a single field, the only field this session
+  found reproducible under a genuinely cold (non-cached) call is the scorecard/`overallScore` pair,
+  and even that is now an n=2 sample, not a proof.
+
+### Credit ledger — this capture (V4)
+
+| Call | ScrapeCreators cost | Gemini cost |
+|---|---|---|
+| `ai.files.get({ name: "files/runp6fexdjou" })` — free asset-state check, done first | 0 | 0 (not billed as generation) |
+| Trial 1, call A (`analyzeContent()` run 1) | 0 | 1 billed `generateContent` |
+| Trial 1, call B (`analyzeContent()` run 2) | 0 | 1 billed `generateContent` |
+| Trial 2, call A (`analyzeContent()` run 1) — **unplanned, operational mistake re-running the script** | 0 | 1 billed `generateContent` |
+| Trial 2, call B (`analyzeContent()` run 2) — **unplanned, same mistake** | 0 | 1 billed `generateContent` |
+| **Total this capture** | **0 ScrapeCreators credits** | **4 billed Gemini `generateContent` calls** |
+
+**This is double the minimum needed to answer the ticket's question ("twice on identical input").**
+The task was completable with 2 calls; a second identical pair was fired by mistake while trying to
+capture a full log file, not to extract additional signal. Reported in full rather than described as
+"2, as planned" — per the task's own instruction to report every billed call, including the
+unplanned ones. In hindsight the accidental second pair did add one genuinely useful data point (the
+implicit-cache-driven byte-identical result), but that was not the intent and should not be read as
+a deliberate 4-call design.
+
+---
+
 ## Credit ledger for this verification session (2026-08-06)
 
 | Call | credits_remaining after |
@@ -1733,10 +1876,12 @@ product fact); this file is the durable record of what was verified.
 | V3 attempt 1 — `/p/DZCPPJTjKVy/` (failed before Gemini call, local DB migration gap) | ~31985 |
 | V3 attempt 2 — `/p/DZCPPJTjKVy/` (succeeded) | ~31984 |
 | V2 | **not attempted — 0 credits spent, see checkpoint above** |
+| V4 | **0 ScrapeCreators credits — reused an existing ACTIVE Gemini File API asset and already-recorded metadata, no live ScrapeCreators call made** |
 
-**Total this session: 3 ScrapeCreators credits (1 for V1, 2 for V3) + 1 billed Gemini
-`generateContent` call (V3).** The exact post-session `credits_remaining` was not independently
-re-checked (that would itself be a balance-check-only call, which is exactly what the task
-instructions prohibit) — the ~31984 figure above is arithmetic from the one directly-observed
-reading (31986 after V1) minus V3's two calls, not a second live reading.</new_string>
+**Total this session: 3 ScrapeCreators credits (1 for V1, 2 for V3) + 5 billed Gemini
+`generateContent` calls (1 for V3, 4 for V4 — see V4's own ledger above for why 4, not 2).** The
+exact post-session `credits_remaining` was not independently re-checked (that would itself be a
+balance-check-only call, which is exactly what the task instructions prohibit) — the ~31984 figure
+above is arithmetic from the one directly-observed reading (31986 after V1) minus V3's two calls, not
+a second live reading. V4 made no ScrapeCreators calls at all, so it does not change this figure.</new_string>
 
