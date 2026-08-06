@@ -22,19 +22,29 @@ import type { BaselineDenominator, BaselineResult } from "./types";
  *
  * `analysis_mode` (`lib/server/analysis/pipeline/index.ts`, ticket #71)
  * already resolves this for free: `'full_video'` iff at least one media
- * part is video, `'images_only'` iff not. Folding it into the bucket key
- * gives every bucket the single-denominator-by-construction property the
- * TDD claims — `instagram:carousel:full_video` never contains an
- * all-image-carousel row, and `instagram:carousel:images_only` never
+ * part is video, `'images_only'`/`'metadata_only'` iff not. Folding it into
+ * the bucket key gives every bucket the single-denominator-by-construction
+ * property the TDD claims — `instagram:carousel:full_video` never contains
+ * an all-image-carousel row, and `instagram:carousel:images_only` never
  * contains a video-bearing one — WITHOUT touching `perf_reach_derived_from`
  * (whose `NONE` value is independently overloaded — all-image carousel vs.
  * image-first mixed carousel — and is explicitly out of scope for this
  * ticket per the dispatch). This also happens to explain the fifth
  * `bucketNoun()` value ("videos", `see below`): `media_type = 'post'` (a
  * single non-carousel post) splits into a video single post
- * (`analysis_mode = 'full_video'`) and an image single post
- * (`'images_only'`), which read differently to a reader ("6 videos" vs.
- * "6 posts").
+ * (`analysis_mode = 'full_video'`) and an image single post. **Corrected
+ * (post-review): a lone image post does NOT produce `analysis_mode =
+ * 'images_only'`.** `resolveMediaParts()` returns an empty part array for a
+ * single image ("a lone image post is not sent to Gemini as media"), so
+ * `analysisMode` never leaves its `'metadata_only'` initial value —
+ * `instagram:post:images_only` is unreachable; single image posts land in
+ * `instagram:post:metadata_only`. `images_only` is reached only by
+ * `carousel` (an all-image carousel). Both `'images_only'` and
+ * `'metadata_only'` carry the same `ENGAGEMENT_COUNT` denominator (no video
+ * part means no reach field, full stop) — the split between them exists for
+ * `bucketNoun()`'s wording, not for the denominator, which only ever
+ * depends on whether `analysisMode === 'full_video'` (see
+ * `denominatorForBucket()` below).
  *
  * `computeBaseline()` still asserts single-denominator on the fetched
  * candidate set (TDD §6 step 4) as defence-in-depth — the same posture
@@ -66,13 +76,78 @@ export type AnalysisMode = "full_video" | "images_only" | "metadata_only";
 
 const BUCKET_KEY_SEPARATOR = ":";
 
-/** `(platform, content kind)` per D4 — content kind = media type + analysis mode (PRD §4.2). */
+const VALID_PLATFORMS: readonly Platform[] = ["instagram", "youtube"];
+const VALID_MEDIA_TYPES: readonly MediaType[] = ["reel", "post", "carousel", "short"];
+const VALID_ANALYSIS_MODES: readonly AnalysisMode[] = [
+  "full_video",
+  "images_only",
+  "metadata_only",
+];
+
+/**
+ * `analysis_mode` is `TEXT` with no `NOT NULL` (migrations/012:93) and
+ * `pipeline/index.ts:84` explicitly resets it to `NULL` on the re-analysis
+ * path. libsql types a DB row's column as `string | null`, and #142 will
+ * read one of these three values off exactly such a row. Without this guard
+ * a single `as AnalysisMode` cast turns a `NULL` into the silently
+ * plausible bucket key `"instagram:reel:"` — a phantom bucket that pools
+ * whatever else lost its `analysis_mode`. Fail loudly here instead, at
+ * construction time, not downstream in a query result.
+ */
 export function computeBucketKey(
   platform: Platform,
   mediaType: MediaType,
   analysisMode: AnalysisMode,
 ): string {
+  if (!VALID_PLATFORMS.includes(platform)) {
+    throw new Error(`computeBucketKey: unrecognized or missing platform "${String(platform)}".`);
+  }
+  if (!VALID_MEDIA_TYPES.includes(mediaType)) {
+    throw new Error(
+      `computeBucketKey: unrecognized or missing mediaType "${String(mediaType)}".`,
+    );
+  }
+  if (!VALID_ANALYSIS_MODES.includes(analysisMode)) {
+    throw new Error(
+      `computeBucketKey: unrecognized or missing analysisMode "${String(analysisMode)}" — ` +
+        `analysis_mode is nullable in the schema and is reset to NULL on re-analysis ` +
+        `(pipeline/index.ts:84); refusing to build a phantom bucket key from it.`,
+    );
+  }
   return [platform, mediaType, analysisMode].join(BUCKET_KEY_SEPARATOR);
+}
+
+/**
+ * The denominator a bucket's candidates are measured against, derived from
+ * the bucket key's `analysisMode` component alone (TDD §6: "the baseline
+ * set is single-denominator by construction, because `perf_bucket_key`
+ * encodes content kind and content kind determines the denominator").
+ * `'full_video'` means at least one media part is video, which is exactly
+ * when a reach field can exist at all (`reach.ts`'s `hasReachFields()`);
+ * `'images_only'`/`'metadata_only'` both mean no video part, hence no reach
+ * field, hence `ENGAGEMENT_COUNT` (see the module doc above).
+ *
+ * **This must be the sole source of a candidate's denominator — never
+ * row-level nullness.** A reach-denominated post whose reach happens to be
+ * unresolvable (hidden play/view counts) is still reach-denominated; it is
+ * not thereby engagement-denominated. `metricFor()` below excludes such a
+ * row instead of relabelling it.
+ */
+export function denominatorForBucket(bucketKey: string): BaselineDenominator {
+  const parts = bucketKey.split(BUCKET_KEY_SEPARATOR);
+  const [platform, mediaType, analysisMode] = parts;
+  if (
+    parts.length !== 3 ||
+    !VALID_PLATFORMS.includes(platform as Platform) ||
+    !VALID_MEDIA_TYPES.includes(mediaType as MediaType) ||
+    !VALID_ANALYSIS_MODES.includes(analysisMode as AnalysisMode)
+  ) {
+    throw new Error(
+      `denominatorForBucket: malformed bucket key "${bucketKey}" — expected ` +
+        `"platform:mediaType:analysisMode" with recognized segments; refusing to guess a denominator.`,
+    );
+  }
+  return analysisMode === "full_video" ? "REACH" : "ENGAGEMENT_COUNT";
 }
 
 /**
@@ -111,13 +186,22 @@ interface BaselineMetric {
 }
 
 /**
- * OR-20 rule 3 discipline, same as `ratios.ts`'s `usableCount`: `null`/
- * `undefined` contributes 0, a negative value is an unavailability
- * sentinel and is never clamped — it makes the whole count unusable.
+ * **Deliberately NOT `ratios.ts`'s `usableCount`, and must not be merged
+ * with it (ticket #140 is already merged and out of scope).** `ratios.ts`
+ * answers "what is this post's engagement total", where a hidden count
+ * legitimately contributes 0 to a sum. This module asks a different
+ * question — "does this post qualify as a Tier 2 comparator at all" — and
+ * a post with no usable counts does not qualify. Scoring it `0` would make
+ * it a valid sample worth zero engagement: it inflates `sampleSize` toward
+ * `BASELINE_MIN_SAMPLE` *and* drags the median down, which inflates every
+ * multiplier computed against the bucket (the "reads 3.2× when the truth
+ * is 1.3×" failure). So: `null`/`undefined` disqualifies the candidate
+ * (`null`), a negative value is the OR-20 unavailability sentinel and also
+ * disqualifies it, and only a genuine non-negative number counts.
  */
-function usableCount(value: number | null | undefined): number | null {
+function usableEngagementCount(value: number | null | undefined): number | null {
   if (value == null) {
-    return 0;
+    return null;
   }
   if (value < 0) {
     return null;
@@ -127,19 +211,28 @@ function usableCount(value: number | null | undefined): number | null {
 
 /**
  * Which axis a single post's Tier 2 comparison falls on (PRD §3.3 / §12.4).
- * Reach, when resolved and non-negative, is always authoritative — no
- * content kind stores a `perf_reach_value` unless it genuinely has one
- * (R-4.3.2). Otherwise the metric is `likes + comments`; `null` means
- * neither is usable (hidden/negative-sentinel counts and no reach) and the
- * post cannot contribute to — or be measured against — a baseline.
+ * The denominator is NOT inferred from row-level nullness — it is fixed by
+ * the bucket (`denominatorForBucket()`), because content kind determines
+ * the denominator by construction (TDD §6). A `REACH` bucket's post with an
+ * unresolved reach value (hidden play/view counts on a reel, e.g.) is
+ * excluded (`null`), never relabelled `ENGAGEMENT_COUNT` — that reel is
+ * still reach-denominated, it just isn't a usable comparator this round. An
+ * `ENGAGEMENT_COUNT` bucket's post with no usable likes/comments (a
+ * disabled-counts image carousel) is excluded the same way, not scored `0`.
  */
-function metricFor(post: BaselinePostMetrics): BaselineMetric | null {
-  if (post.reachValue != null && post.reachValue >= 0) {
-    return { denominator: "REACH", value: post.reachValue };
+function metricFor(
+  denominator: BaselineDenominator,
+  post: BaselinePostMetrics,
+): BaselineMetric | null {
+  if (denominator === "REACH") {
+    if (post.reachValue != null && post.reachValue >= 0) {
+      return { denominator: "REACH", value: post.reachValue };
+    }
+    return null;
   }
 
-  const likes = usableCount(post.likeCount);
-  const comments = usableCount(post.commentCount);
+  const likes = usableEngagementCount(post.likeCount);
+  const comments = usableEngagementCount(post.commentCount);
   if (likes === null || comments === null) {
     return null;
   }
@@ -179,9 +272,16 @@ export interface ComputeBaselineInput {
  * **R-4.3.2 / R-12.3.2 enforcement lives here, as defence-in-depth on top
  * of the bucket key's own single-denominator-by-construction property
  * (see the module doc comment).** A mixed-denominator candidate set
- * throws rather than averaging.
+ * throws rather than averaging. Post-fix, every candidate and the current
+ * post are classified against the same bucket-derived denominator
+ * (`denominatorForBucket(input.bucketKey)`), so this guard cannot fire
+ * through a correct call path — it is kept as the same defence-in-depth
+ * assertion `ratios.ts`'s negative-count guard takes for a fact that is
+ * "true by construction upstream, guarded again here anyway" (module doc).
  */
 export async function computeBaseline(input: ComputeBaselineInput): Promise<BaselineResult> {
+  const denominator = denominatorForBucket(input.bucketKey);
+
   const result = await db.execute({
     sql: `
       SELECT perf_tier1_ratio, perf_reach_value, like_count, comment_count
@@ -201,7 +301,7 @@ export async function computeBaseline(input: ComputeBaselineInput): Promise<Base
 
   const candidateMetrics = result.rows
     .map((row): BaselineMetric | null =>
-      metricFor({
+      metricFor(denominator, {
         reachValue: row.perf_reach_value == null ? null : Number(row.perf_reach_value),
         likeCount: row.like_count == null ? null : Number(row.like_count),
         commentCount: row.comment_count == null ? null : Number(row.comment_count),
@@ -209,7 +309,7 @@ export async function computeBaseline(input: ComputeBaselineInput): Promise<Base
     )
     .filter((metric): metric is BaselineMetric => metric !== null);
 
-  const currentMetric = metricFor(input.currentPost);
+  const currentMetric = metricFor(denominator, input.currentPost);
 
   const denominatorsSeen = new Set<BaselineDenominator>(candidateMetrics.map((m) => m.denominator));
   if (currentMetric) {

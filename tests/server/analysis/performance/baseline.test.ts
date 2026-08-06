@@ -104,6 +104,57 @@ describe("computeBucketKey — (platform, content kind) per D4", () => {
     );
     expect(computeBucketKey("youtube", "short", "full_video")).toBe("youtube:short:full_video");
   });
+
+  it("throws loudly on a null analysisMode instead of building a phantom bucket key (pre-#142 guard)", async () => {
+    // analysis_mode is nullable (migrations/012:93) and pipeline/index.ts:84
+    // resets it to NULL on re-analysis. libsql types the column
+    // `string | null`; #142 will read one of these rows and pass its value
+    // straight through. Without a runtime guard, `[platform, mediaType,
+    // null].join(":")` silently yields "instagram:reel:" — a phantom
+    // bucket. This must throw instead.
+    const { computeBucketKey } = await import("@/lib/server/analysis/performance/baseline");
+
+    expect(() =>
+      computeBucketKey(
+        "instagram",
+        "reel",
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        null as any,
+      ),
+    ).toThrow(/analysisMode/);
+  });
+
+  it("throws loudly on an unrecognized platform or mediaType", async () => {
+    const { computeBucketKey } = await import("@/lib/server/analysis/performance/baseline");
+
+    expect(() =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      computeBucketKey("tiktok" as any, "reel", "full_video"),
+    ).toThrow(/platform/);
+    expect(() =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      computeBucketKey("instagram", "story" as any, "full_video"),
+    ).toThrow(/mediaType/);
+  });
+});
+
+describe("denominatorForBucket — the bucket, not the row, decides the denominator", () => {
+  it("full_video buckets are REACH; images_only/metadata_only buckets are ENGAGEMENT_COUNT", async () => {
+    const { denominatorForBucket } = await import("@/lib/server/analysis/performance/baseline");
+
+    expect(denominatorForBucket("instagram:reel:full_video")).toBe("REACH");
+    expect(denominatorForBucket("instagram:carousel:full_video")).toBe("REACH");
+    expect(denominatorForBucket("youtube:short:full_video")).toBe("REACH");
+    expect(denominatorForBucket("instagram:carousel:images_only")).toBe("ENGAGEMENT_COUNT");
+    expect(denominatorForBucket("instagram:post:metadata_only")).toBe("ENGAGEMENT_COUNT");
+  });
+
+  it("throws loudly on a malformed bucket key rather than guessing a denominator", async () => {
+    const { denominatorForBucket } = await import("@/lib/server/analysis/performance/baseline");
+
+    expect(() => denominatorForBucket("instagram:reel:")).toThrow(/malformed bucket key/);
+    expect(() => denominatorForBucket("not-a-real-bucket-key")).toThrow(/malformed bucket key/);
+  });
 });
 
 describe("bucketNoun — OR-9", () => {
@@ -259,18 +310,27 @@ describe("computeBaseline — AC-23: engagement-count baseline for a no-reach bu
   });
 });
 
-describe("computeBaseline — R-4.3.2/R-12.3.2: a mixed-denominator set throws, not averages", () => {
-  it("throws when the candidate set mixes reach-based and engagement-count-based rows", async () => {
+describe("computeBaseline — R-4.3.2/R-12.3.2: the denominator comes from the bucket, never row-level nullness", () => {
+  it("a reach-hidden reel in a reach bucket is excluded, not relabelled ENGAGEMENT_COUNT (BLOCKING 1)", async () => {
+    // This row is NOT a corrupt fixture — it is what a reach-hidden reel
+    // looks like in production (hidden play/view counts,
+    // `perf_reach_derived_from: 'NONE'` is out of scope, but the resulting
+    // `perf_reach_value: NULL` on an otherwise reach-denominated bucket row
+    // is exactly this shape). Before the fix, `metricFor()` inferred the
+    // denominator from row-level nullness and relabelled this row
+    // `ENGAGEMENT_COUNT`, which made `computeBaseline()` throw permanently
+    // for the whole bucket. The bucket (`full_video`) is reach-denominated
+    // by construction, so this row must simply be excluded from the pool.
     const { computeBaseline } = await import("@/lib/server/analysis/performance/baseline");
     const { BASELINE_MIN_SAMPLE } = await import("@/lib/server/analysis/performance/constants");
     const profileId = randomUUID();
     await insertProfile(client, profileId);
     const bucketKey = "instagram:carousel:full_video";
 
-    for (let i = 0; i < BASELINE_MIN_SAMPLE - 1; i++) {
+    for (let i = 0; i < BASELINE_MIN_SAMPLE; i++) {
       await insertAnalysis(client, { profileId, bucketKey, reachValue: 1_000 });
     }
-    // One deliberately mismatched row — no reach, only likes/comments.
+    // A reach-hidden reel: reach unresolvable, likes/comments present.
     await insertAnalysis(client, {
       profileId,
       bucketKey,
@@ -279,19 +339,22 @@ describe("computeBaseline — R-4.3.2/R-12.3.2: a mixed-denominator set throws, 
       commentCount: 5,
     });
 
-    await expect(
-      computeBaseline({
-        profileId,
-        bucketKey,
-        schemaVersion: SCHEMA_VERSION,
-        excludeAnalysisId: randomUUID(),
-        minPostAgeHours: 72,
-        currentPost: { reachValue: 1_000, likeCount: null, commentCount: null },
-      }),
-    ).rejects.toThrow(/Mixed-denominator/);
+    const result = await computeBaseline({
+      profileId,
+      bucketKey,
+      schemaVersion: SCHEMA_VERSION,
+      excludeAnalysisId: randomUUID(),
+      minPostAgeHours: 72,
+      currentPost: { reachValue: 1_000, likeCount: null, commentCount: null },
+    });
+
+    // The reach-hidden row must not count toward the sample, and must not
+    // throw — it is simply not a usable comparator this round.
+    expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE);
+    expect(result.median).toBe(1_000);
   });
 
-  it("throws when the current post's own denominator disagrees with an otherwise-homogeneous candidate set", async () => {
+  it("the current post's own unresolved reach excludes it from the multiplier, without corrupting the candidate pool", async () => {
     const { computeBaseline } = await import("@/lib/server/analysis/performance/baseline");
     const { BASELINE_MIN_SAMPLE } = await import("@/lib/server/analysis/performance/constants");
     const profileId = randomUUID();
@@ -302,16 +365,71 @@ describe("computeBaseline — R-4.3.2/R-12.3.2: a mixed-denominator set throws, 
       await insertAnalysis(client, { profileId, bucketKey, reachValue: 1_000 });
     }
 
-    await expect(
-      computeBaseline({
+    const result = await computeBaseline({
+      profileId,
+      bucketKey,
+      schemaVersion: SCHEMA_VERSION,
+      excludeAnalysisId: randomUUID(),
+      minPostAgeHours: 72,
+      // The post being scored is itself reach-hidden — same bucket,
+      // unresolved reach. It must not be reclassified as
+      // ENGAGEMENT_COUNT and must not disturb the candidate pool.
+      currentPost: { reachValue: null, likeCount: 10, commentCount: 5 },
+    });
+
+    expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE);
+    expect(result.median).toBe(1_000);
+    expect(result.multiplier).toBeNull();
+  });
+});
+
+describe("computeBaseline — usableEngagementCount excludes hidden-count candidates instead of scoring them 0 (BLOCKING 2)", () => {
+  it("a candidate with no usable likes or comments is excluded from the pool, not counted as a zero-engagement sample", async () => {
+    // An image carousel with `like_and_view_counts_disabled` (or any row
+    // where the counts simply weren't captured) must not become a "valid"
+    // sample worth 0 engagement — that would inflate sampleSize toward the
+    // threshold AND drag the median down, inflating every multiplier in
+    // the bucket. This is the ENGAGEMENT_COUNT-bucket mirror of BLOCKING 1.
+    const { computeBaseline } = await import("@/lib/server/analysis/performance/baseline");
+    const { BASELINE_MIN_SAMPLE } = await import("@/lib/server/analysis/performance/constants");
+    const profileId = randomUUID();
+    await insertProfile(client, profileId);
+    const bucketKey = "instagram:carousel:images_only";
+
+    // likes+comments totals: 100, 200, 300, 400, 500 -> median 300.
+    for (let i = 0; i < BASELINE_MIN_SAMPLE; i++) {
+      await insertAnalysis(client, {
         profileId,
         bucketKey,
-        schemaVersion: SCHEMA_VERSION,
-        excludeAnalysisId: randomUUID(),
-        minPostAgeHours: 72,
-        currentPost: { reachValue: null, likeCount: 10, commentCount: 5 },
-      }),
-    ).rejects.toThrow(/Mixed-denominator/);
+        reachValue: null,
+        likeCount: 50 * (i + 1),
+        commentCount: 50 * (i + 1),
+      });
+    }
+    // A hidden-count candidate — no usable likes or comments at all.
+    await insertAnalysis(client, {
+      profileId,
+      bucketKey,
+      reachValue: null,
+      likeCount: null,
+      commentCount: null,
+    });
+
+    const result = await computeBaseline({
+      profileId,
+      bucketKey,
+      schemaVersion: SCHEMA_VERSION,
+      excludeAnalysisId: randomUUID(),
+      minPostAgeHours: 72,
+      currentPost: { reachValue: null, likeCount: 300, commentCount: 300 },
+    });
+
+    // The hidden-count row must not inflate sampleSize or deflate the
+    // median. If it had been scored 0, sampleSize would be
+    // BASELINE_MIN_SAMPLE + 1 and the median would shift downward.
+    expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE);
+    expect(result.median).toBe(300);
+    expect(result.multiplier).toBe(2); // 600 / 300
   });
 });
 
