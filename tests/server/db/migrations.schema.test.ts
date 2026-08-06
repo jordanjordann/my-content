@@ -246,6 +246,113 @@ describe("migration chain (001 -> latest) — analyses schema assertion", () => 
     expect(insertCols).toEqual(EXPECTED_ANALYSES_COLUMNS);
   });
 
+  // Ticket 3B-7 / #155 (OR-26): 013 is a full rebuild solely to widen the
+  // perf_unavailable_reason CHECK. No column is added or dropped, so the
+  // positional column list stays 55/55 and identical to 012's.
+  it("keeps the analyses table's INSERT...SELECT column lists in 013 positionally aligned (55 columns each)", () => {
+    const sql = readFileSync(join(process.cwd(), "migrations/013_reach_unavailable_reason.sql"), "utf8");
+
+    const insertMatch = sql.match(/INSERT INTO analyses_new \(([\s\S]*?)\)\s*SELECT/);
+    const selectMatch = sql.match(/SELECT\s+([\s\S]*?)\s*FROM analyses;/);
+    expect(insertMatch).not.toBeNull();
+    expect(selectMatch).not.toBeNull();
+
+    const insertCols = insertMatch![1]
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean);
+    const selectVals = selectMatch![1]
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean);
+
+    expect(insertCols).toHaveLength(55);
+    expect(selectVals).toHaveLength(55);
+    expect(insertCols).toEqual(EXPECTED_ANALYSES_COLUMNS);
+  });
+
+  // Ticket 3B-7 / #155 (OR-26): 013 must differ from 012's `analyses` schema
+  // in EXACTLY one CHECK constraint (perf_unavailable_reason) and nothing
+  // else — proven by running the chain up to 012, snapshotting
+  // sqlite_master.sql for `analyses`, running 013, and diffing.
+  it("013 changes exactly one CHECK on `analyses` relative to 012 — perf_unavailable_reason, and nothing else", async () => {
+    db = createClient({ url: ":memory:" });
+
+    const migrationsDir = join(process.cwd(), "migrations");
+    const files = readdirSync(migrationsDir)
+      .filter((file) => file.endsWith(".sql"))
+      .sort();
+
+    const before013 = files.filter((file) => !file.startsWith("013_"));
+    const migration013 = files.find((file) => file.startsWith("013_"));
+    expect(migration013).toBeDefined();
+
+    for (const file of before013) {
+      await db.executeMultiple(readFileSync(join(migrationsDir, file), "utf8"));
+    }
+
+    const beforeResult = await db.execute(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'analyses'",
+    );
+    const schemaBefore = beforeResult.rows[0]!.sql as string;
+
+    await db.executeMultiple(readFileSync(join(migrationsDir, migration013!), "utf8"));
+
+    const afterResult = await db.execute(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'analyses'",
+    );
+    const schemaAfter = afterResult.rows[0]!.sql as string;
+
+    expect(schemaBefore).not.toEqual(schemaAfter);
+
+    // Isolate the delta to the perf_unavailable_reason column (its
+    // explanatory comment block plus its CHECK clause) by stripping that
+    // whole span out of both schemas and asserting what remains — every
+    // other column, CHECK, comment and index — is byte-identical.
+    const stripUnavailableReasonCheck = (schema: string): string =>
+      schema.replace(
+        /-- Enum per TDD §5\.3[\s\S]*?perf_unavailable_reason TEXT CHECK\([^;]*?\)\),/,
+        "<stripped perf_unavailable_reason column>,",
+      );
+
+    const beforeStripped = stripUnavailableReasonCheck(schemaBefore);
+    const afterStripped = stripUnavailableReasonCheck(schemaAfter);
+
+    expect(beforeStripped).toEqual(afterStripped);
+    expect(schemaAfter).toContain("REACH_NOT_ON_FIRST_SLIDE");
+    expect(schemaBefore).not.toContain("REACH_NOT_ON_FIRST_SLIDE");
+  });
+
+  it("accepts a direct insert of perf_unavailable_reason = 'REACH_NOT_ON_FIRST_SLIDE' (OR-26, ticket #155)", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_unavailable_reason)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", "REACH_NOT_ON_FIRST_SLIDE"],
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("rejects a direct insert of perf_reach_derived_from = 'REACH_NOT_ON_FIRST_SLIDE' — regression guard that the OR-26 fix landed in perf_unavailable_reason, not perf_reach_derived_from", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_reach_derived_from)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", "REACH_NOT_ON_FIRST_SLIDE"],
+      }),
+    ).rejects.toThrow();
+  });
+
   it("rejects a row with perf_tier1_ratio set and perf_tier1_denominator NULL (R-12.2.2, ticket #139)", async () => {
     db = createClient({ url: ":memory:" });
     await runMigrations(db);
@@ -522,7 +629,7 @@ describe("migration chain (001 -> latest) — analyses schema assertion", () => 
     ).resolves.toBeDefined();
   });
 
-  it("rejects a perf_unavailable_reason value outside the six-value enum (TDD §5.3)", async () => {
+  it("rejects a perf_unavailable_reason value outside the seven-value enum (TDD §5.3, widened to 7 by OR-26/#155's REACH_NOT_ON_FIRST_SLIDE)", async () => {
     db = createClient({ url: ":memory:" });
     await runMigrations(db);
 
