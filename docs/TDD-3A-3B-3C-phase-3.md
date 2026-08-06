@@ -333,7 +333,7 @@ per-column table itself (and every ruling in §0) is unchanged.
 | ~~`engagement_rate`~~ | — | **DROPPED** (D10). See §1.1 for the five files that go with it. |
 | `perf_reach_value` | `INTEGER` | nullable — absent for image-only content **by design**, not failure |
 | `perf_reach_kind` | `TEXT` | `CHECK(perf_reach_kind IS NULL OR perf_reach_kind IN ('PLAYS','VIEWS','UNKNOWN'))` |
-| `perf_reach_derived_from` | `TEXT` | `TOP_LEVEL` / `CAROUSEL_FIRST_SLIDE` / `NONE` |
+| `perf_reach_derived_from` | `TEXT` | `CHECK(perf_reach_derived_from IS NULL OR perf_reach_derived_from IN ('TOP_LEVEL','CAROUSEL_FIRST_SLIDE','NONE'))` |
 | `perf_tier1_ratio` | `REAL` | nullable |
 | `perf_tier1_denominator` | `TEXT` | **Required whenever the ratio exists** (R-12.2.2). `CHECK(perf_tier1_ratio IS NULL OR perf_tier1_denominator IN ('REACH','FOLLOWERS'))`. A ratio without a denominator is a **constraint violation**, not a lint. |
 | `perf_bucket_key` | `TEXT` | `(platform, content kind)` bucket identity — D4 |
@@ -342,11 +342,11 @@ per-column table itself (and every ruling in §0) is unchanged.
 | `perf_multiplier` | `REAL` | nullable |
 | `perf_post_age_hours` | `INTEGER` | at analysis time |
 | `audience_source_fetched_at` | `TEXT` | **§1.3** — copy of `profiles.last_fetched_at` at write time, so staleness stays inspectable after the cache refreshes (R-13.3.2, R-13.4.5) |
-| `perf_tier_used` | `TEXT` | **OR-13** — `CREATOR_BASELINE` / `REACH_ONLY` / `AUDIENCE_FALLBACK` / `UNAVAILABLE` |
-| `perf_confidence` | `TEXT` | **OR-13** — `HIGH` / `MEDIUM` / `LOW` / `NONE` |
-| `perf_confidence_reason` | `TEXT` | nullable — `CACHED_FOLLOWER_DENOMINATOR` / `CAROUSEL_FIRST_SLIDE` / `THIN_SAMPLE` (§4) |
+| `perf_tier_used` | `TEXT` | **OR-13** — `CHECK(perf_tier_used IS NULL OR perf_tier_used IN ('CREATOR_BASELINE','REACH_ONLY','AUDIENCE_FALLBACK','UNAVAILABLE'))` |
+| `perf_confidence` | `TEXT` | **OR-13** — `CHECK(perf_confidence IS NULL OR perf_confidence IN ('HIGH','MEDIUM','LOW','NONE'))` |
+| `perf_confidence_reason` | `TEXT` | nullable — `CHECK(perf_confidence_reason IS NULL OR perf_confidence_reason IN ('CACHED_FOLLOWER_DENOMINATOR','CAROUSEL_FIRST_SLIDE','THIN_SAMPLE'))` (§4) |
 | `perf_provisional` | `INTEGER` | nullable boolean, `toDbBool` convention |
-| `perf_unavailable_reason` | `TEXT` | **OR-13** — enum below |
+| `perf_unavailable_reason` | `TEXT` | **OR-13** — `CHECK(perf_unavailable_reason IS NULL OR perf_unavailable_reason IN ('REACH_HIDDEN','REACH_UNKNOWN','CONTENT_KIND_UNSUPPORTED','NO_AUDIENCE_DATA','INSUFFICIENT_HISTORY','CAUSE_NOT_DETERMINABLE'))` — enum below |
 | `performance_score` | `INTEGER` | **promoted to a column** — resolves the skeleton's open sub-question. R-8.4.1 requires it sortable and 3C paginates server-side (OR-8), so it cannot be a client-side sort over `json_extract`. Nullable. |
 
 `verdict` and `drivers[]` remain **model output inside `result_content` JSON**, exactly as `overallScore` and

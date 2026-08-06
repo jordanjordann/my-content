@@ -98,7 +98,11 @@ CREATE TABLE analyses_new (
   -- --- Performance block (TDD §5.2) — new in this migration ---
   perf_reach_value       INTEGER,
   perf_reach_kind        TEXT CHECK(perf_reach_kind IS NULL OR perf_reach_kind IN ('PLAYS', 'VIEWS', 'UNKNOWN')),
-  perf_reach_derived_from TEXT,
+  -- Enum per TDD §5.2's per-column table and §6's `derivedFrom` type union
+  -- (`"TOP_LEVEL" | "CAROUSEL_FIRST_SLIDE" | "NONE"`). Single-column guard
+  -- (reviewer-verified safe form) — see the `perf_tier1_denominator` comment
+  -- above for why cross-column guards are the unsafe form.
+  perf_reach_derived_from TEXT CHECK(perf_reach_derived_from IS NULL OR perf_reach_derived_from IN ('TOP_LEVEL', 'CAROUSEL_FIRST_SLIDE', 'NONE')),
   perf_tier1_ratio        REAL,
   -- R-12.2.2: a ratio without a denominator is a constraint violation, not
   -- a lint (ticket #139 implementation step 3). Two independent conditions
@@ -129,11 +133,22 @@ CREATE TABLE analyses_new (
   perf_multiplier         REAL,
   perf_post_age_hours     INTEGER,
   audience_source_fetched_at TEXT,
-  perf_tier_used          TEXT,
-  perf_confidence         TEXT,
-  perf_confidence_reason  TEXT,
+  -- Enum per TDD §5.2 + PRD §5.2 (OR-13): CREATOR_BASELINE / REACH_ONLY /
+  -- AUDIENCE_FALLBACK / UNAVAILABLE. Single-column guard.
+  perf_tier_used          TEXT CHECK(perf_tier_used IS NULL OR perf_tier_used IN ('CREATOR_BASELINE', 'REACH_ONLY', 'AUDIENCE_FALLBACK', 'UNAVAILABLE')),
+  -- Enum per TDD §5.2 + PRD §5.2 (OR-13): HIGH / MEDIUM / LOW / NONE.
+  -- Also matches the confidence ladder in TDD §4. Single-column guard.
+  perf_confidence         TEXT CHECK(perf_confidence IS NULL OR perf_confidence IN ('HIGH', 'MEDIUM', 'LOW', 'NONE')),
+  -- Enum per TDD §5.2: CACHED_FOLLOWER_DENOMINATOR / CAROUSEL_FIRST_SLIDE /
+  -- THIN_SAMPLE — the "three enumerated demotion reasons" TDD §4 / PRD §5.2
+  -- reference, one per row of the confidence ladder (TDD §4). Single-column
+  -- guard.
+  perf_confidence_reason  TEXT CHECK(perf_confidence_reason IS NULL OR perf_confidence_reason IN ('CACHED_FOLLOWER_DENOMINATOR', 'CAROUSEL_FIRST_SLIDE', 'THIN_SAMPLE')),
   perf_provisional        INTEGER,
-  perf_unavailable_reason TEXT,
+  -- Enum per TDD §5.3: REACH_HIDDEN / REACH_UNKNOWN / CONTENT_KIND_UNSUPPORTED
+  -- / NO_AUDIENCE_DATA / INSUFFICIENT_HISTORY / CAUSE_NOT_DETERMINABLE
+  -- (corroborated by PRD §13.5.1/§13.5.3a). Single-column guard.
+  perf_unavailable_reason TEXT CHECK(perf_unavailable_reason IS NULL OR perf_unavailable_reason IN ('REACH_HIDDEN', 'REACH_UNKNOWN', 'CONTENT_KIND_UNSUPPORTED', 'NO_AUDIENCE_DATA', 'INSUFFICIENT_HISTORY', 'CAUSE_NOT_DETERMINABLE')),
   performance_score       INTEGER
 );
 

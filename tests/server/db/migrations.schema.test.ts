@@ -320,6 +320,237 @@ describe("migration chain (001 -> latest) — analyses schema assertion", () => 
       }),
     ).rejects.toThrow();
   });
+
+  // PR #151 review, non-blocking item 1: CHECK constraints for the five
+  // remaining perf enum columns, owner-approved. Value sets are TDD §5.2
+  // (`perf_reach_derived_from`, `perf_tier_used`, `perf_confidence`,
+  // `perf_confidence_reason`) and TDD §5.3 (`perf_unavailable_reason`),
+  // corroborated by PRD §5.2 / §13.5.1.
+
+  it("accepts a valid perf_reach_derived_from value", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_reach_derived_from)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", "CAROUSEL_FIRST_SLIDE"],
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("rejects a perf_reach_derived_from value outside the TOP_LEVEL/CAROUSEL_FIRST_SLIDE/NONE enum", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_reach_derived_from)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", "BOGUS"],
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("accepts a NULL perf_reach_derived_from", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_reach_derived_from)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", null],
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("accepts a valid perf_tier_used value", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_tier_used)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", "CREATOR_BASELINE"],
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("rejects a perf_tier_used value outside the CREATOR_BASELINE/REACH_ONLY/AUDIENCE_FALLBACK/UNAVAILABLE enum", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_tier_used)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", "BOGUS"],
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("accepts a NULL perf_tier_used", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_tier_used)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", null],
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("accepts a valid perf_confidence value", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_confidence)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", "HIGH"],
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("rejects a perf_confidence value outside the HIGH/MEDIUM/LOW/NONE enum", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_confidence)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", "BOGUS"],
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("accepts a NULL perf_confidence", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_confidence)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", null],
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("accepts a valid perf_confidence_reason value", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_confidence_reason)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", "THIN_SAMPLE"],
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("rejects a perf_confidence_reason value outside the CACHED_FOLLOWER_DENOMINATOR/CAROUSEL_FIRST_SLIDE/THIN_SAMPLE enum", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_confidence_reason)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", "BOGUS"],
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("accepts a NULL perf_confidence_reason", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_confidence_reason)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", null],
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("accepts a valid perf_unavailable_reason value", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_unavailable_reason)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", "CAUSE_NOT_DETERMINABLE"],
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("rejects a perf_unavailable_reason value outside the six-value enum (TDD §5.3)", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_unavailable_reason)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", "BOGUS"],
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("accepts a NULL perf_unavailable_reason", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_unavailable_reason)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", null],
+      }),
+    ).resolves.toBeDefined();
+  });
 });
 
 describe("migration chain (001 -> latest) — profile_style_fingerprints schema assertion (ticket #115)", () => {
