@@ -26,11 +26,15 @@ import type {
  * fingerprint client.
  *
  * Both ratio functions apply the same OR-20 negative-count discipline as
- * `availability.ts`: a negative `likeCount`/`commentCount` is never
- * subtracted, never propagated — it is treated identically to an absent
- * count (contributes nothing to the sum), so no ratio function in this
- * module can ever return a negative value from a negative input. This is
- * a defence-in-depth measure — in the real pipeline, `likeCount`/
+ * `availability.ts`. A negative `likeCount`/`commentCount` is a `-1`-style
+ * availability sentinel, not data — OR-20 rule 3 is explicit that clamping
+ * it (`Math.max(x, 0)`) is a bug, because that converts "we have no data"
+ * into a fabricated figure with no unavailability signal attached. So an
+ * *absent* (`null`/`undefined`) count still contributes nothing to the sum
+ * (unchanged, pre-existing #139 behaviour, out of scope here), but a
+ * *negative* count poisons the whole ratio: the function returns `null`,
+ * consistent with `computeReachPerFollower`'s contract. This is a
+ * defence-in-depth measure — in the real pipeline, `likeCount`/
  * `commentCount` reach this module only after passing through
  * `availability.ts`'s resolvers, which already turn a negative sentinel
  * into `null` before it gets anywhere near arithmetic.
@@ -40,10 +44,19 @@ import type {
  * corresponding input's availability state is `AVAILABLE`/`ZERO`.
  */
 
-/** Treats an absent OR negative count identically — never fabricates a value, never propagates a negative. */
-function usableCount(value: number | null | undefined): number {
-  if (value == null || value < 0) {
+/**
+ * Returns the count to sum (0 when absent — pre-existing #139 behaviour,
+ * out of scope), or `null` when the count is negative. `null` here means
+ * "this is an unavailability sentinel, not a usable number" (OR-20 rule 3)
+ * — callers must propagate it as the whole ratio's `null`, never coerce it
+ * into 0.
+ */
+function usableCount(value: number | null | undefined): number | null {
+  if (value == null) {
     return 0;
+  }
+  if (value < 0) {
+    return null;
   }
   return value;
 }
@@ -72,6 +85,9 @@ export function computeEngagementRate({
 
   const likes = usableCount(likeCount);
   const comments = usableCount(commentCount);
+  if (likes === null || comments === null) {
+    return null;
+  }
 
   return { denominator: "FOLLOWERS", ratio: (likes + comments) / followerCount };
 }
@@ -111,6 +127,9 @@ export function computeReachEngagementRatio({
 
   const likes = usableCount(likeCount);
   const comments = usableCount(commentCount);
+  if (likes === null || comments === null) {
+    return null;
+  }
 
   return { denominator: "REACH", ratio: (likes + comments) / reachValue, reachKind };
 }

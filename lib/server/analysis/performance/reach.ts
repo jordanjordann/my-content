@@ -39,34 +39,50 @@ interface NodeReach {
 }
 
 /**
+ * Which field is authoritative for a node — TDD §3's table is directional,
+ * not symmetric: a top-level reel/video trusts `video_play_count`; a
+ * carousel child trusts `video_view_count` (the reversal, AC-5). There is
+ * **no documented fallback** from one to the other in either direction — a
+ * top-level node whose `video_play_count` is absent/null is `UNKNOWN`, not
+ * silently read from `video_view_count` (that would feed a *view* figure
+ * into a *play*-based baseline, PRD §4.3's corruption trap). Only the field
+ * this node is authoritative for is ever consulted.
+ */
+type Authority = "play" | "view";
+
+/**
  * Resolves reach from a single node (a top-level reel/video, or a carousel
  * slide) that is known to carry at least one of the two count fields.
  *
- * - `video_play_count` is authoritative whenever it is a positive number —
- *   this is what rejects the false zero (`ig_reel_1_zero_view_count.json`:
- *   `video_view_count: 0` beside `video_play_count: 116333`, AC-4).
- * - Falls back to `video_view_count` when it is the only positive number
- *   present — this is the carousel-child reversal (`video_play_count` is
- *   `null` on every real video child; `video_view_count` is populated,
- *   AC-5).
+ * - The node's authoritative field (`video_play_count` for a top-level
+ *   node, `video_view_count` for a carousel child) is used whenever it is a
+ *   positive number — this is what rejects the false zero
+ *   (`ig_reel_1_zero_view_count.json`: `video_view_count: 0` beside
+ *   `video_play_count: 116333`, AC-4) and resolves the carousel-child
+ *   reversal (`video_play_count` is `null` on every real video child,
+ *   `video_view_count` is populated, AC-5).
  * - Both fields explicitly `0` is a corroborated, genuine zero (PRD §4.4:
- *   "Only assertable when ... no sibling field contradicts it").
- * - Anything else (a bare 0 with no positive corroboration, or both
- *   null/absent despite the field key being present) is `UNKNOWN` per
- *   R-4.3.3 — never fabricated as `0`, never guessed as a kind.
+ *   "Only assertable when ... no sibling field contradicts it") — labelled
+ *   with the node's own authoritative kind (R-4.3.1: a zero carousel child
+ *   is a corroborated `VIEWS` zero, never `PLAYS`).
+ * - Anything else (the authoritative field null/absent with no positive
+ *   corroboration) is `UNKNOWN` per R-4.3.3 — never fabricated as `0`,
+ *   never guessed as a kind, never read from the *other* field.
  */
-function resolveNodeReach(node: ScrapeCreatorsMedia | ScrapeCreatorsCarouselChildNode): NodeReach {
+function resolveNodeReach(
+  node: ScrapeCreatorsMedia | ScrapeCreatorsCarouselChildNode,
+  authority: Authority,
+): NodeReach {
   const playCount = num(node.video_play_count);
   const viewCount = num(node.video_view_count);
+  const primary = authority === "play" ? playCount : viewCount;
+  const kind: ReachKind = authority === "play" ? "PLAYS" : "VIEWS";
 
-  if (playCount !== null && playCount > 0) {
-    return { value: playCount, kind: "PLAYS", state: "AVAILABLE" };
-  }
-  if (viewCount !== null && viewCount > 0) {
-    return { value: viewCount, kind: "VIEWS", state: "AVAILABLE" };
+  if (primary !== null && primary > 0) {
+    return { value: primary, kind, state: "AVAILABLE" };
   }
   if (playCount === 0 && viewCount === 0) {
-    return { value: 0, kind: "PLAYS", state: "ZERO" };
+    return { value: 0, kind, state: "ZERO" };
   }
 
   return { value: null, kind: "UNKNOWN", state: "UNKNOWN" };
@@ -97,7 +113,10 @@ function getCarouselChildren(raw: ScrapeCreatorsMedia): ScrapeCreatorsCarouselCh
  * | Non-carousel post with neither field (single image post) | `NONE` |
  */
 export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
-  const isCarousel = raw.__typename === "XDTGraphSidecar";
+  // R-12.7.1: branch on field PRESENCE, never on `__typename`. The
+  // `edge_sidecar_to_children` key itself — not the type name — is what
+  // discriminates a carousel from a top-level reel/video/image post.
+  const isCarousel = "edge_sidecar_to_children" in raw;
 
   if (isCarousel) {
     const children = getCarouselChildren(raw);
@@ -106,7 +125,7 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
       return noneResult();
     }
 
-    const node = resolveNodeReach(firstSlide);
+    const node = resolveNodeReach(firstSlide, "view");
     return { ...node, derivedFrom: "CAROUSEL_FIRST_SLIDE" as ReachDerivedFrom };
   }
 
@@ -114,7 +133,7 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
     return noneResult();
   }
 
-  const node = resolveNodeReach(raw);
+  const node = resolveNodeReach(raw, "play");
   return { ...node, derivedFrom: "TOP_LEVEL" as ReachDerivedFrom };
 }
 
@@ -124,8 +143,17 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
  * view-vs-play ambiguity exists on this platform (PRD §4.7). Still routed
  * through the same negative-guard discipline as everything else in this
  * module: a negative or non-finite value is `UNKNOWN`, never clamped.
+ *
+ * `derivedFrom` mirrors `resolveInstagramReach()`'s meaning: `NONE` is "the
+ * field does not exist at all" (`viewCountInt === undefined` — the key was
+ * never in the response), while `TOP_LEVEL` is "the field exists" even when
+ * its value is unusable (`null`, negative, non-finite).
  */
 export function resolveYoutubeReach(viewCountInt: unknown): ReachResult {
+  if (viewCountInt === undefined) {
+    return { value: null, kind: "UNKNOWN", state: "UNKNOWN", derivedFrom: "NONE" };
+  }
+
   const value = num(viewCountInt);
 
   if (value === null) {

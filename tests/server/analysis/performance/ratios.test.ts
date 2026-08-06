@@ -32,13 +32,15 @@ describe("computeEngagementRate — follower-denominated Tier 1 (relocated from 
     expect(result).toEqual({ denominator: "FOLLOWERS", ratio: 0 });
   });
 
-  it("OR-20 defence-in-depth — a negative likeCount never produces a negative ratio", () => {
+  it("OR-20 rule 3 defence-in-depth — a negative likeCount returns null, never a clamped/fabricated ratio", () => {
+    // A negative count is an unavailability sentinel, not data. Clamping it
+    // to 0 (Math.max(x, 0)) would produce a real-looking ratio (0.005) with
+    // no unavailability signal attached — exactly the "fabricated zero
+    // reached by defensive code" OR-20 rule 3 forbids. The whole ratio must
+    // be null, consistent with computeReachPerFollower's contract.
     const result = computeEngagementRate({ likeCount: -1, commentCount: 5, followerCount: 1_000 });
 
-    expect(result).not.toBeNull();
-    expect(result!.ratio).toBeGreaterThanOrEqual(0);
-    // -1 is treated as unusable (0 contribution), not subtracted.
-    expect(result).toEqual({ denominator: "FOLLOWERS", ratio: 0.005 });
+    expect(result).toBeNull();
   });
 });
 
@@ -98,7 +100,7 @@ describe("computeReachEngagementRatio — reach-denominated Tier 1 (new in #140)
     ).toBeNull();
   });
 
-  it("OR-20 defence-in-depth — a negative commentCount never produces a negative ratio", () => {
+  it("OR-20 rule 3 defence-in-depth — a negative commentCount returns null, never a clamped/fabricated ratio", () => {
     const result = computeReachEngagementRatio({
       likeCount: 50,
       commentCount: -3,
@@ -106,9 +108,7 @@ describe("computeReachEngagementRatio — reach-denominated Tier 1 (new in #140)
       reachKind: "VIEWS",
     });
 
-    expect(result).not.toBeNull();
-    expect(result!.ratio).toBeGreaterThanOrEqual(0);
-    expect(result).toEqual({ denominator: "REACH", ratio: 0.05, reachKind: "VIEWS" });
+    expect(result).toBeNull();
   });
 
   it("carries VIEWS through the discriminant, never silently PLAYS", () => {

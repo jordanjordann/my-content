@@ -88,15 +88,15 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
 });
 
 describe("resolveInstagramReach — synthetic branch pins", () => {
-  it("a genuine top-level reel with a real positive video_view_count and no play count resolves VIEWS", () => {
+  it("a top-level reel with a positive video_view_count and no play count is UNKNOWN — TDD §3's ladder gives top-level nodes no view fallback, only video_play_count is authoritative", () => {
     const media = makeReel({ video_play_count: undefined, video_view_count: 5_000 });
 
-    expect(resolveInstagramReach(media)).toEqual({
-      value: 5_000,
-      kind: "VIEWS",
-      state: "AVAILABLE",
-      derivedFrom: "TOP_LEVEL",
-    });
+    const result = resolveInstagramReach(media);
+
+    expect(result.state).toBe("UNKNOWN");
+    expect(result.value).toBeNull();
+    expect(result.kind).toBe("UNKNOWN");
+    expect(result.derivedFrom).toBe("TOP_LEVEL");
   });
 
   it("both play and view counts corroborated at exactly 0 is a genuine ZERO, not UNKNOWN", () => {
@@ -130,6 +130,19 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
     expect(resolveInstagramReach(media).derivedFrom).toBe("NONE");
   });
 
+  it("R-4.3.1 — a carousel first slide corroborated at exactly 0 is a genuine ZERO labelled VIEWS, never PLAYS — the child's authoritative field is video_view_count, not video_play_count", () => {
+    const media = makeCarousel([
+      makeVideoChild({ video_play_count: 0, video_view_count: 0 }),
+    ]);
+
+    expect(resolveInstagramReach(media)).toEqual({
+      value: 0,
+      kind: "VIEWS",
+      state: "ZERO",
+      derivedFrom: "CAROUSEL_FIRST_SLIDE",
+    });
+  });
+
   it("an empty carousel (no children) resolves NONE rather than throwing", () => {
     const media = makeCarousel([]);
 
@@ -141,14 +154,35 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
     });
   });
 
-  it("R-12.7.1 — does not branch on __typename: a non-sidecar image post with no reach fields is NONE regardless of __typename", () => {
+  it("R-12.7.1 — a non-sidecar image post with no reach fields and no children is NONE (sanity case, not itself proof of non-branching — see the next test)", () => {
     const media = makeImagePost();
 
     expect(resolveInstagramReach(media).derivedFrom).toBe("NONE");
-    // The point of R-12.7.1: this must be true because the fields are
-    // absent, not because __typename === "XDTGraphImage" was consulted.
     expect("video_play_count" in media).toBe(false);
     expect("video_view_count" in media).toBe(false);
+  });
+
+  it("R-12.7.1 — does not branch on __typename: a carousel with a misleading/wrong __typename still resolves via its first slide, because edge_sidecar_to_children's PRESENCE decides the branch, not the type name", () => {
+    // __typename says "XDTGraphVideo" (a top-level video type, not a
+    // sidecar) while the object nonetheless carries edge_sidecar_to_children
+    // with a reach-bearing video child. A __typename-gated implementation
+    // treats this as top-level, finds no video_play_count/video_view_count
+    // keys on the top-level object itself, and returns NONE — the exact
+    // "real post silently becomes no reach field exists at all" failure the
+    // reviewer demonstrated on the real mixed-carousel fixture. A
+    // presence-gated implementation correctly follows edge_sidecar_to_children
+    // into the first slide regardless of what __typename claims.
+    const media = makeCarousel(
+      [makeVideoChild({ video_play_count: null, video_view_count: 42_000 })],
+      { __typename: "XDTGraphVideo" },
+    );
+
+    expect(resolveInstagramReach(media)).toEqual({
+      value: 42_000,
+      kind: "VIEWS",
+      state: "AVAILABLE",
+      derivedFrom: "CAROUSEL_FIRST_SLIDE",
+    });
   });
 
   it("counts as a string are accepted the same way num() does elsewhere in the codebase", () => {
@@ -177,10 +211,18 @@ describe("resolveYoutubeReach", () => {
     expect(result.value).toBeNull();
   });
 
-  it("undefined (field absent) resolves UNKNOWN", () => {
+  it("undefined (field absent) resolves UNKNOWN with derivedFrom NONE — the key never existed in the response", () => {
     const result = resolveYoutubeReach(undefined);
     expect(result.state).toBe("UNKNOWN");
     expect(result.value).toBeNull();
+    expect(result.derivedFrom).toBe("NONE");
+  });
+
+  it("null (field present but null) resolves UNKNOWN with derivedFrom TOP_LEVEL — the key exists, just its value doesn't", () => {
+    const result = resolveYoutubeReach(null);
+    expect(result.state).toBe("UNKNOWN");
+    expect(result.value).toBeNull();
+    expect(result.derivedFrom).toBe("TOP_LEVEL");
   });
 
   it("a negative viewCountInt resolves UNKNOWN, never clamped to 0", () => {
