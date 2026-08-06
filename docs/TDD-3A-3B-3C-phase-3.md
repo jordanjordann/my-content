@@ -82,6 +82,7 @@ Everything in §0.1–§0.5 was ruled **before** these captures existed. These s
 | **OR-23** | **HOST REVERSAL — RAILWAY, not Fly.io.** The owner reviewed §11.2's Fly recommendation and **overrode it, explicitly on billing predictability**: he dislikes Fly's pay-as-you-go per-second billing and prefers a predictable flat floor. **This is a preference about billing, not a technical rebuttal** — the original analysis is preserved verbatim in §11.2 and the reasoning is not retracted. §11.2a records what the reversal costs (the Turso co-location tiebreaker is forfeited) and §11.2b records the verification that Railway can carry 3A's actual requirements. |
 | **OR-24** | **`performance_score` as a real column — CONFIRMED.** §5.2 stands as written. |
 | **OR-25** | **The prose guard fails loudly with no repair retry — CONFIRMED.** §8.2 stands as written; the owner understands and accepts that a violation burns a billed Gemini call and fails the analysis. |
+| **OR-26** | **`derivedFrom: "NONE"` is overloaded — SPLIT, but in `unavailableReason`, not in `derivedFrom`. Migration `013`; 3A's job table renumbers to `014`.** Raised by code review on PR #152. `NONE` currently means both *"no node in this post carries reach fields at all"* (all-image carousel, single image post — permanent and expected) and *"slide 0 carries none, but a later slide does"* (a mixed carousel whose cover is an image — the post **has** real play counts that D4's first-slide rule never consulted). Ticket **#143** turns this into a user-facing sentence, so the second case would ship as "this post type doesn't report counts" — **false, and a fabricated diagnosis of exactly the class R-13.5.3a exists to forbid.** ⚠️ **Deriving the split from `analysis_mode` was proposed and is FALSIFIED — see §3.1.** The fix adds **one value to `perf_unavailable_reason`** (`REACH_NOT_ON_FIRST_SLIDE`, §5.3), **not** a fourth `perf_reach_derived_from` value: `derivedFrom` answers *where the number came from*, and with no number `NONE` is the complete and correct answer to that question; the split is a *why*, and `unavailableReason` is the why-column. Cost stated plainly: one new migration and a **full `analyses` table rebuild** (SQLite cannot alter a `CHECK` in place, and 012 is merged) — but **zero data cost**, because 012 already `DELETE`d every row. |
 
 ---
 
@@ -321,6 +322,77 @@ resolveReach(): { value: number | null; kind: ReachKind; state: AvailabilityStat
 `derivedFrom` is what the confidence penalty and R-13.4.2's explanation read. A bare `0` with no
 corroborating sibling is `UNKNOWN`, not `ZERO` (R-4.3.3).
 
+### 3.1 `NONE` is two facts, and they must not share one value (OR-26)
+
+Raised by code review on PR #152 (merged). Read the fourth row of the table above literally — it collapses
+two facts that are **not the same fact**:
+
+| | What is true | Is it permanent? | Is the honest sentence "this post type doesn't report counts"? |
+|---|---|---|---|
+| **Case 1** | No node anywhere in this post carries the `video_play_count`/`video_view_count` keys. All-image carousel; single image post. | Yes | **Yes.** |
+| **Case 2** | Slide 0 carries neither key, but a **later slide does** and has a real count. D4 says read slide 0, so nothing was derived. | No — the data exists | **No. It is false.** The post has view data; we chose not to consult it. |
+
+Case 2 is not hypothetical. `ig_carousel_mixed_video_and_image_10_slides.json` proves that image and video
+children **interleave arbitrarily within one carousel** (slide 5 image, slide 6 video, `234050` views on
+slide 0). A carousel whose *cover* is an image and whose video sits at slide 6 is a reordering of witnessed
+data, not a new payload shape.
+
+**This is a live R-13.5.3a violation** — the same rule that forced `CAUSE_NOT_DETERMINABLE` into existence
+(§5.3). #143 is the ticket that would otherwise commit it.
+
+#### The `analysis_mode` derivation was proposed and is FALSIFIED — do not revive it
+
+The proposal: `NONE` + `analysis_mode = 'images_only'` → case 1; `NONE` + anything else → case 2. It fails on
+**two mainline paths, not edge cases**, verified against `lib/server/analysis/media/resolveMediaParts.ts` and
+`lib/server/analysis/pipeline/index.ts`:
+
+1. **A single image post is `metadata_only`, not `images_only`.** `resolveMediaParts()` pushes a part for a
+   non-carousel post **only if `kind === "video"`** — a lone image post produces an **empty** parts array, so
+   `pipeline/index.ts` never enters the `mediaParts.length > 0` branch and `analysisMode` keeps its
+   `metadata_only` initialiser. Confirmed against `ig_single_image_post.json`. The derivation therefore reads
+   the single image post — a textbook **case 1** — as case 2, and tells the user their image post has view
+   data that was not consulted. That is the exact fabrication the split exists to prevent.
+2. **Every YouTube `NONE` is `full_video`.** `resolveYoutubeReach()` returns `NONE` when `viewCountInt` is
+   **absent**; the YouTube path always synthesises a video part from `metadata.videoUrl`, so `hasVideoPart`
+   is always true. The derivation reads every such row as "mixed carousel, image first slide" — a sentence
+   about a carousel, on a platform that has none.
+
+Two further reasons it could not be repaired even if those two were patched:
+
+3. **It would launder the forbidden discriminator.** `analysis_mode` derives from `isVideoNode()`, which
+   branches on `__typename === "XDTGraphVideo" || is_video === true`, and from a carousel gate of
+   `__typename === "XDTGraphSidecar"`. **R-12.7.1 forbids exactly these** for this question, and PR #152's
+   BLOCKING 1 was this same discriminator in `reach.ts` (since fixed to `"edge_sidecar_to_children" in raw`).
+   Deriving a *reach* sentence from a `__typename`-based signal reintroduces the defect one file away.
+4. **The column is nullable and is explicitly nulled.** `pipeline/index.ts` sets `analysis_mode = NULL` on the
+   re-analysis reset path, and migration 012 declares it without `NOT NULL`. A derivation whose input can be
+   absent cannot be the basis of an assertion about the world.
+
+#### The ruling
+
+Compute the distinction **where the payload is in hand**, not by cross-module inference. At
+`resolveInstagramReach()`'s carousel `noneResult()` return, `children` is already in scope and
+`hasReachFields` is already the R-12.7.1-compliant presence check:
+
+```ts
+// same payload, same function, same presence discriminator — no inference
+const someSlideHasReach = children.some(hasReachFields);
+```
+
+`ReachResult` gains one additive boolean carrying that fact forward; `derivedFrom` is **unchanged** and keeps
+its three values. The judgement module (#143) maps it onto `unavailableReason` (§5.3).
+
+**Why not a fourth `derivedFrom` value:** `derivedFrom` answers *"where did this number come from"*. When
+there is no number, `NONE` is the complete and correct answer to that question. The split is a *why*, and
+every consumer of `derivedFrom` today (the §4 confidence penalty, R-13.4.2) reads it for the *where* — a
+fourth value would force all of them to handle a case with no bearing on confidence. Both options cost the
+same migration, so cost is not the tiebreak; the column's meaning is.
+
+**Verification gap, stated rather than papered over:** **no committed fixture has an image at slide 0 with a
+video later.** Test case 2 with a **synthetic mutant** of `ig_carousel_mixed_video_and_image_10_slides.json`
+(move the slide-5 image node to index 0), clearly labelled synthetic in the test. **Do not capture a new
+payload — this costs no API credits.**
+
 **Rounding tolerance (S2/AC-7), stated as the PRD asks:** a numeral extracted from prose matches the
 computed block if it agrees to **1 decimal place** for multipliers and percentages, and **exactly** for
 integer counts, after stripping thousands separators. **Indonesian prose uses `,` as the decimal separator
@@ -421,7 +493,7 @@ per-column table itself (and every ruling in §0) is unchanged.
 | `perf_confidence` | `TEXT` | **OR-13** — `CHECK(perf_confidence IS NULL OR perf_confidence IN ('HIGH','MEDIUM','LOW','NONE'))` |
 | `perf_confidence_reason` | `TEXT` | nullable — `CHECK(perf_confidence_reason IS NULL OR perf_confidence_reason IN ('CACHED_FOLLOWER_DENOMINATOR','CAROUSEL_FIRST_SLIDE','THIN_SAMPLE'))` (§4) |
 | `perf_provisional` | `INTEGER` | nullable boolean, `toDbBool` convention |
-| `perf_unavailable_reason` | `TEXT` | **OR-13** — `CHECK(perf_unavailable_reason IS NULL OR perf_unavailable_reason IN ('REACH_HIDDEN','REACH_UNKNOWN','CONTENT_KIND_UNSUPPORTED','NO_AUDIENCE_DATA','INSUFFICIENT_HISTORY','CAUSE_NOT_DETERMINABLE'))` — enum below |
+| `perf_unavailable_reason` | `TEXT` | **OR-13** — `CHECK(perf_unavailable_reason IS NULL OR perf_unavailable_reason IN ('REACH_HIDDEN','REACH_UNKNOWN','CONTENT_KIND_UNSUPPORTED','NO_AUDIENCE_DATA','INSUFFICIENT_HISTORY','CAUSE_NOT_DETERMINABLE'))` as shipped in 012 — ⚠️ **`REACH_NOT_ON_FIRST_SLIDE` is added by migration `013` (OR-26, §5.3)**; 012 is merged and SQLite cannot alter a `CHECK` in place, so 013 is a full table rebuild. Enum below |
 | `performance_score` | `INTEGER` | **promoted to a column** — resolves the skeleton's open sub-question. R-8.4.1 requires it sortable and 3C paginates server-side (OR-8), so it cannot be a client-side sort over `json_extract`. Nullable. |
 
 `verdict` and `drivers[]` remain **model output inside `result_content` JSON**, exactly as `overallScore` and
@@ -440,13 +512,50 @@ CREATE INDEX idx_analyses_performance_score ON analyses(performance_score);
 
 ```
 REACH_HIDDEN | REACH_UNKNOWN | CONTENT_KIND_UNSUPPORTED
-| NO_AUDIENCE_DATA | INSUFFICIENT_HISTORY | CAUSE_NOT_DETERMINABLE
+| REACH_NOT_ON_FIRST_SLIDE | NO_AUDIENCE_DATA
+| INSUFFICIENT_HISTORY | CAUSE_NOT_DETERMINABLE
 ```
 
 `CAUSE_NOT_DETERMINABLE` satisfies R-13.5.3a. **Two different facts must not share one enum value.** Jessica
 proposed the name `PERFORMANCE_DATA_ABSENT`; naming is the tech lead's call and `CAUSE_NOT_DETERMINABLE` is
 chosen because it names the epistemic state rather than the data state — which is precisely the distinction
 the value exists to hold.
+
+**`REACH_NOT_ON_FIRST_SLIDE` is added by OR-26 / §3.1, under the same rule.** It splits the two facts that
+`derivedFrom: "NONE"` was carrying, and it **narrows `CONTENT_KIND_UNSUPPORTED` to its true meaning**. The
+three `NONE` outcomes are now disjoint and each is separately assertable:
+
+| Situation | `derivedFrom` | `unavailableReason` | The sentence #143 may honestly write |
+|---|---|---|---|
+| No node in the post carries either reach key — all-image carousel, single image post | `NONE` | `CONTENT_KIND_UNSUPPORTED` | "This post type doesn't report view counts." |
+| Slide 0 carries neither key; a **later slide does** | `NONE` | **`REACH_NOT_ON_FIRST_SLIDE`** | "Views are reported on later slides of this carousel, but the score reads the first slide only." |
+| YouTube, `viewCountInt` absent from the response | `NONE` | `REACH_UNKNOWN` | "No view count was returned for this video." |
+
+**Binding on #143:** `CONTENT_KIND_UNSUPPORTED` must **never** be written for a YouTube row — a YouTube video
+is a supported content kind, and a missing field is an `UNKNOWN`, not an unsupported kind. Neither carousel
+value may ever be written on the YouTube path at all.
+
+#### Migration **`013_reach_unavailable_reason.sql`** — and 3A renumbers to `014`
+
+Migration **012 is merged**, so its `CHECK` on `perf_unavailable_reason` is live. **SQLite cannot alter a
+`CHECK` in place**, so this is a **full `analyses` table rebuild** following 012's own pattern (which
+followed 009's), not an `ALTER TABLE`. Concretely:
+
+- **Data cost is zero.** 012 already `DELETE`d every analysis row and `profile_style_fingerprints` has 0
+  rows. Re-verify the row count at write time; the copy-forward statement is kept for positional symmetry
+  with the 009/012 test pattern and is expected to move nothing.
+- **The only `CHECK` that changes is `perf_unavailable_reason`.** `perf_reach_derived_from` keeps its three
+  values verbatim. All 55 columns are otherwise reproduced unchanged, including all 8 indexes.
+- `tests/server/db/migrations.schema.test.ts`'s positional insert/copy column-list assertion must be updated.
+
+**3A's job table moves from `013` to `014_jobs.sql`** (§10.2, §15). Two reasons, neither of them tidiness:
+
+1. **Ordering safety.** This rebuild `DROP TABLE analyses`. If 3A's jobs table lands first and carries any
+   `REFERENCES analyses(id)`, the rebuild orphans it. Taking `013` for the rebuild means the jobs table is
+   created **after** `analyses` reaches its final shape, and the hazard cannot arise.
+2. **3A is not ticketed** (OR-18 — "cut when 3C lands"), while this ships inside 3B now. Numbers are
+   allocated in the order files land, and reserving a low number for deferred work would leave a gap if 3A is
+   ever cut. The renumber costs two line edits in this document and **no ticket edits**.
 
 ### 5.4 Availability states
 
@@ -854,7 +963,7 @@ Specified now so the deploy work in §11 is done against a known shape. Tickets 
   `(normalised_url, prompt_hash)` over non-terminal jobs is the minimum.
 - **A reaper for stale `queued`/`claimed` rows.** Today rows would stay `queued` forever.
 
-### 10.2 Job table — **migration `013_jobs.sql`** (number fixed here, §5)
+### 10.2 Job table — **migration `014_jobs.sql`** (renumbered from `013` by OR-26 / §5.3; number fixed here, §5)
 
 ```sql
 CREATE TABLE jobs (
@@ -1044,7 +1153,7 @@ services from the one repo/Dockerfile** with distinct start commands (`next star
 as an explicit checked item, not as tribal knowledge), a Turso database + auth token **with its primary in the
 same metro as the Railway region** (§11.2a), a release command running `db:migrate`, secret management for
 `GEMINI_API_KEY` / `SCRAPECREATORS_API_KEY`, a deploy step in `.github/workflows/ci.yml`, and a `.env.example`
-audit (RUNBOOK §3). Since OR-17 puts this **after** 3C, migrations 012 and 013 will both apply on the first
+audit (RUNBOOK §3). Since OR-17 puts this **after** 3C, migrations 012, 013 and 014 will all apply on the first
 Turso run — which is fine and is why all SQL in this document is kept libSQL-portable.
 
 ---
@@ -1170,8 +1279,10 @@ The PRD is **wrong on `main`**. These edits are applied in the same PR as this T
   └► 3C-4 [FE] filters, column menu, dead-code deletion, contrast record
 ```
 
-**Migration numbers, fixed here and repeated in the tickets:** **3B = `012_performance_block.sql`**,
-**3A = `013_jobs.sql`**. No agent picks a number at implementation time.
+**Migration numbers, fixed here and repeated in the tickets:** **3B = `012_performance_block.sql`** (merged,
+PR #151), **3B = `013_reach_unavailable_reason.sql`** (OR-26 / §5.3 — adds `REACH_NOT_ON_FIRST_SLIDE`; full
+table rebuild because 012 is merged), **3A = `014_jobs.sql`** (renumbered from `013` by OR-26). No agent picks
+a number at implementation time.
 
 **FE/BE dependency:** 3C is **blocked on 3B-6**. The two phases are **not** parallelisable — 3C consumes a
 response shape 3B-6 creates. Within each phase the chain above is sequential except 3C-2/3C-3/3C-4, which are
