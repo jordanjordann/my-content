@@ -32,6 +32,7 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
       kind: "PLAYS",
       state: "AVAILABLE",
       derivedFrom: "TOP_LEVEL",
+      someSlideHasReach: false,
     });
   });
 
@@ -45,6 +46,7 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
       kind: "VIEWS",
       state: "AVAILABLE",
       derivedFrom: "CAROUSEL_FIRST_SLIDE",
+      someSlideHasReach: false,
     });
   });
 
@@ -58,6 +60,7 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
       kind: null,
       state: "UNKNOWN",
       derivedFrom: "NONE",
+      someSlideHasReach: false,
     });
   });
 
@@ -69,6 +72,37 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
     expect(result.derivedFrom).toBe("NONE");
     expect(result.value).toBeNull();
     expect(result.kind).toBeNull();
+    // Regression guard for the falsified analysis_mode derivation (TDD
+    // §3.1): a single image post is metadata_only, not images_only, so a
+    // reader keyed off analysis_mode would misread this as case 2. It is
+    // case 1 — no node anywhere carries a reach field.
+    expect(result.someSlideHasReach).toBe(false);
+  });
+
+  it("OR-26 / #155 — SYNTHETIC MUTANT: a real mixed carousel with its slide-5 image reordered to index 0 resolves NONE with someSlideHasReach true", () => {
+    // No committed fixture has an image at slide 0 with a video later.
+    // `ig_carousel_mixed_video_and_image_10_slides.json` proves this shape
+    // is real (images and videos interleave arbitrarily within one
+    // carousel — indices 5, 8, 9 are images, everything else video) — this
+    // test just reorders slides 0 and 5 of that SAME captured payload via
+    // deep clone, so it is a reordering of witnessed data, not a
+    // hypothesis. No API credits used or authorised for this ticket.
+    const media = loadMedia("ig_carousel_mixed_video_and_image_10_slides.json");
+    const cloned = structuredClone(media) as ScrapeCreatorsMedia & {
+      edge_sidecar_to_children: { edges: Array<{ node: Record<string, unknown> }> };
+    };
+    const edges = cloned.edge_sidecar_to_children.edges;
+    const slide0 = edges[0]!;
+    const slide5 = edges[5]!;
+    edges[0] = slide5;
+    edges[5] = slide0;
+
+    const result = resolveInstagramReach(cloned);
+
+    expect(result.derivedFrom).toBe("NONE");
+    expect(result.value).toBeNull();
+    expect(result.kind).toBeNull();
+    expect(result.someSlideHasReach).toBe(true);
   });
 
   it("OR-20 negative assertion — reach is never negative for any committed Instagram fixture", () => {
@@ -107,6 +141,7 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
       kind: "PLAYS",
       state: "ZERO",
       derivedFrom: "TOP_LEVEL",
+      someSlideHasReach: false,
     });
   });
 
@@ -127,7 +162,11 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
       makeVideoChild({ video_view_count: 999 }),
     ]);
 
-    expect(resolveInstagramReach(media).derivedFrom).toBe("NONE");
+    const result = resolveInstagramReach(media);
+    expect(result.derivedFrom).toBe("NONE");
+    // OR-26 / #155: this is exactly case 2 — slide 0 has no reach fields
+    // but a later slide does — so the boolean must flag it.
+    expect(result.someSlideHasReach).toBe(true);
   });
 
   it("R-4.3.1 — a carousel first slide corroborated at exactly 0 is a genuine ZERO labelled VIEWS, never PLAYS — the child's authoritative field is video_view_count, not video_play_count", () => {
@@ -140,17 +179,21 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
       kind: "VIEWS",
       state: "ZERO",
       derivedFrom: "CAROUSEL_FIRST_SLIDE",
+      someSlideHasReach: false,
     });
   });
 
   it("an empty carousel (no children) resolves NONE rather than throwing", () => {
     const media = makeCarousel([]);
 
+    // [].some(...) is false — the empty-children case falls out correctly
+    // without a special case (OR-26 / #155).
     expect(resolveInstagramReach(media)).toEqual({
       value: null,
       kind: null,
       state: "UNKNOWN",
       derivedFrom: "NONE",
+      someSlideHasReach: false,
     });
   });
 
@@ -182,6 +225,7 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
       kind: "VIEWS",
       state: "AVAILABLE",
       derivedFrom: "CAROUSEL_FIRST_SLIDE",
+      someSlideHasReach: false,
     });
   });
 
@@ -202,6 +246,7 @@ describe("resolveYoutubeReach", () => {
       kind: "VIEWS",
       state: "AVAILABLE",
       derivedFrom: "TOP_LEVEL",
+      someSlideHasReach: false,
     });
   });
 
@@ -216,6 +261,10 @@ describe("resolveYoutubeReach", () => {
     expect(result.state).toBe("UNKNOWN");
     expect(result.value).toBeNull();
     expect(result.derivedFrom).toBe("NONE");
+    // OR-26 / #155: YouTube has no slides — always false, and neither
+    // carousel-specific unavailableReason value may ever appear on this
+    // path.
+    expect(result.someSlideHasReach).toBe(false);
   });
 
   it("null (field present but null) resolves UNKNOWN with derivedFrom TOP_LEVEL — the key exists, just its value doesn't", () => {
@@ -237,6 +286,7 @@ describe("resolveYoutubeReach", () => {
       kind: "VIEWS",
       state: "ZERO",
       derivedFrom: "TOP_LEVEL",
+      someSlideHasReach: false,
     });
   });
 });

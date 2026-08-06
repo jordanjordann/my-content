@@ -41,6 +41,16 @@ export interface ReachResult {
   kind: ReachKind | null;
   state: AvailabilityState;
   derivedFrom: ReachDerivedFrom;
+  /**
+   * OR-26 / ticket #155. Carousel only. `true` when slide 0 carries neither
+   * reach key but some later slide does — the post has reach data that D4's
+   * first-slide rule did not consult. Always `false` on every non-carousel
+   * and every YouTube path. Consumed by ticket #143 to pick
+   * `REACH_NOT_ON_FIRST_SLIDE` over `CONTENT_KIND_UNSUPPORTED` on
+   * `perf_unavailable_reason` — this field does not itself change
+   * `derivedFrom`, which stays `"NONE"` either way.
+   */
+  someSlideHasReach: boolean;
 }
 
 /** Result of a count-availability resolver (`availability.ts`). */
