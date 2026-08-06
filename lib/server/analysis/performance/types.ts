@@ -70,3 +70,29 @@ export type FollowerDenominatedRatio = Extract<Tier1Ratio, { denominator: "FOLLO
 export interface Tier3Ratio {
   reachPerFollower: number;
 }
+
+/**
+ * Ticket #141 (TDD §6, PRD §3.3 / §12.4). What a Tier 2 baseline candidate
+ * is actually measured against — **not** the same axis as `Denominator`
+ * above (which is about Tier 1's `REACH`/`FOLLOWERS` ratio). Tier 2 never
+ * needs a follower count at all (PRD §12.4): a post with resolved reach is
+ * compared against the bucket's median reach; a post with no reach (an
+ * all-image carousel, a single image post) is compared against the
+ * bucket's median `likes + comments`. R-4.3.2/R-12.3.2 forbid a baseline
+ * set from mixing the two.
+ */
+export type BaselineDenominator = "REACH" | "ENGAGEMENT_COUNT";
+
+/**
+ * Result of `computeBaseline()` (`baseline.ts`). `sampleSize` is **never
+ * null** (R-8.4.4/R-13.3.4) — it is the count of prior mature, same-bucket,
+ * same-schema-version analyses this creator has, even at zero. `median`
+ * and `multiplier` are null together below `BASELINE_MIN_SAMPLE` — the
+ * cold-start state (TDD §6 step 5) — and both non-null at or above it.
+ */
+export interface BaselineResult {
+  bucketKey: string;
+  sampleSize: number;
+  median: number | null;
+  multiplier: number | null;
+}
