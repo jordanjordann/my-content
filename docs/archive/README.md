@@ -1,7 +1,7 @@
 # docs/archive/
 
 Superseded and completed documents. Nothing here is current — for current state read
-[`../HANDOFF-2026-08-05.md`](../HANDOFF-2026-08-05.md).
+[`../HANDOFF-2026-08-06.md`](../HANDOFF-2026-08-06.md).
 
 They are kept, not deleted, because several still hold the **only** record of a decision, a source
 trace, or a lesson that no live document repeats. One line each on what that is.
@@ -17,6 +17,7 @@ trace, or a lesson that no live document repeats. One line each on what that is.
 
 Dated session handoffs, each superseding the last. Newest first.
 
+- **`HANDOFF-2026-08-05.md`** — the #73 fingerprint chain, #66 closeout, the jsdom harness, and the docs accuracy pass. **Its headline claim — "the engineering backlog is empty, every open item is owner-blocked" — is now false**; Phase 3B/3C reopened it. Still the fullest account of the `@libsql/client` transaction leak, the `Object.hasOwn` prototype-chain fix, and the three-round jsdom-harness verification.
 - **`HANDOFF-2026-08-03.md`** — the #96 engagement-count chain. **Still the only full record of the disputed Base UI tooltip re-open risk** (item 3: the `useDismiss.js` source trace vs. the Playwright counter-evidence, and the argument against adopting `Popover.Trigger`), and the definitive write-up of the linear-vs-gamma contrast error together with the *process* failure behind it — two agents agreeing via the same wrong method is one piece of evidence, not two.
 - **`HANDOFF-2026-07-25.md`** — the #72 style-fingerprint and #71 carousel session. Holds the **#71 carousel mime-type catch** (a live bug that passed a fully green suite) and the worktree-isolation lessons that became standing dispatch policy.
 - **`HANDOFF-2026-07-23.md`** — the schema-redesign build-out. Holds the **#69/#70 same-deploy sequencing constraint** and the reasoning for deliberately holding PR #92 open unmerged.
