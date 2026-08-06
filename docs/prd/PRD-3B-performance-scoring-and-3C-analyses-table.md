@@ -242,13 +242,27 @@ Frozen at analysis time. **Never recomputed** as the creator's audience later mo
 
 ### 5.2 Gemini block — the judgement
 
+**[AMENDED 2026-08-06 — owner ruling OR-13.]** Five fields that this section originally placed in the Gemini
+block have been moved **out of it and into the computed block (§5.1), computed by code**: `tierUsed`,
+`confidence`, `basedOnVideos`, `provisional` and `unavailableReason`. **All five are mechanically determined
+by the computed block** — which tier was used follows from which inputs exist; `provisional` is
+`post_age_hours < MATURITY_FLOOR_HOURS`; `basedOnVideos` is a `COUNT`; confidence is a fixed ladder with
+three enumerated demotion reasons (R-13.4.2); `unavailableReason` is decided by the availability resolver.
+Letting the model restate them reintroduced exactly the non-determinism **D2** exists to eliminate, and
+**S3's byte-diff would have been testing the model's obedience rather than our arithmetic.** They are passed
+to Gemini as **inputs it must not contradict**. No acceptance criterion changes observable outcome; what
+changes is who is authoritative when the two disagree.
+
+**Gemini's `responseSchema` therefore carries exactly three fields:**
+
 - `performanceScore` — integer **1–5, nullable**. Same scale as the rest of the contract (live PRD §4.6). Null when §4.4 says no score.
-- `tierUsed` — `CREATOR_BASELINE` / `REACH_ONLY` / `AUDIENCE_FALLBACK` / `UNAVAILABLE`
-- `confidence` — `HIGH` / `MEDIUM` / `LOW` / `NONE`, plus **`basedOnVideos`** (the Tier 2 sample size). Precedent: the fingerprint's "based on N videos" indicator, already confirmed in scope (live PRD §6.1). **Tier 2 must never appear without its sample size.**
-- `provisional` — boolean; true under the maturity floor (§4.5)
 - `verdict` — short Indonesian prose. The judgement the owner asked for.
 - `drivers[]` — short Indonesian statements, each linking a **specific content trait to the measured performance** (e.g. *"hook 2 detik pertama langsung menyebut angka — kemungkinan besar ini yang menahan scroll"*). This is where the feature earns its keep; a bare number would not need Gemini at all.
-- `unavailableReason` — enum, when applicable (§4.4)
+
+**Moved to §5.1 (computed by code) per OR-13:** `tierUsed` (`CREATOR_BASELINE` / `REACH_ONLY` /
+`AUDIENCE_FALLBACK` / `UNAVAILABLE`); `confidence` (`HIGH` / `MEDIUM` / `LOW` / `NONE`) plus its demotion
+reason; `basedOnVideos`, the Tier 2 sample size — **Tier 2 must never appear without it** (precedent: the
+fingerprint's indicator, live PRD §6.1); `provisional`; and `unavailableReason` (§4.4).
 
 ### 5.3 Relationship to `overallScore` [CONFIRMED — D7]
 
@@ -365,8 +379,12 @@ Migration **006** added fourteen, and migration **009** added three more. Per th
 
 Two things the owner should know:
 
-- **`engagement_rate` already exists as a stored `REAL` column and is written today.** Its denominator is not documented anywhere in the product docs. **3B supersedes it.** Whatever it currently means must be re-specified or dropped as part of the contract reset — otherwise the table would show two different, silently incompatible "engagement" numbers. Decision **D10**.
-- Confirming *which* of these the read paths actually select is a tech-lead check against the code. I am reporting the roadmap's claim plus the migration files, not a code audit.
+- **`engagement_rate` already exists as a stored `REAL` column and is written today.** **3B supersedes it.** Decision **D10**.
+  **[CORRECTED 2026-08-06 — tech-lead code audit, owner ruling OR-12; this bullet previously said the column was "written and never read" and that its denominator was "not documented anywhere". Both were wrong.]**
+  - It **is read** — into the Gemini prompt. `lib/server/analysis/pipeline/index.ts:124-135` computes it, writes it, **and assigns it onto `metadata.engagementRate`** so the prompt builder can read it; `lib/server/analysis/prompts/user.ts:111-112` emits `- Engagement rate: <percent>` into the user prompt on **every** analysis. It is unread by the *list/detail read paths* only.
+  - Its **denominator is documented** — in code rather than in product docs. `lib/server/profiles/helpers.ts:23` `computeEngagementRate()` is `(likes + comments) ÷ followerCount`, with a docstring saying so, returning `null` when `followerCount` is null or 0.
+  - **Consequence: dropping it is a correctness fix, not cleanup.** The prompt currently hands Gemini a **follower-denominated** ratio under the bare, unqualified label `Engagement rate`, on every content type including reels — a live **R-12.3.1** violation and the same bug class `user.engagementLabel.test.ts` exists to prevent on the reach axis.
+- The read paths were audited against the code on 2026-08-06 (`lib/server/db.ts` `getAnalysesList()` / `getAnalysisDetail()`). The roadmap's "written and never read" framing holds for the *UI* read paths and not for the *pipeline*.
 
 ### 8.3 Default columns [CONFIRMED — D9, provisional until mockup review per caveat C2]
 
@@ -488,12 +506,14 @@ YouTube is in scope for 3B at full parity. §4.7's reasoning stands: for *perfor
 The baseline, the ratios and the audience number are frozen at analysis time. **Old analyses are never re-scored** when new siblings land or when the creator's audience grows.
 *Rejected:* recomputing a creator's history on each new analysis — contradicts the point-in-time ruling (roadmap decision 9) and makes the table non-reproducible.
 
-**D9 — The 3C default column set. [CONFIRMED → §8.3's 12 columns, provisional per caveat C2]**
-The 12-column default set and the explicit not-default list are accepted as the basis for design. Subject to mockup review (C2).
+**D9 — The 3C default column set. [SUPERSEDED 2026-08-06 → the approved 9-column set]**
+The 12-column set was accepted *as the basis for design*, provisional per caveat **C2**. **C2's mockup review has now happened and the owner has ruled** (OR-1, OR-3, OR-4, OR-5): the default set is **9 columns**, per `docs/design/DESIGN-3C-analyses-table.md` §2.2 and `docs/TDD-3A-3B-3C-phase-3.md` §9.1. Changes from §8.3: **#3** collapses into #1; **#5 + #6** collapse into one two-line Counts column; **#9** splits into **two** columns (reach-denominated and follower-denominated — the R-12.3.4 sign-off, Direction A); **#11** becomes an optional column, **off by default**; **#12 Status is cut** as a column and replaced by a whole-row failure treatment plus the surviving status *filter*. **#7 and #8 are untouched**, per R5.
 
-**D10 — The existing `engagement_rate` column. [CONFIRMED → drop it]**
-`analyses.engagement_rate` is **dropped**. Its denominator is documented nowhere and 3B's computed block supersedes it.
-*Rejected:* (b) redefining it as one of 3B's ratios — 3B produces several ratios with different denominators (§12 makes this sharper still); a single column named `engagement_rate` cannot honestly hold them. (c) leaving it unread — two incompatible "engagement" numbers in one schema is a latent bug.
+**D10 — The existing `engagement_rate` column. [CONFIRMED → drop the column; KEEP and repurpose the function]**
+`analyses.engagement_rate` is **dropped** and 3B's computed block supersedes it.
+**[CORRECTED 2026-08-06 — owner ruling OR-12.]** The original rationale ("its denominator is documented nowhere") was factually wrong: the denominator is **followers**, documented in `lib/server/profiles/helpers.ts:23`. The column is dropped for the *other*, stronger reason — a single column named `engagement_rate` cannot honestly hold 3B's several differently-denominated ratios (R-12.2.2), and the prompt line it feeds is a live mislabelling defect (§8.2). **Dropping it is a bug fix, not cleanup.**
+**`computeEngagementRate()` itself is NOT deleted.** It is relocated to `lib/server/analysis/performance/ratios.ts` as 3B's **follower-denominated Tier 1 primitive** with a mandatory `denominator: "FOLLOWERS"` on its return value — it is already exactly the formula R-12.2.1 specifies. The mislabelled prompt line at `prompts/user.ts:111-112` is removed with it.
+*Rejected:* (b) redefining the *column* as one of 3B's ratios — see above. (c) leaving it unread — two incompatible "engagement" numbers in one schema is a latent bug.
 
 ### 10.2 Verification spends — all three [APPROVED]
 
@@ -519,7 +539,8 @@ Recorded plainly rather than quietly worked around.
 2. **The steer includes "shares/saves if available" — they are not available.** No captured ScrapeCreators payload for either platform exposes shares or saves. Tier 1 is likes and comments only. (§4.2)
 3. **There is no single "resolve reach" rule, and the roadmap's framing implies there is one.** §3, 3B correctly warns that view and play counts are distinct, but the reliability is **reversed between top-level reels and carousel children** (`verified-facts.md`, divergence 13). Any shared helper needs a branch, not a rule.
 4. **All-image carousels have no reach data at all.** Not mentioned in the roadmap's 3B section, and it means a whole content type can never receive a **reach-based** score on current data sources. **Resolved in §12** — they are scored on a different denominator rather than excluded. (§4.6, §12)
-5. **`analyses.engagement_rate` already exists and is populated**, with a denominator documented nowhere in the product docs. The roadmap describes 3B as adding performance scoring where "nothing captures whether a video performed" — true at the *product* level, but a computed engagement number is already sitting in the schema and must be reconciled, not ignored. (§8.2, D10)
+5. **`analyses.engagement_rate` already exists and is populated.** The roadmap describes 3B as adding performance scoring where "nothing captures whether a video performed" — true at the *product* level, but a computed engagement number is already sitting in the schema and must be reconciled, not ignored. (§8.2, D10)
+   **[CORRECTED 2026-08-06 — OR-12.]** This item originally added "with a denominator documented nowhere in the product docs". **The denominator is followers and it is documented** — in `lib/server/profiles/helpers.ts:23`. The sharper correction is that the column is **read into the Gemini prompt** (`prompts/user.ts:111-112`) under the bare label `Engagement rate`, which is a live **R-12.3.1** violation. See §8.2.
 6. **`docs/PRD-analysis-schema-redesign.md` §9 still cites "2 rows in `analyses`, 1 in `profiles`."** The measured figure as of 2026-08-05 is **3 and 2**. Immaterial to any decision; noted for accuracy.
 7. **`verified-facts.md` overstated the `like_and_view_counts_disabled` fixture coverage. [CORRECTED 2026-08-05 — no longer outstanding.]** Its OPEN-gap section stated *"All five committed fixtures … have this field set to `false`."* Two things were wrong with that: there are **seven** committed Instagram fixtures, not five, and the field is **ABSENT entirely** from `ig_carousel_all_images_10_slides.json` (zero occurrences in the file).
    **Re-verified independently by key-set inspection of every committed Instagram fixture, zero live calls.** Five of the six `/v1/instagram/post` fixtures carry it as `false`; the all-image carousel does not carry it at all; the profile fixture carries it on 24 nested timeline nodes. **Critically, the absence tracks neither `__typename` nor image-ness** — see the expanded finding in §12.1.
@@ -731,12 +752,12 @@ The product computes **different metrics for different content types** (§12). A
 - **R-13.3.1** For any score, the user can see **the actual counts used** — likes and comments as captured — and **the audience figure it was measured against** (the reach value, or the follower count). Not a formula the user has to evaluate; the operands themselves.
 - **R-13.3.2** The audience figure is **attributed and dated**. The follower count comes from a cache with up to a 7-day TTL (§4.2, R3). Where a follower count is used, **its staleness must be inspectable** — the computed block already stores the cached profile record's age precisely so this is possible (§5.1). **A follower-denominated percentage presented as if exact is a false precision the product must not create.**
 - **R-13.3.3** For a **Tier 2** figure, the user can see **what the comparison was against**: the creator's own median, the bucket it was drawn from *(this creator's image carousels — not their reels)*, and the number of posts in it. The **bucket identity is part of the explanation**, not an implementation detail — "3.2× typical" is meaningless until the user knows *typical what*.
-- **R-13.3.4** **Every numeral shown in an explanation must exist in the stored computed block** (§5.1). This extends S2/AC-7 from Gemini's prose to the explainability layer. **The explanation is not a place where new numbers may appear.**
+- **R-13.3.4** **Every numeral shown in an explanation must exist in the stored computed block** (§5.1), **with one stated allow-list**: the configuration constants `BASELINE_MIN_SAMPLE` (the `5` in `3 of 5`) and the profile cache TTL (the `week` in the staleness copy) are exempt and are **not** stored per row **[AMENDED 2026-08-06 — OR-10; see AC-27]**. This extends S2/AC-7 from Gemini's prose to the explainability layer. **Apart from the allow-list, the explanation is not a place where new numbers may appear.**
 - **R-13.3.5** Post age at analysis time is available alongside any score (§4.5), because no performance figure can be read honestly without it.
 
 ### 13.4 Confidence and provenance — how much evidence, and is it final
 
-- **R-13.4.1** A **Tier 2** figure never appears without its **sample size**, expressed the way the product already expresses it: **"based on N videos"**. This is not a new pattern — it is the confirmed style-fingerprint precedent (live PRD §6.1, in scope for that phase), and 3B **reuses it rather than inventing a second vocabulary for the same idea**. R-8.4.4 already required the number; this requires that the user understands what it is evidence *of*.
+- **R-13.4.1** A **Tier 2** figure never appears without its **sample size**, expressed the way the product already expresses it: the pattern **`based on {N} {noun}`**, with the bucket's own content noun (`reels` / `carousels` / `Shorts` / `videos`, generic fallback `posts`) **[AMENDED 2026-08-06 — OR-9; see AC-28]**. This is not a new pattern — it is the confirmed style-fingerprint precedent (live PRD §6.1, in scope for that phase), and 3B **reuses it rather than inventing a second vocabulary for the same idea**. R-8.4.4 already required the number; this requires that the user understands what it is evidence *of*.
 - **R-13.4.2** The **confidence level** (`HIGH` / `MEDIUM` / `LOW` / `NONE`) is surfaced in plain language, **with the reason it was lowered** where it was lowered. The three known reasons must each be expressible: a **cached/approximate follower denominator** (R-12.2.5, capped at `MEDIUM`), a **derived post-level reach taken from a carousel's first slide** (D4, −1 level), and a **thin sample**.
 - **R-13.4.3** A **provisional** score — a post below the maturity floor (§4.5) — must **say that it is provisional and why**: the post is new and still accumulating. **A provisional score must never be presentable as final.**
 - **R-13.4.4** The maturity floor is a **tunable estimate, not a measured constant** (caveat C1). **Nothing user-facing may imply it is a researched threshold.** No UI copy anywhere may state or imply that 72 hours is a validated settling time.
@@ -772,7 +793,7 @@ The product computes **different metrics for different content types** (§12). A
 
 - **R-13.7.1** The **metric identity / denominator** on every engagement figure (R-13.6.2).
 - **R-13.7.2** The **tier and confidence** of the score.
-- **R-13.7.3** The **sample size** on any Tier 2 figure — "based on N videos" (R-13.4.1).
+- **R-13.7.3** The **sample size** on any Tier 2 figure — `based on {N} {noun}` (R-13.4.1, as amended by OR-9).
 - **R-13.7.4** The **provisional** state where it applies (R-13.4.3).
 - **R-13.7.5** The **plain-language reason** on any absent score (R-13.5.1), in the cell — not deferred to the detail view.
 - **R-13.7.6** The table is **not required to carry the full "why this metric" explanation** (R-13.2.2) or the raw operands (R-13.3.1). **It must, however, make it evident that a fuller explanation exists and is reachable.** A user who wonders "why followers and not reach?" must not have to guess that the detail view can answer it.
@@ -815,12 +836,27 @@ Each asserts **rendered text content or stored data** and is mechanically checka
 **AC-27 — Operands are shown, and every numeral is real**
 *Given* any analysis with a performance block,
 *When* the detail view renders,
-*Then* the counts used and the audience figure measured against are present in the rendered text, **and** every numeral extracted from all explanatory text exists in the stored computed block of §5.1 within the stated rounding tolerance. Extends AC-7's mechanism to this layer.
+*Then* the counts used and the audience figure measured against are present in the rendered text, **and** every numeral extracted from all explanatory text exists in the stored computed block of §5.1 within the stated rounding tolerance, **except for the numerals on the allow-list below**. Extends AC-7's mechanism to this layer.
+
+> **[AMENDED 2026-08-06 — owner ruling OR-10.] Allow-list, not storage.** Two numerals in the explainability
+> copy are **configuration constants**, not per-row facts: `BASELINE_MIN_SAMPLE`'s `5` (in the cold-start
+> string `3 of 5`) and the profile cache TTL's `week` (in the staleness string). They are **formally exempt**
+> from R-13.3.4 and from this criterion. The owner explicitly considered storing them per row and **rejected
+> it**: the threshold numeral only ever appears in the **sub-threshold cold-start sentence**, so the
+> retroactive-rewrite exposure of not storing it is limited to rows that are untrusted anyway. The extractor
+> must implement the allow-list explicitly, not by loosening the match.
 
 **AC-28 — Tier 2 never appears without its evidence base**
 *Given* a Tier 2 score,
 *When* it renders in the table **and** in the detail view,
-*Then* both carry the sample size in the form "based on N videos", and the detail view additionally names the bucket the median was drawn from. Component test on both surfaces.
+*Then* both carry the sample size in the **pattern `based on {N} {noun}`**, where `{noun}` is the bucket's own content noun, and the detail view additionally names the bucket the median was drawn from. Component test on both surfaces.
+
+> **[AMENDED 2026-08-06 — owner ruling OR-9.]** This criterion previously required the **literal** word
+> `videos`. It is relaxed to the **pattern**, so an image-carousel baseline reads `based on 6 carousels`,
+> a reel baseline `based on 7 reels`, a YouTube Shorts baseline `based on 5 Shorts`, with
+> `based on N posts` as the generic fallback. Rationale, in the owner's terms: **saying "videos" for a
+> carousel-derived figure is the same bug class as labelling a play count "Views"** — the precedent's
+> *pattern* (same position, same register) is what R-13.4.1 was reusing, not its noun.
 
 **AC-29 — Provisional says so**
 *Given* a post below the confirmed maturity floor,
