@@ -1,0 +1,264 @@
+# Design Decision Record — Phase 3B, Score Explainability
+
+**Status:** **PROPOSED — NOT APPROVED.** Nothing here is signed off; every copy string below is a proposal for the owner to accept, edit or reject. **No developer should start building from this file.** PRD §13.8 makes this mockup review the sign-off point, and it explicitly asks that the sign-off be recorded.
+**Author:** Jessica (UI/UX)
+**Created:** 2026-08-06
+**Mockup:** [`docs/design/3b-score-explainability-mockup.html`](./3b-score-explainability-mockup.html) — open in a browser.
+**Primary input:** `docs/prd/PRD-3B-performance-scoring-and-3C-analyses-table.md` §13 (the five questions, R-13.1.1 to R-13.7.11), §12.3 (comparability), §3.3/§3.5 (the tiers), §4.4/§4.5 (absent inputs, maturity).
+**Companion:** [`DESIGN-3C-analyses-table.md`](./DESIGN-3C-analyses-table.md) — where most of these strings render. **One design, two documents.**
+**Precedent it must not contradict:** [`DESIGN-engagement-count-display-states.md`](./DESIGN-engagement-count-display-states.md). That spec already solved "a count is missing — explain it honestly", and its four owner-confirmed states are reused verbatim rather than re-solved. This document extends the same vocabulary to *scores*; it does not start a second one.
+
+---
+
+## 1. The design problem, restated
+
+§13 says every score must answer five questions on the surface it appears on. The temptation is to answer them with five UI elements. R-13.1.1 explicitly says not to: it is a **completeness requirement on the information available**, not a prescription for widgets.
+
+So the design is built on **three disclosure levels**, and each of the five questions is assigned to the shallowest level that can honestly carry it:
+
+| Level | Where | What it carries | Interaction |
+|---|---|---|---|
+| **L1 — Always on** | Second line of the relevant table cell, and the equivalent line in the detail view | Metric identity, denominator, tier, confidence, sample size, provisional state, absent reason | **None. No hover, no click.** This is the level R-13.6.2 and R-8.4.7 constrain. |
+| **L2 — One affordance per row** | The `ⓘ` in the Performance cell, opening a popover | The operands, the tier explanation, the confidence reason, the as-of date | Hover **or** keyboard focus. Reuses the shipped #70 tooltip pattern. |
+| **L3 — Detail view** | A `How this was measured` panel in the analysis detail modal | Everything in L2 plus the bucket identity, the follower-count staleness, and Gemini's `drivers[]` as the reasoning behind the verdict | Already open |
+
+**Nothing that prevents a misread lives above L1.** Everything at L2 and L3 deepens understanding; nothing there is load-bearing for correctness. That split is what makes R-13.6.2 auditable: if a string is required to stop a misread, it is at L1, full stop.
+
+**Question 5 — "can I compare this to that?" — is answered structurally, not textually.** The strongest answer to "can I compare these two numbers?" is a layout in which the two numbers were never adjacent under a shared header in the first place (companion spec §4). Copy is the backup, not the mechanism.
+
+---
+
+## 2. Copy principles
+
+Binding on every string in this document (R-13.1.3):
+
+1. **No field names, no enum identifiers, no error codes, no `snake_case`.** A user never reads `UNAVAILABLE`, `REACH_HIDDEN`, `CONTENT_KIND_UNSUPPORTED`, `basedOnVideos` or `tierUsed`. Those stay English and machine-stable underneath (PRD §5.4); what renders is a sentence.
+2. **No explanation restates the number** (R-13.1.2). `Performance score: 4 (good)` is banned. Every explanation names an operand or a comparison.
+3. **State the observation, not a diagnosis, when we cannot evidence the cause** (R-13.5.3). This produces slightly longer, slightly more awkward copy in one case. That is the correct trade and it must not be "tidied up" later.
+4. **Never imply precision we do not have.** The follower count is up to a week stale; the maturity floor is a guess; the score is a model judgement. Each of those has a specific copy consequence below.
+5. **Second person, present tense, no jargon.** The reader is an agency strategist in a client meeting, not an engineer.
+
+---
+
+## 3. Question 1 — which metric is this, and why this one? (§13.2)
+
+### 3.1 L1 — the tier phrase (always visible, in the Performance cell)
+
+| Stored `tierUsed` | L1 phrase | Notes |
+|---|---|---|
+| `CREATOR_BASELINE` (Tier 2) | **`vs their usual`** | The headline when it exists. |
+| `REACH_ONLY` (Tier 1, reach-denominated) | **`of who saw it`** | |
+| `REACH_ONLY` (Tier 1, follower-denominated — image posts, §12.2) | **`vs follower count`** | A *different* phrase from the above even though the stored enum is the same. The enum is not the thing the user needs to know; the denominator is. |
+| `AUDIENCE_FALLBACK` (Tier 3) | **`rough — vs audience size`** | Rendered in **muted italic**, and it is the only tier phrase that leads with a hedging word. This carries §3.5's demotion through to the user (R-13.2.4). |
+| `UNAVAILABLE` | — | Replaced entirely by the absent-score reason, §5. |
+
+**Tier 1 and Tier 2 coexisting (§3.5, the pair that matters most).** When both exist, they are **two cells, not one**: the Performance cell's tier phrase reads `vs their usual` (Tier 2 is the headline, per §3.5 and §12.4), the multiplier lives in the `vs their usual` column, and the Tier 1 ratio lives in its own engagement column. Three visually separate places, none of which claims to be the other.
+
+The reason they must not be one cell is the product argument the PRD says it does not want lost: **high Tier 1 with low Tier 2 is a completely different recommendation from low Tier 1 with high Tier 2.** A single merged figure would destroy exactly that signal. The L2 popover names the pair explicitly:
+
+> **Both readings, side by side.**
+> `4.1% of the people who saw it engaged.`
+> `It reached 3.2× this creator's usual for reels.`
+> `Strong on both — the content held attention and the algorithm pushed it.`
+
+The third line is a **template selected by the sign of each reading**, not model prose, so it is deterministic. Four variants:
+
+| Tier 1 | Tier 2 | Sentence |
+|---|---|---|
+| high | high | `Strong on both — the content held attention and the algorithm pushed it.` |
+| high | low | `The people who saw it engaged, but it didn't travel far. Worth re-cutting the hook and re-posting.` |
+| low | high | `It travelled, but the people who saw it didn't engage much.` |
+| low | low | `Weak on both readings.` |
+
+**Open:** "high" and "low" need a threshold, and the PRD deliberately rejected universal benchmarks (§3.4). The only defensible split is **against this creator's own bucket median** — which means these sentences are only available when Tier 2 exists. Flagged in §9.
+
+### 3.2 L2/L3 — why this metric (R-13.2.2, R-13.2.3)
+
+Content-type-specific, never boilerplate. Three strings:
+
+- **Reel / Short:** `Instagram publishes how many people played this reel, so engagement is measured against that — the most accurate read for a single post.`
+- **All-image carousel / single image:** `Instagram doesn't publish reach or view data for image-only posts, so this is measured against the creator's follower count instead. That's a limit of what Instagram exposes, not a shortcut — it's also the standard way image engagement is quoted.`
+- **Video-bearing carousel:** `Instagram publishes views per slide, not per post. This uses the first slide's view count as the post's reach, which is why the confidence is one level lower.`
+
+The second string is doing the most work in this whole document, and the sentence *"That's a limit of what Instagram exposes, not a shortcut"* is deliberate — R-13.2.2 asks that the user come away understanding the constraint rather than suspecting sloppiness.
+
+---
+
+## 4. Question 2 & 3 — what went into it, and how much evidence (§13.3, §13.4)
+
+### 4.1 L1 — the qualifier lines
+
+Always visible, never hover-gated:
+
+| Figure | L1 qualifier |
+|---|---|
+| Reach-denominated engagement | `of 482.1K views` / `of 116.3K plays` — **the reach kind word is mandatory and matches the stored kind** (R-4.3.1, R-13.2.5). A plays figure never reads "views". |
+| Video-carousel reach | `of 88.2K views · first slide only` |
+| Follower-denominated engagement | `of 284K followers`, and the value carries an `≈` prefix |
+| Tier 2 multiplier | `based on 7 reels` / `based on 6 carousels` |
+| Tier 2 cold start | `not enough history yet · 3 of 5` |
+| Confidence | `high confidence` / `medium confidence` / `low confidence` |
+
+### 4.2 Sample size — and a wording conflict I need ruled on
+
+R-13.4.1 and AC-28 require the sample size *"in the form `based on N videos`"*, reusing the style-fingerprint precedent.
+
+**On an all-image-carousel bucket that string is factually false.** There are no videos in it. Rendering `based on 5 videos` under a figure computed entirely from image carousels reintroduces exactly the class of error that `PLAYS`-labelled-as-`Views` is treated as a bug for.
+
+**I propose a bucket-aware noun** — `based on 7 reels`, `based on 6 carousels`, `based on 5 Shorts` — with `based on N posts` as the generic fallback. This keeps the *pattern* the precedent established (`based on N …`, same position, same register) while telling the truth. **It does require AC-28's assertion to be relaxed from the literal string `videos` to the pattern `based on {N} {noun}`.** That is a PM/owner call, not mine to make — flagged in §9.
+
+### 4.3 Confidence, with its reason (R-13.4.2)
+
+The word alone is at L1. **The reason it was lowered is at L2**, and all three known reasons are expressible:
+
+| Cause | L2 string |
+|---|---|
+| Cached follower denominator (R-12.2.5, capped MEDIUM) | `Medium confidence — measured against a follower count that may be up to a week old.` |
+| Carousel first-slide reach (D4, −1 level) | `Medium confidence — the post's reach is taken from the first slide, not the whole post.` |
+| Thin sample | `Low confidence — based on only 5 earlier posts. Treat the comparison as directional.` |
+
+**Design note, flagged as a concern rather than solved:** `confidence` and `tierUsed` encode overlapping information — Tier 3 is never high-confidence, a follower denominator is capped at medium. A user seeing both a tier phrase *and* a confidence word may read them as two independent judgements when they are largely one. I have kept both because the PRD requires both, but I would support collapsing confidence into the tier phrase at L1 and keeping the word only at L2. See §9.
+
+### 4.4 Operands (R-13.3.1) — L2 and L3
+
+Not a formula the user has to evaluate. The operands themselves, laid out:
+
+```
+What went into this
+  Likes                31,412
+  Comments              1,204
+  Measured against    482,100  views
+  ─────────────────────────────────────
+  Engagement             6.8%  of views
+
+  This creator's usual   151K  views  (median of 7 reels)
+  This post                    3.2×  their usual
+```
+
+- **R-13.3.4 — every numeral in an explanation must exist in the stored computed block.** The layout above contains only stored operands and stored results. **It does not contain a worked division**, deliberately: showing `31,412 + 1,204 ÷ 482,100 = 6.8%` would put an intermediate numeral on screen that is not in the computed block. The em-rule is the only thing implying the operation.
+- **Two constants break R-13.3.4 as literally written** — the `5` in `3 of 5` (a config threshold) and the `week` in "up to a week old" (a TTL). Neither is in the computed block. Flagged in §9; the practical fix is that the computed block stores them, which is cheap.
+
+### 4.5 Staleness and as-of framing (R-13.3.2, R-13.4.5)
+
+The most common wrong conclusion this product can produce is **"this number is current."** It is not — everything is frozen at analysis time (D8).
+
+- **L1:** the `≈` prefix on every follower-denominated figure. It is the only always-on staleness signal, and it is truthful rather than decorative.
+- **L2:** `Follower count: 284,100, from a profile record cached 3 days ago. It may have changed since.`
+- **L2 footer, on every popover, every time:** `Measured 12 Jul 2026. These numbers are frozen at the time of analysis and don't update.`
+
+That footer is unconditional. It is repetitive and I want it that way — it is the single sentence that prevents the most likely wrong client statement.
+
+---
+
+## 5. Question 4 — why is there no score here? (§13.5)
+
+**A blank cell is the worst outcome this feature can produce.** Every absent score renders a sentence. Never `0`, never an em-dash, never empty (R-13.5.4).
+
+Two lines per state: an L1 **short form** that fits a 156px cell, and an L2 **full form** in the popover. The short form is never an abbreviation of the long one to the point of changing its meaning.
+
+| # | Situation | Stored reason | **L1 (in cell)** | **L2 (popover)** |
+|---|---|---|---|---|
+| 1 | Creator disabled counts — flag confirmed `true` | `REACH_HIDDEN` | **`Creator hid the counts`** | `This creator turned off view and like counts on this post. That's their setting — it isn't zero, and it isn't missing data. There's nothing we can do about it.` |
+| 2 | No view/play count returned; false-zero rejected | `REACH_UNKNOWN` | **`No view count published`** | `Instagram didn't return a view or play count for this post, so there's nothing to measure engagement against.` |
+| 3 | **Cause not determinable** — no usable inputs *and* the hidden-counts flag is absent from the payload | **needs a new value — see §5.1** | **`No performance data published`** | `Instagram published no view, like or comment data for this post. We can't tell whether the creator turned the counts off or whether Instagram simply didn't return them — so we're not going to guess.` |
+| 4 | No cached follower count | `NO_AUDIENCE_DATA` | **`No follower count available`** | `We don't have a recent follower count for this creator, and image posts have no reach data, so there's nothing to measure this post against yet.` |
+| 5 | Tier 2 cold start (a *partial* absence — Tier 1 may still exist) | *not an unavailable reason* | **`not enough history yet · 3 of 5`** | `We compare a post against this creator's other posts of the same kind. There are 3 image carousels analysed so far and we need 5 before the comparison is worth quoting. It'll fill in on its own.` |
+| 6 | Caption-only analysis | `analysis_mode` | **`Caption only — video not analysed`** | `Only the caption and metadata were analysed for this post. The video itself wasn't watched, so there's no content read to go with the numbers.` |
+| 7 | Analysis failed / not completed | — | **`Not analysed`** | `This analysis didn't complete, so there's nothing to score. Try re-analysing it.` |
+
+**All seven are distinct strings.** AC-30 tests four of them (1, 3, 5-as-history, 4) for distinctness plus a negative assertion on case 3.
+
+### 5.1 Case 3 is the one §13.5.3 was written for, and it needs a new stored value
+
+R-13.5.3a requires a **stored reason distinct from `REACH_HIDDEN`** for "cause not determinable". Two different facts cannot share one enum value or the UI is structurally unable to tell the truth.
+
+- **Proposed name: `PERFORMANCE_DATA_ABSENT`.** Naming is the tech lead's call; **that a distinct value exists is a design requirement**, because without it string 3 cannot be rendered and the app will say string 1 — asserting a cause it cannot evidence.
+- **The copy deliberately says `We can't tell`.** It is longer and less tidy than `Creator hid the counts`. R-13.5.3b is explicit that a tidier UI string is not a reason to assert a fact we do not have, and I expect this to come under editing pressure later. It should not be edited.
+- If V1 later shows the flag *is* reliably present on this payload shape, this string can be retired. Until then it stands (R-13.5.3c).
+
+### 5.2 The three-way distinction R-13.5.2 requires
+
+The user acts differently in each, and the copy makes that explicit in its **last clause**:
+
+- **Nothing we can do** → string 1: `There's nothing we can do about it.`
+- **It will resolve itself** → string 5: `It'll fill in on its own.` — with visible progress, `3 of 5`.
+- **A permanent property of the platform** → string 2 / the image-post explanation in §3.2.
+
+Collapsing these into one "Unavailable" is a failure of R-13.5.2, and it is the thing most likely to happen if a developer needs a fallback branch. **There is no fallback string.** If a new reason appears, it gets its own sentence.
+
+---
+
+## 6. Provisional (§4.5, R-13.4.3, R-13.4.4)
+
+- **L1:** an `Early` badge beside the age in the Posted column — `2d ago · Early`. In the Performance cell, the tier phrase is unchanged; provisionality is a property of the post, not of the tier.
+- **L2:** `This post is 2 days old and still picking up reach. The score is an early read and may change. We mark posts as early for their first few days.`
+
+**R-13.4.4 is a copy constraint with teeth.** AC-29 asserts by string search that no UI copy claims the maturity floor is measured or validated. So:
+
+- **No user-facing string states the number of hours.** Not `72 hours`, not `3 days`, not `after 72h`. The copy says `for their first few days` — vague on purpose, because the threshold *is* a guess (caveat C1) and a specific number would read as researched.
+- **Banned phrasings, recorded so they are not reinvented:** `posts settle after 72 hours`, `the standard settling window`, `research shows`, `typically stabilises within`. None may appear in copy or in a code comment that could be lifted into copy.
+- **A provisional score is never presentable as final.** The `Early` badge is not dismissible, does not fade, and is not hidden in Compact density.
+
+---
+
+## 7. The elephant: the 1–5 score is a judgement, not a measurement
+
+Raising this because §13 requires every score to explain itself and I do not think the 1–5 currently can.
+
+The computed layer produces `4.1% of views` and `3.2× their usual` — both traceable to stored operands, both fully explainable by §4.4's layout. **The 1–5 `performanceScore` is produced by Gemini** (§4.1, §5.2). Its relationship to those two ratios is a model judgement with no stored derivation. So when a user asks *"why 4?"*, the only honest answers are the ratios plus Gemini's prose — and R-13.1.2 arguably forbids the shallow version of that as "a restatement of the number."
+
+There is also a live confusion risk the table makes vivid: **a row can show performance `2` next to `3.2× their usual`**, and nothing in the current design explains why.
+
+**Proposed treatment, which I want ruled on:**
+
+1. **Label the 1–5 as a read, not a measurement.** The L2 popover's heading for it is `How this score was reached`, and its first line is: `The 1–5 is a judgement of the numbers below, not a number we measured. The measured figures are the percentage and the multiplier.`
+2. **The measured figures appear above the judgement in the popover**, not below it. Reading order is an argument about which number to trust.
+3. **`drivers[]` are presented as the reasoning for the verdict** (R-13.7.11) under the heading `Why it did what it did`, in Gemini's Indonesian, unedited.
+4. **When the score and the multiplier point opposite ways**, the popover says so rather than leaving the user to notice: `This scored lower than the reach multiplier suggests — the reach was strong but engagement on it was not.` Deterministic template, selected by the same sign comparison as §3.1.
+
+An alternative worth the owner's consideration is dropping the 1–5 from the table entirely and letting the multiplier be the headline (companion spec §11, question 4).
+
+---
+
+## 8. Where each of the five questions is answered — the completeness check
+
+R-13.1.1 asks for completeness of *information*, not of widgets. This is the audit table:
+
+| Question | Table (L1) | Popover (L2) | Detail view (L3) |
+|---|---|---|---|
+| **1. Which metric, and why?** | tier phrase + denominator qualifier | + the plain-language "why this metric" | + full content-type explanation (R-13.7.7) |
+| **2. What went into it?** | the reach/follower operand in the qualifier | full operand list (§4.4) | full operand list + baseline + bucket identity (R-13.7.9) |
+| **3. How much evidence, is it final?** | `based on N …`, confidence word, `Early` badge, `≈` | confidence reason, staleness, as-of footer | + point-in-time framing (R-13.7.10) |
+| **4. Why no score?** | the short reason, in the cell (R-13.7.5) | the full reason | the full reason + what would change it |
+| **5. Can I compare it?** | **structural — separate columns, separate headers, separate qualifiers** | `Comparable only to this creator's own posts of the same kind.` | + why no totals are offered (R-13.6.3) |
+
+**R-13.7.6 — "it must be evident a fuller explanation exists and is reachable"** — is satisfied by exactly one `ⓘ` affordance per row, in the Performance cell. Not one per figure: four glyphs per row would train users to ignore all four.
+
+**R-13.6.4 — Gemini's Indonesian prose is part of this surface.** The prompt requirement (R-12.5.4) that the denominator be evident *inside the sentence* is not a UI decision, but it is the highest-risk surface because it is what gets pasted into a client deck. **The design cannot repair a bad string there.** I am flagging it as the one part of §13 the UI genuinely cannot backstop.
+
+---
+
+## 9. Open questions and things in §13 I think need PM/owner attention
+
+Flagged rather than designed around.
+
+1. **`based on N videos` is wrong on image buckets.** R-13.4.1 and AC-28 mandate the literal word. I propose a bucket-aware noun (§4.2). Needs a PRD amendment or an explicit ruling that the literal string wins.
+2. **R-13.3.4 ("every numeral in an explanation exists in the computed block") is unachievable as written.** The `5` in `3 of 5` is a config constant and the `week` in the staleness copy is a TTL. Either the computed block stores them, or the rule needs a stated allow-list. Cheap either way, but it will fail AC-27 if nobody decides.
+3. **The 1–5 score's explainability is the weakest link in §13** (§7 above). §13 requires every score to explain itself; the 1–5 is a model judgement over two ratios and cannot be derived. I propose labelling it as a judgement. Needs a ruling.
+4. **`confidence` and `tierUsed` overlap** (§4.3). Showing both at L1 may read as two independent judgements when it is largely one. I would keep the tier phrase at L1 and demote the confidence word to L2. Needs a ruling.
+5. **The "both readings" sentence (§3.1) needs a high/low threshold** that §3.4 forbids sourcing from an industry benchmark. The only defensible source is the creator's own bucket median — which means the sentence is unavailable pre-Tier-2. Acceptable, but it should be a stated product decision, not an implementation accident.
+6. **R-13.5.3a's new stored reason does not exist yet.** Without it the app will render string 1 where string 3 is required, and AC-30's negative assertion will fail. This is a schema requirement produced by a design need, and it should be routed to the tech lead before 3B tickets are cut.
+7. **Nothing in §13 says what happens on re-analysis.** Scores are frozen (D8), but a re-analysed post presumably gets a new row or overwrites the old. If a user can see two scores for the same post with different values, the as-of framing in §4.5 is doing a lot of work and may not be enough. Not in scope for me to solve; flagged.
+
+---
+
+## 10. Sign-off record
+
+**Empty. This document is not approved.**
+
+PRD §13.8 and caveat C2 require the sign-off to be explicit and recorded. When the owner rules, record here:
+
+- [ ] **§13 explainability surfaces signed off**, including the three-level disclosure model.
+- [ ] **The absent-score copy set (§5) approved**, string by string, especially case 3 (`We can't tell`) which must survive later editing pressure.
+- [ ] **The provisional copy constraint (§6) approved** — no hour count in any user-facing string.
+- [ ] **Rulings on the seven items in §9.**
