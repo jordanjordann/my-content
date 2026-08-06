@@ -101,17 +101,27 @@ CREATE TABLE analyses_new (
   perf_reach_derived_from TEXT,
   perf_tier1_ratio        REAL,
   -- R-12.2.2: a ratio without a denominator is a constraint violation, not
-  -- a lint (ticket #139 implementation step 3). NOTE the explicit
-  -- `IS NOT NULL AND ... IN (...)` rather than a bare `perf_tier1_ratio IS
-  -- NULL OR perf_tier1_denominator IN (...)` — SQLite's `x IN (...)`
-  -- evaluates to NULL (not FALSE) when `x` is NULL, and `FALSE OR NULL` is
-  -- NULL, which a CHECK constraint treats as PASSING, not failing. The
-  -- naive form silently admits exactly the row this constraint exists to
-  -- reject (verified against a live `:memory:` insert before writing this
-  -- comment).
+  -- a lint (ticket #139 implementation step 3). Two independent conditions
+  -- are ANDed together, not chained as a single OR-shortcut:
+  --   1. Whenever perf_tier1_denominator IS NOT NULL, it must be one of the
+  --      enum values. This holds regardless of perf_tier1_ratio, so a NULL
+  --      ratio (the common path — image-only content never has a Tier 1
+  --      ratio) does NOT exempt the denominator column from enum
+  --      enforcement.
+  --   2. Whenever perf_tier1_ratio IS NOT NULL, perf_tier1_denominator must
+  --      be NOT NULL.
+  -- An earlier version of this constraint short-circuited on
+  -- `perf_tier1_ratio IS NULL` (via `... IS NULL OR (denominator IS NOT
+  -- NULL AND denominator IN (...))`), which accepted
+  -- `(NULL, 'BOGUS')` — the ratio being absent silently waived the enum
+  -- check on the denominator. That is the single highest-severity path
+  -- here because a NULL ratio is the common case, not an edge case. The
+  -- form below rejects `(NULL, 'BOGUS')` because condition 1 fails
+  -- independent of the ratio's value (verified against a live `:memory:`
+  -- insert before writing this comment).
   perf_tier1_denominator  TEXT CHECK(
-    perf_tier1_ratio IS NULL
-    OR (perf_tier1_denominator IS NOT NULL AND perf_tier1_denominator IN ('REACH', 'FOLLOWERS'))
+    (perf_tier1_denominator IS NULL OR perf_tier1_denominator IN ('REACH', 'FOLLOWERS'))
+    AND (perf_tier1_ratio IS NULL OR perf_tier1_denominator IS NOT NULL)
   ),
   perf_bucket_key         TEXT,
   perf_baseline_median    REAL,

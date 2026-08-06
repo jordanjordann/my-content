@@ -317,7 +317,14 @@ Repo convention is **additive only, no down-migrations** (RUNBOOK §4). D10 requ
 asserts positional alignment of the `INSERT...SELECT` column lists — a rebuild keeps that assertion
 meaningful. All rows are deleted anyway (schema bump), so the `INSERT...SELECT` copies nothing.
 
-### 5.2 `analyses` — drop 1, add 14 (39 → 52 columns)
+### 5.2 `analyses` — drop 1, add 17 (39 → 55 columns)
+
+**Correction (PR #151 review):** this header previously read "drop 1, add 14 (39 → 52 columns)".
+The per-column table below lists 17 distinct new column names, not 14 — every one of them is
+referenced by name elsewhere in this document (§4's `perf_confidence_reason`, §6's
+`perf_tier1_ratio`/`perf_reach_value`, §7's full computed-block shape, §9.1's `ⓘ` tooltip fields) —
+so 38 (39 - 1) + 17 = 55 is the correct total, not 52. This is an arithmetic correction only; the
+per-column table itself (and every ruling in §0) is unchanged.
 
 `EXPECTED_ANALYSES_COLUMNS` must be updated in the same PR.
 
@@ -854,7 +861,7 @@ The suite is **29 files / 319 tests** across two vitest projects (RUNBOOK §7).
 | prompt | node | AC-8, AC-22 — **extend** `user.engagementLabel.test.ts`, do not duplicate it |
 | **prose guard** | node | **§8** — a bare `4,1%` throws; a bare `4.1%` throws; a qualified `4,1% dari 482,1RB penayangan` passes; a fabricated numeral not in the block throws (proves the extractor non-vacuous) |
 | parser / validation | node | Contract v3; a missing performance field fails loudly; an *absent input* is **not** a parse failure (§5.4 — must not be conflated) |
-| migration | node | `migrations.schema.test.ts` — updated `EXPECTED_ANALYSES_COLUMNS` (39→52) and `EXPECTED_ANALYSES_INDEXES` (6→8), positional `INSERT...SELECT` alignment, AC-12 |
+| migration | node | `migrations.schema.test.ts` — updated `EXPECTED_ANALYSES_COLUMNS` (39→55) and `EXPECTED_ANALYSES_INDEXES` (6→8), positional `INSERT...SELECT` alignment, AC-12 |
 | S2 numeral extractor | node | AC-7 + AC-27 — handles both `,` and `.` decimal separators, and honours the **OR-10 allow-list** |
 | 3C cells | **jsdom** | AC-13, AC-14, AC-15, AC-16, AC-20, AC-21, AC-25 → AC-30 — all assert **rendered text content**; none is a screenshot |
 | absent-count derivation | node | **OR-11** — all three cases, plus a negative assertion that case 3 never says "Creator turned off counts" |

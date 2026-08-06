@@ -276,6 +276,36 @@ describe("migration chain (001 -> latest) — analyses schema assertion", () => 
     ).resolves.toBeDefined();
   });
 
+  it("accepts a row with perf_tier1_ratio NULL and a valid perf_tier1_denominator (image-only content has no Tier 1 ratio but may still carry a denominator)", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_tier1_ratio, perf_tier1_denominator)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", null, "REACH"],
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("rejects a row with perf_tier1_ratio NULL and a bogus perf_tier1_denominator (a NULL ratio must not waive enum enforcement on the denominator — the common path for image-only content, PR #151 review)", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `
+          INSERT INTO analyses (id, url, platform, media_type, perf_tier1_ratio, perf_tier1_denominator)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `,
+        args: ["test-id", "https://example.com", "instagram", "reel", null, "BOGUS"],
+      }),
+    ).rejects.toThrow();
+  });
+
   it("rejects a perf_reach_kind value outside the PLAYS/VIEWS/UNKNOWN enum", async () => {
     db = createClient({ url: ":memory:" });
     await runMigrations(db);
