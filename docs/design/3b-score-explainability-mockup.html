@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Phase 3B — Score Explainability — Mockup (PROPOSED, not approved)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = { theme: { extend: { colors: {
+    background:'#02060f', card:'#030a17', hover:'#0a1120', mutedbg:'#111a2c', border:'#1c2740',
+    fg:'#e6edf7', mutedfg:'#94a3b8', accent:'#d99126', primary:'#8092e7', teal:'#3fd0bb',
+    rose:'#fda4af', pip:'#5c6c86'
+  } } } }
+</script>
+<style>
+  body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  .num { font-variant-numeric: tabular-nums; }
+  .pip { display:inline-block;width:8px;height:8px;border-radius:2px;background:#5c6c86;margin-right:3px; }
+  .pip.on { background:#8092e7; }
+  .lvl { font-size:9.5px; text-transform:uppercase; letter-spacing:.08em; font-weight:700; }
+  .op { display:flex; justify-content:space-between; padding:3px 0; }
+</style>
+</head>
+<body class="bg-background text-fg">
+
+<div class="border-b border-border px-6 py-3 sticky top-0 bg-background/95 backdrop-blur z-40">
+  <span class="text-sm font-semibold">Phase 3B — Score explainability — <span class="text-accent">PROPOSED, NOT APPROVED</span></span>
+  <span class="text-xs text-mutedfg ml-3">Every string below is a proposal for the owner to accept, edit or reject.</span>
+</div>
+
+<div class="mx-auto max-w-[1200px] p-6 space-y-8">
+
+<!-- =================== THE THREE LEVELS =================== -->
+<section class="rounded-xl border border-border bg-card p-5">
+  <h1 class="text-base font-semibold">Three disclosure levels &mdash; and only one of them is load-bearing</h1>
+  <p class="text-xs text-mutedfg mt-1 max-w-4xl">PRD §13.1.1 asks for completeness of <i>information</i>, not five widgets. Each of the five questions is assigned to the shallowest level that can honestly carry it. <b class="text-fg">Nothing that prevents a misread lives above L1.</b> That split is what makes R-13.6.2 auditable.</p>
+  <div class="grid grid-cols-3 gap-4 mt-4">
+    <div class="rounded-lg border border-primary/40 bg-primary/10 p-4">
+      <div class="lvl text-primary">L1 &mdash; always on</div>
+      <p class="text-[12px] mt-2">Second line of the table cell. <b>No hover, no click, no legend, no prior knowledge.</b></p>
+      <p class="text-[11px] text-mutedfg mt-2">Metric identity &middot; denominator &middot; tier &middot; confidence &middot; sample size &middot; provisional &middot; absent reason</p>
+    </div>
+    <div class="rounded-lg border border-border p-4">
+      <div class="lvl text-mutedfg">L2 &mdash; one affordance per row</div>
+      <p class="text-[12px] mt-2">The <span class="text-primary">&#9432;</span> in the Performance cell. Hover <b>or</b> keyboard focus, Escape to dismiss.</p>
+      <p class="text-[11px] text-mutedfg mt-2">Operands &middot; why this metric &middot; confidence reason &middot; as-of date</p>
+    </div>
+    <div class="rounded-lg border border-border p-4">
+      <div class="lvl text-mutedfg">L3 &mdash; detail view</div>
+      <p class="text-[12px] mt-2">A &ldquo;How this was measured&rdquo; panel in the analysis detail modal. Already open.</p>
+      <p class="text-[11px] text-mutedfg mt-2">Everything in L2 + bucket identity + follower staleness + Gemini&rsquo;s drivers</p>
+    </div>
+  </div>
+  <p class="text-[11px] text-mutedfg mt-4"><b class="text-fg">Question 5 &mdash; &ldquo;can I compare this to that?&rdquo; &mdash; is answered structurally, not textually.</b> The strongest answer is a layout where the two numbers were never adjacent under a shared header. Copy is the backup, not the mechanism. See the companion table mockup.</p>
+</section>
+
+<!-- =================== TIER PHRASES =================== -->
+<section class="rounded-xl border border-border bg-card p-5">
+  <h2 class="text-sm font-semibold">L1 &mdash; tier phrases. The user never reads an enum.</h2>
+  <div class="grid grid-cols-4 gap-4 mt-4 text-[12px]">
+    <div class="rounded-lg border border-border p-3.5">
+      <div class="num font-semibold text-primary text-lg">4 <span aria-hidden="true"><i class="pip on"></i><i class="pip on"></i><i class="pip on"></i><i class="pip on"></i><i class="pip"></i></span></div>
+      <div class="text-mutedfg mt-1">vs their usual</div>
+      <div class="text-[11px] text-mutedfg">high confidence</div>
+      <p class="text-[10.5px] text-mutedfg mt-2 pt-2 border-t border-border">Tier 2. The headline whenever it exists. Stored as <code class="text-pip">CREATOR_BASELINE</code>.</p>
+    </div>
+    <div class="rounded-lg border border-border p-3.5">
+      <div class="num font-semibold text-primary text-lg">3 <span aria-hidden="true"><i class="pip on"></i><i class="pip on"></i><i class="pip on"></i><i class="pip"></i><i class="pip"></i></span></div>
+      <div class="text-mutedfg mt-1">of who saw it</div>
+      <div class="text-[11px] text-mutedfg">medium confidence</div>
+      <p class="text-[10.5px] text-mutedfg mt-2 pt-2 border-t border-border">Tier 1, reach-denominated. Stored as <code class="text-pip">REACH_ONLY</code>.</p>
+    </div>
+    <div class="rounded-lg border border-border p-3.5">
+      <div class="num font-semibold text-primary text-lg">3 <span aria-hidden="true"><i class="pip on"></i><i class="pip on"></i><i class="pip on"></i><i class="pip"></i><i class="pip"></i></span></div>
+      <div class="text-mutedfg mt-1">vs follower count</div>
+      <div class="text-[11px] text-mutedfg">medium confidence</div>
+      <p class="text-[10.5px] text-mutedfg mt-2 pt-2 border-t border-border">Tier 1, follower-denominated (image posts). <b class="text-fg">A different phrase from the one on its left, even though the stored enum is the same</b> &mdash; the enum is not what the user needs to know; the denominator is.</p>
+    </div>
+    <div class="rounded-lg border border-border p-3.5">
+      <div class="num font-semibold text-primary text-lg">2 <span aria-hidden="true"><i class="pip on"></i><i class="pip on"></i><i class="pip"></i><i class="pip"></i><i class="pip"></i></span></div>
+      <div class="text-mutedfg mt-1 italic">rough &mdash; vs audience size</div>
+      <div class="text-[11px] text-mutedfg">low confidence</div>
+      <p class="text-[10.5px] text-mutedfg mt-2 pt-2 border-t border-border">Tier 3. <b class="text-fg">The only tier phrase in muted italic that leads with a hedging word</b> &mdash; carrying PRD §3.5&rsquo;s demotion through to the user, where it actually matters (R-13.2.4).</p>
+    </div>
+  </div>
+</section>
+
+<!-- =================== TIER 1 + TIER 2 TOGETHER =================== -->
+<section class="rounded-xl border border-border bg-card p-5">
+  <h2 class="text-sm font-semibold">Tier 1 and Tier 2 coexisting &mdash; three separate places, never one merged figure</h2>
+  <p class="text-xs text-mutedfg mt-1 max-w-4xl">PRD §3.5 calls this the strongest product argument in the document and asks that it not be lost in implementation: <b class="text-fg">the pair of numbers is more useful than either number alone.</b> High Tier 1 with low Tier 2 is <i>good content that didn&rsquo;t get distribution</i> &mdash; a completely different recommendation from low Tier 1 with high Tier 2.</p>
+  <div class="grid grid-cols-3 gap-4 mt-4 text-[12px]">
+    <div class="rounded-lg border border-primary/40 p-3.5"><div class="lvl text-primary">Performance cell</div><div class="num text-lg font-semibold text-primary mt-1">4</div><div class="text-mutedfg">vs their usual</div><p class="text-[10.5px] text-mutedfg mt-2">Tier 2 is the headline.</p></div>
+    <div class="rounded-lg border border-border p-3.5"><div class="lvl text-mutedfg">&ldquo;vs their usual&rdquo; column</div><div class="num text-lg font-semibold mt-1">3.2&times;</div><div class="text-mutedfg">based on 7 reels</div><p class="text-[10.5px] text-mutedfg mt-2">The measured multiplier. Never appears without its sample size (R-13.4.1).</p></div>
+    <div class="rounded-lg border border-accent/40 p-3.5"><div class="lvl text-accent">Eng. / reach column</div><div class="num text-lg font-semibold mt-1">4.1%</div><div class="text-accent">of 482.1K views</div><p class="text-[10.5px] text-mutedfg mt-2">Tier 1. Its own column, its own header, its own qualifier.</p></div>
+  </div>
+  <div class="mt-4 rounded-lg border border-border bg-hover p-4">
+    <div class="lvl text-mutedfg">The &ldquo;both readings&rdquo; sentence &mdash; L2, deterministic template, not model prose</div>
+    <table class="w-full text-[11.5px] mt-2.5">
+      <thead class="text-mutedfg text-[10px] uppercase tracking-wider"><tr><th class="text-left py-1 w-16">Tier 1</th><th class="text-left w-16">Tier 2</th><th class="text-left">Sentence</th></tr></thead>
+      <tbody class="divide-y divide-border/60">
+        <tr><td class="py-1.5">high</td><td>high</td><td>Strong on both &mdash; the content held attention and the algorithm pushed it.</td></tr>
+        <tr><td class="py-1.5">high</td><td>low</td><td>The people who saw it engaged, but it didn&rsquo;t travel far. Worth re-cutting the hook and re-posting.</td></tr>
+        <tr><td class="py-1.5">low</td><td>high</td><td>It travelled, but the people who saw it didn&rsquo;t engage much.</td></tr>
+        <tr><td class="py-1.5">low</td><td>low</td><td>Weak on both readings.</td></tr>
+      </tbody>
+    </table>
+    <p class="text-[10.5px] text-rose mt-2.5"><b>OPEN:</b> &ldquo;high&rdquo; and &ldquo;low&rdquo; need a threshold, and PRD §3.4 deliberately rejected universal benchmarks. The only defensible source is this creator&rsquo;s own bucket median &mdash; which means these sentences are unavailable before Tier 2 exists. Needs to be a stated product decision, not an implementation accident.</p>
+  </div>
+</section>
+
+<!-- =================== OPERANDS PANEL (L2/L3) =================== -->
+<section class="grid grid-cols-2 gap-5">
+  <div class="rounded-xl border border-border bg-card p-5">
+    <div class="lvl text-mutedfg">L2 popover &mdash; reel, reach-denominated</div>
+    <h3 class="text-[13px] font-semibold mt-2">How this score was reached</h3>
+    <p class="text-[11.5px] text-mutedfg mt-1">The 1&ndash;5 is a judgement of the numbers below, not a number we measured. The measured figures are the percentage and the multiplier.</p>
+    <div class="mt-3 text-[11.5px] num">
+      <div class="op"><span class="text-mutedfg">Likes</span><span>31,412</span></div>
+      <div class="op"><span class="text-mutedfg">Comments</span><span>1,204</span></div>
+      <div class="op"><span class="text-mutedfg">Measured against</span><span>482,100 views</span></div>
+      <div class="op border-t border-border mt-1 pt-1.5"><span class="text-mutedfg">Engagement</span><span class="text-accent">6.8% of views</span></div>
+      <div class="op"><span class="text-mutedfg">Their usual (median of 7 reels)</span><span>151K views</span></div>
+      <div class="op"><span class="text-mutedfg">This post</span><span class="text-primary">3.2&times; their usual</span></div>
+    </div>
+    <p class="text-[10.5px] text-mutedfg mt-3 pt-2.5 border-t border-border">No worked division is shown &mdash; deliberately. Printing <code>31,412 + 1,204 ÷ 482,100</code> would put an intermediate numeral on screen that is not in the stored computed block (R-13.3.4). The rule is the only thing implying the operation.</p>
+    <p class="text-[11px] text-mutedfg mt-2.5 pt-2.5 border-t border-border">Measured 12 Jul 2026. These numbers are frozen at the time of analysis and don&rsquo;t update.</p>
+  </div>
+
+  <div class="rounded-xl border border-border bg-card p-5">
+    <div class="lvl text-mutedfg">L2 popover &mdash; all-image carousel, follower-denominated</div>
+    <h3 class="text-[13px] font-semibold mt-2">Why this is measured against followers</h3>
+    <p class="text-[11.5px] text-mutedfg mt-1">Instagram doesn&rsquo;t publish reach or view data for image-only posts, so this is measured against the creator&rsquo;s follower count instead. That&rsquo;s a limit of what Instagram exposes, not a shortcut &mdash; it&rsquo;s also the standard way image engagement is quoted.</p>
+    <div class="mt-3 text-[11.5px] num">
+      <div class="op"><span class="text-mutedfg">Likes</span><span>32,313</span></div>
+      <div class="op"><span class="text-mutedfg">Comments</span><span>13,840</span></div>
+      <div class="op"><span class="text-mutedfg">Measured against</span><span>284,100 followers</span></div>
+      <div class="op border-t border-border mt-1 pt-1.5"><span class="text-mutedfg">Engagement</span><span class="text-teal">&asymp;16.2% of followers</span></div>
+      <div class="op"><span class="text-mutedfg">Their usual (median of 6 carousels)</span><span>25.6K engagements</span></div>
+      <div class="op"><span class="text-mutedfg">This post</span><span class="text-primary">1.8&times; their usual</span></div>
+    </div>
+    <p class="text-[11px] text-mutedfg mt-3 pt-2.5 border-t border-border">Follower count: 284,100, from a profile record cached 3 days ago. It may have changed since.<br/><b class="text-fg">Medium confidence</b> &mdash; measured against a follower count that may be up to a week old.</p>
+    <p class="text-[11px] text-mutedfg mt-2">Comparable only to this creator&rsquo;s own image carousels. Measured 9 Jul 2026 and frozen.</p>
+  </div>
+</section>
+
+<!-- =================== ABSENT SCORE COPY SET =================== -->
+<section class="rounded-xl border border-border bg-card p-5">
+  <h2 class="text-sm font-semibold">The full absent-score copy set &mdash; seven distinct strings, no fallback</h2>
+  <p class="text-xs text-mutedfg mt-1 max-w-4xl">A blank cell is the worst outcome this feature can produce &mdash; it looks like a bug and teaches the user to distrust every other cell. Never <code>0</code>, never an em dash, never empty (R-13.5.4). <b class="text-fg">There is no generic &ldquo;Unavailable&rdquo; fallback.</b> If a new reason appears, it gets its own sentence.</p>
+  <table class="w-full text-[11.5px] mt-4">
+    <thead class="text-mutedfg text-[10px] uppercase tracking-wider">
+      <tr><th class="text-left py-2 w-8">#</th><th class="text-left w-52">L1 &mdash; in the cell</th><th class="text-left">L2 &mdash; popover</th><th class="text-left w-40">Stored reason</th></tr>
+    </thead>
+    <tbody class="divide-y divide-border/60 align-top">
+      <tr><td class="py-2.5">1</td><td class="text-fg">Creator hid the counts</td><td class="text-mutedfg">This creator turned off view and like counts on this post. That&rsquo;s their setting &mdash; it isn&rsquo;t zero, and it isn&rsquo;t missing data. <b class="text-fg">There&rsquo;s nothing we can do about it.</b></td><td class="text-pip">REACH_HIDDEN</td></tr>
+      <tr><td class="py-2.5">2</td><td class="text-fg">No view count published</td><td class="text-mutedfg">Instagram didn&rsquo;t return a view or play count for this post, so there&rsquo;s nothing to measure engagement against.</td><td class="text-pip">REACH_UNKNOWN</td></tr>
+      <tr class="bg-rose/5"><td class="py-2.5">3</td><td class="text-fg">No performance data published</td><td class="text-mutedfg">Instagram published no view, like or comment data for this post. <b class="text-fg">We can&rsquo;t tell</b> whether the creator turned the counts off or whether Instagram simply didn&rsquo;t return them &mdash; so we&rsquo;re not going to guess.</td><td class="text-rose">needs a NEW value<br/><span class="text-pip">proposed: PERFORMANCE_DATA_ABSENT</span></td></tr>
+      <tr><td class="py-2.5">4</td><td class="text-fg">No follower count available</td><td class="text-mutedfg">We don&rsquo;t have a recent follower count for this creator, and image posts have no reach data, so there&rsquo;s nothing to measure this post against yet.</td><td class="text-pip">NO_AUDIENCE_DATA</td></tr>
+      <tr><td class="py-2.5">5</td><td class="text-fg">not enough history yet &middot; 3 of 5</td><td class="text-mutedfg">We compare a post against this creator&rsquo;s other posts of the same kind. There are 3 image carousels analysed so far and we need 5 before the comparison is worth quoting. <b class="text-fg">It&rsquo;ll fill in on its own.</b></td><td class="text-pip">(not an unavailable reason &mdash; Tier 1 may still exist)</td></tr>
+      <tr><td class="py-2.5">6</td><td class="text-fg">Caption only &mdash; video not analysed</td><td class="text-mutedfg">Only the caption and metadata were analysed for this post. The video itself wasn&rsquo;t watched, so there&rsquo;s no content read to go with the numbers.</td><td class="text-pip">analysis_mode</td></tr>
+      <tr><td class="py-2.5">7</td><td class="text-fg">Not analysed</td><td class="text-mutedfg">This analysis didn&rsquo;t complete, so there&rsquo;s nothing to score. Try re-analysing it.</td><td class="text-pip">(failed row)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="mt-5 rounded-lg border border-rose/40 bg-rose/10 p-4">
+    <div class="lvl text-rose">String 3 is the one R-13.5.3 was written for &mdash; and it needs a schema change</div>
+    <p class="text-[11.5px] text-mutedfg mt-2">On an all-image carousel the <code class="text-pip">like_and_view_counts_disabled</code> flag is <b class="text-fg">absent from the payload entirely</b> &mdash; not <code>false</code>, absent. Absence means <b class="text-fg">we cannot tell</b>. So the app must not say &ldquo;creator hid the counts&rdquo;, because we do not know that.</p>
+    <ul class="text-[11.5px] text-mutedfg mt-2 space-y-1 list-disc pl-5">
+      <li><b class="text-fg">A distinct stored value is required</b> (R-13.5.3a). Two different facts cannot share one enum or the UI is structurally unable to tell the truth. Naming is the tech lead&rsquo;s call; <i>that it exists</i> is a design requirement.</li>
+      <li>The copy deliberately says <b class="text-fg">&ldquo;We can&rsquo;t tell&rdquo;</b>. It is longer and less tidy than string 1. <b class="text-fg">It should not be edited.</b> A tidier UI string is not a reason to assert a fact we do not have (R-13.5.3b).</li>
+      <li>If V1 later shows the flag <i>is</i> reliably present on this payload shape, this string can be retired. Until then it stands &mdash; approved is not verified (R-13.5.3c).</li>
+    </ul>
+  </div>
+
+  <div class="mt-4 grid grid-cols-3 gap-4 text-[11.5px]">
+    <div class="rounded-lg border border-border p-3.5"><div class="lvl text-mutedfg">Nothing we can do</div><p class="mt-1.5 text-mutedfg">&hellip;<b class="text-fg">There&rsquo;s nothing we can do about it.</b></p></div>
+    <div class="rounded-lg border border-border p-3.5"><div class="lvl text-mutedfg">It will resolve itself</div><p class="mt-1.5 text-mutedfg">&hellip;<b class="text-fg">It&rsquo;ll fill in on its own.</b> With visible progress: <span class="num">3 of 5</span>.</p></div>
+    <div class="rounded-lg border border-border p-3.5"><div class="lvl text-mutedfg">Permanent platform property</div><p class="mt-1.5 text-mutedfg">&hellip;<b class="text-fg">Instagram doesn&rsquo;t publish this for image posts.</b></p></div>
+  </div>
+  <p class="text-[10.5px] text-mutedfg mt-2">R-13.5.2 requires these three to be distinguishable because <b class="text-fg">the user acts differently in each</b>. The distinction lives in the last clause of each sentence. Collapsing them into one &ldquo;Unavailable&rdquo; is a failure of the requirement.</p>
+</section>
+
+<!-- =================== PROVISIONAL =================== -->
+<section class="rounded-xl border border-border bg-card p-5">
+  <h2 class="text-sm font-semibold">Provisional &mdash; and a copy constraint with teeth</h2>
+  <div class="grid grid-cols-2 gap-5 mt-3">
+    <div>
+      <div class="lvl text-mutedfg">L1 &mdash; in the Posted column, beside the age</div>
+      <div class="mt-2 rounded-lg border border-border p-3.5 num text-[13px]">
+        <div>4 Aug</div>
+        <div class="text-[11px] mt-1"><span class="text-mutedfg">2d ago &middot; </span><span class="px-1.5 py-0.5 rounded bg-accent/20 text-accent font-semibold text-[10px]">Early</span></div>
+      </div>
+      <p class="text-[11px] text-mutedfg mt-2">Provisionality is a property of <b class="text-fg">the post</b>, not the score &mdash; so it lives beside the age, where it is also visible on rows that have no score at all, and where it doesn&rsquo;t compete with the tier phrase.</p>
+      <p class="text-[11px] text-mutedfg mt-2">The badge is <b class="text-fg">not dismissible, does not fade, and is not hidden in Compact density.</b> A provisional score must never be presentable as final.</p>
+    </div>
+    <div>
+      <div class="lvl text-mutedfg">L2</div>
+      <p class="text-[11.5px] text-mutedfg mt-2">This post is 2 days old and still picking up reach. The score is an early read and may change. <b class="text-fg">We mark posts as early for their first few days.</b></p>
+      <div class="mt-3 rounded-lg border border-rose/40 bg-rose/10 p-3.5">
+        <div class="lvl text-rose">R-13.4.4 &mdash; banned phrasings</div>
+        <p class="text-[11px] text-mutedfg mt-1.5">The maturity floor is a <b class="text-fg">tunable estimate, not a measured constant</b> (caveat C1). Nobody has data on how long a post takes to settle. So <b class="text-fg">no user-facing string states the number of hours</b> &mdash; the copy says &ldquo;for their first few days&rdquo;, vague on purpose. A specific number would read as researched.</p>
+        <p class="text-[11px] text-rose mt-2">Never: &ldquo;posts settle after 72 hours&rdquo; &middot; &ldquo;the standard settling window&rdquo; &middot; &ldquo;research shows&rdquo; &middot; &ldquo;typically stabilises within&rdquo;. Not in copy, and not in a code comment that could later be lifted into copy. AC-29 asserts this by string search.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =================== THE ELEPHANT =================== -->
+<section class="rounded-xl border border-accent/40 bg-accent/10 p-5">
+  <h2 class="text-sm font-semibold text-accent">The elephant: the 1&ndash;5 is a judgement, not a measurement</h2>
+  <p class="text-[12px] text-mutedfg mt-2 max-w-4xl">The computed layer produces <b class="text-fg">4.1% of views</b> and <b class="text-fg">3.2&times; their usual</b> &mdash; both traceable to stored operands, both fully explainable. <b class="text-fg">The 1&ndash;5 is produced by Gemini</b> (PRD §4.1, §5.2), and its relationship to those ratios is a model judgement with no stored derivation. So when a user asks &ldquo;why 4?&rdquo;, the only honest answer is the ratios plus Gemini&rsquo;s prose &mdash; and R-13.1.2 arguably forbids the shallow version of that as &ldquo;a restatement of the number.&rdquo;</p>
+  <p class="text-[12px] text-mutedfg mt-2 max-w-4xl">There is also a live confusion risk the table makes vivid: <b class="text-fg">a row can show performance 2 next to 3.2&times; their usual</b>, and nothing in the current design explains why.</p>
+  <div class="grid grid-cols-2 gap-4 mt-4 text-[11.5px]">
+    <div class="rounded-lg border border-border bg-card p-4">
+      <div class="lvl text-mutedfg">Proposed treatment</div>
+      <ol class="mt-2 space-y-1.5 list-decimal pl-5 text-mutedfg">
+        <li>Label the 1&ndash;5 as a read: <i class="text-fg">&ldquo;The 1&ndash;5 is a judgement of the numbers below, not a number we measured.&rdquo;</i></li>
+        <li>Put the measured figures <b class="text-fg">above</b> the judgement in the popover. Reading order is an argument about which number to trust.</li>
+        <li>Present <code class="text-pip">drivers[]</code> as the reasoning, in Gemini&rsquo;s Indonesian, unedited, under <i class="text-fg">&ldquo;Why it did what it did&rdquo;</i>.</li>
+        <li>When score and multiplier disagree, say so: <i class="text-fg">&ldquo;This scored lower than the reach multiplier suggests &mdash; the reach was strong but engagement on it was not.&rdquo;</i></li>
+      </ol>
+    </div>
+    <div class="rounded-lg border border-border bg-card p-4">
+      <div class="lvl text-mutedfg">L3 &mdash; Gemini&rsquo;s drivers as the explanation of the verdict</div>
+      <p class="text-[12px] mt-2 font-medium">Kenapa performanya begitu</p>
+      <ul class="mt-1.5 space-y-1.5 text-mutedfg list-disc pl-5">
+        <li>Hook 2 detik pertama langsung menyebut angka &mdash; kemungkinan besar ini yang menahan scroll.</li>
+        <li>Teks on-screen tebal dan kontras tinggi, terbaca tanpa suara.</li>
+        <li>CTA muncul di detik terakhir, terlalu lambat untuk mendorong komentar.</li>
+      </ul>
+      <p class="text-[10.5px] text-mutedfg mt-3 pt-2.5 border-t border-border"><b class="text-fg">R-13.6.4:</b> Gemini&rsquo;s Indonesian prose is part of the explainability surface, and it is the highest-risk surface of all &mdash; it is what a strategist pastes into a client deck, where an unqualified percentage escapes the product and can never be corrected. <b class="text-rose">The design cannot backstop a bad string there.</b> It has to be fixed in the prompt (R-12.5.4).</p>
+    </div>
+  </div>
+</section>
+
+<!-- =================== COMPLETENESS AUDIT =================== -->
+<section class="rounded-xl border border-border bg-card p-5">
+  <h2 class="text-sm font-semibold">Completeness audit &mdash; the five questions of §13.1, per surface</h2>
+  <table class="w-full text-[11.5px] mt-3">
+    <thead class="text-mutedfg text-[10px] uppercase tracking-wider"><tr><th class="text-left py-2 w-64">Question</th><th class="text-left">Table (L1)</th><th class="text-left">Popover (L2)</th><th class="text-left">Detail view (L3)</th></tr></thead>
+    <tbody class="divide-y divide-border/60 align-top text-mutedfg">
+      <tr><td class="py-2.5 text-fg">1. Which metric, and why?</td><td>tier phrase + denominator qualifier</td><td>+ plain-language &ldquo;why this metric&rdquo;</td><td>+ full content-type explanation</td></tr>
+      <tr><td class="py-2.5 text-fg">2. What went into it?</td><td>the reach / follower operand in the qualifier</td><td>full operand list</td><td>+ baseline + bucket identity</td></tr>
+      <tr><td class="py-2.5 text-fg">3. How much evidence, is it final?</td><td>based on N &middot; confidence word &middot; Early &middot; &asymp;</td><td>confidence reason &middot; staleness &middot; as-of footer</td><td>+ point-in-time framing</td></tr>
+      <tr><td class="py-2.5 text-fg">4. Why no score?</td><td>the short reason, in the cell</td><td>the full reason</td><td>+ what would change it</td></tr>
+      <tr><td class="py-2.5 text-fg">5. Can I compare it?</td><td class="text-fg">structural &mdash; separate columns, headers, qualifiers</td><td>&ldquo;Comparable only to this creator&rsquo;s own posts of the same kind.&rdquo;</td><td>+ why no totals are offered</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- =================== FLAGS =================== -->
+<section class="rounded-xl border border-rose/40 bg-rose/10 p-5">
+  <h2 class="text-sm font-semibold text-rose">Things in §13 I think need PM / owner attention &mdash; flagged, not designed around</h2>
+  <ol class="text-[11.5px] text-mutedfg mt-2.5 space-y-2 list-decimal pl-5">
+    <li><b class="text-fg">&ldquo;based on N videos&rdquo; is factually wrong on an image bucket.</b> R-13.4.1 and AC-28 mandate the literal word. Rendering &ldquo;based on 5 videos&rdquo; under a figure computed entirely from image carousels reintroduces the same class of error as labelling a play count &ldquo;Views&rdquo;. I propose a bucket-aware noun &mdash; <i class="text-fg">based on 7 reels / 6 carousels / 5 Shorts</i>, generic fallback <i class="text-fg">based on N posts</i> &mdash; which needs AC-28 relaxed from the literal string to the pattern <code>based on {N} {noun}</code>. PM/owner call.</li>
+    <li><b class="text-fg">R-13.3.4 is unachievable as written.</b> &ldquo;Every numeral in an explanation exists in the computed block&rdquo; &mdash; but the <code>5</code> in &ldquo;3 of 5&rdquo; is a config threshold and the <code>week</code> in the staleness copy is a TTL. Either the computed block stores them, or the rule needs a stated allow-list. Cheap either way; it will fail AC-27 if nobody decides.</li>
+    <li><b class="text-fg">The 1&ndash;5 score&rsquo;s explainability is the weakest link in §13</b> (see above). Needs a ruling on the proposed &ldquo;label it as a judgement&rdquo; treatment &mdash; or on dropping it from the table entirely in favour of the multiplier.</li>
+    <li><b class="text-fg"><code>confidence</code> and <code>tierUsed</code> overlap.</b> Tier 3 is never high-confidence; a follower denominator is capped at medium. Showing both at L1 may read as two independent judgements when it is largely one. I would keep the tier phrase at L1 and demote the confidence word to L2.</li>
+    <li><b class="text-fg">The &ldquo;both readings&rdquo; sentence needs a high/low threshold</b> that §3.4 forbids sourcing from an industry benchmark.</li>
+    <li><b class="text-fg">R-13.5.3a&rsquo;s new stored reason does not exist yet.</b> Without it the app renders string 1 where string 3 is required, and AC-30&rsquo;s negative assertion fails. A schema requirement produced by a design need &mdash; route it to the tech lead <i>before</i> 3B tickets are cut.</li>
+    <li><b class="text-fg">Nothing in §13 says what happens on re-analysis.</b> Scores are frozen (D8), but if a user can see two scores for the same post with different values, the as-of framing is doing a lot of work and may not be enough.</li>
+  </ol>
+</section>
+
+<p class="text-[11px] text-mutedfg pb-6">This mockup is <b class="text-accent">PROPOSED and NOT APPROVED</b>. PRD §13.8 makes this review the sign-off point for §13 and asks that the sign-off be recorded, because &ldquo;we assumed the designer had handled it&rdquo; is precisely how R6 ships. No developer should build from it until the owner has ruled.</p>
+
+</div>
+</body>
+</html>
