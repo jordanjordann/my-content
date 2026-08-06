@@ -335,7 +335,7 @@ per-column table itself (and every ruling in §0) is unchanged.
 | `perf_reach_kind` | `TEXT` | `CHECK(perf_reach_kind IS NULL OR perf_reach_kind IN ('PLAYS','VIEWS','UNKNOWN'))` |
 | `perf_reach_derived_from` | `TEXT` | `CHECK(perf_reach_derived_from IS NULL OR perf_reach_derived_from IN ('TOP_LEVEL','CAROUSEL_FIRST_SLIDE','NONE'))` |
 | `perf_tier1_ratio` | `REAL` | nullable |
-| `perf_tier1_denominator` | `TEXT` | **Required whenever the ratio exists** (R-12.2.2). `CHECK(perf_tier1_ratio IS NULL OR perf_tier1_denominator IN ('REACH','FOLLOWERS'))`. A ratio without a denominator is a **constraint violation**, not a lint. |
+| `perf_tier1_denominator` | `TEXT` | **Required whenever the ratio exists** (R-12.2.2). `CHECK((perf_tier1_denominator IS NULL OR perf_tier1_denominator IN ('REACH','FOLLOWERS')) AND (perf_tier1_ratio IS NULL OR perf_tier1_denominator IS NOT NULL))`. Two conditions ANDed, not a single `ratio IS NULL OR ...` short-circuit: the naive form `CHECK(perf_tier1_ratio IS NULL OR perf_tier1_denominator IN ('REACH','FOLLOWERS'))` is unsafe because SQLite's `IN` yields `NULL` (not `FALSE`) when the left operand is `NULL`, and a `CHECK` treats a `NULL` result as passing — that form silently accepts both `(0.5, NULL)` and `(NULL, 'BOGUS')`. A ratio without a denominator is a **constraint violation**, not a lint. |
 | `perf_bucket_key` | `TEXT` | `(platform, content kind)` bucket identity — D4 |
 | `perf_baseline_median` | `REAL` | nullable |
 | `perf_baseline_sample_size` | `INTEGER` | `basedOnVideos`; **never null when a Tier 2 figure exists** |
@@ -846,7 +846,7 @@ SQL in this document is kept libSQL-portable.
 
 ## 12. Testing strategy
 
-The suite is **29 files / 319 tests** across two vitest projects (RUNBOOK §7).
+The suite is **29 files / 340 tests** across two vitest projects (RUNBOOK §7).
 
 > **Load-bearing naming convention:** a jsdom test **must** be named `*.dom.test.ts(x)`. A plain `*.test.tsx`
 > matches **neither** project and **silently does not run at all**. Every 3C component test is a

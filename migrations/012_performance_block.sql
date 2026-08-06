@@ -101,7 +101,7 @@ CREATE TABLE analyses_new (
   -- Enum per TDD §5.2's per-column table and §6's `derivedFrom` type union
   -- (`"TOP_LEVEL" | "CAROUSEL_FIRST_SLIDE" | "NONE"`). Single-column guard
   -- (reviewer-verified safe form) — see the `perf_tier1_denominator` comment
-  -- above for why cross-column guards are the unsafe form.
+  -- below for why cross-column guards are the unsafe form.
   perf_reach_derived_from TEXT CHECK(perf_reach_derived_from IS NULL OR perf_reach_derived_from IN ('TOP_LEVEL', 'CAROUSEL_FIRST_SLIDE', 'NONE')),
   perf_tier1_ratio        REAL,
   -- R-12.2.2: a ratio without a denominator is a constraint violation, not

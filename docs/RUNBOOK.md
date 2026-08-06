@@ -356,8 +356,8 @@ read from `.claude/context/fixtures/` via `tests/helpers/fixtures.ts`, which thr
 path-naming error if a fixture file is missing. See §5 for why this matters (credits, and
 `/v1/youtube/channel` charging even on a miss).
 
-**Current state (re-measured 2026-08-05, ticket #123 + PR #126 review round 2 fixes): 29 test
-files, 319 tests total** — 26 files / 315 tests in the `node` project (25 files / 311 tests
+**Current state (re-measured 2026-08-06, ticket #139 / PR #151): 29 test
+files, 340 tests total** — 26 files / 336 tests in the `node` project (25 files / 311 tests
 unchanged from the original ticket, +1 file / 4 tests for
 `tests/config/vitestProjectGlobs.test.ts`, added during PR #126 review to pin the glob-routing
 fix), + 3 files / 4 tests in the `jsdom` project: `tests/lib/api/fingerprint/hooks.dom.test.tsx`
@@ -366,7 +366,9 @@ round 1 to pin the RTL auto-cleanup fix), and `tests/setup/reactActEnvironment.d
 (added during PR #126 review round 2 to pin the `IS_REACT_ACT_ENVIRONMENT` fix). The node-project
 figures above (19 → 237 in earlier editions of this doc) had already drifted upward from unrelated
 feature work between #115 and this ticket; the 311 figure is a fresh measurement, not a
-re-derivation of the old delta math.
+re-derivation of the old delta math. The further growth from 315 to 336 node-project tests reflects
+unrelated feature work landed between PR #126 and this branch (139-migration-012-performance-block,
+PR #151), not a re-derivation of the 311/315 delta math either.
 
 Layout — regenerated from `git ls-files`, including this PR's review-fix additions:
 
