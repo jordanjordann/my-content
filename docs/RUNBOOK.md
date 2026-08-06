@@ -225,11 +225,14 @@ dedicated schema assertion, only the `analyses`-focused one above).
 ScrapeCreators is **credit-based**.
 
 > ⚠️ **STALE, UNVERIFIED FIGURE — do not treat as current.** The last actual measurement was
-> **31,994 credits remaining on 2026-07-22**. As of 2026-08-03 that is ~12 days old and has **not**
-> been re-measured, because re-measuring costs real credits. Analysis runs have happened since, so
-> the true balance is **lower by an unknown amount**. Treat the number as a historical data point
-> only. If you genuinely need the current balance, read `credits_remaining` off the response body of
-> a call you were already going to make (see below) — do **not** make a call purely to check it.
+> **31,984 credits remaining (inferred) as of the 2026-08-06 V1/V3 verification session** —
+> `credits_remaining: 31986` was directly observed on the V1 capture, then arithmetically reduced by
+> V3's two calls (see `.claude/context/verified-facts.md`'s "Credit ledger for this verification
+> session (2026-08-06)"). The post-session figure was **not** independently re-checked — doing so
+> would itself be a balance-check-only call, which this section explicitly prohibits. Treat the
+> number as a historical data point only. If you genuinely need the current balance, read
+> `credits_remaining` off the response body of a call you were already going to make (see below) —
+> do **not** make a call purely to check it.
 
 | Endpoint | Cost |
 |---|---|
@@ -288,6 +291,13 @@ findings and the list of divergences from `lib/server/scrapecreators/types.ts` a
 > #71 owns applying the fix to `types.ts`.
 
 No Instagram error case is captured either (`/v1/instagram/post` non-2xx behaviour is unobserved).
+
+`scrapecreators-instagram/` also now has an 8th file, captured 2026-08-06 for PRD 3B's V1
+verification spend:
+
+| File | What it captures |
+|---|---|
+| `ig_post_counts_disabled.json` | `XDTGraphImage`, `like_and_view_counts_disabled: true` — the first genuinely counts-disabled post ever captured. **`edge_media_preview_like.count` is `-1`, not `0`/`null`/absent** — a negative sentinel. See verified-facts.md's "V1 CAPTURED" section for the full finding and why code must never read that field without checking the flag first, even defensively. |
 
 `gemini/structured-output-baseline.mjs` — a working Gemini structured-output harness
 (enum-constrained schema: hook types, format archetypes, topic niches, CTA types). Reads

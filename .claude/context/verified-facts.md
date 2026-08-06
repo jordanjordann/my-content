@@ -1431,3 +1431,312 @@ Presence of this field varies between two payloads of the same `__typename`.
   reason this documentation error never became a runtime bug.
 - Original claim left in place above with a supersede banner, per this file's convention. Nothing
   deleted.
+
+---
+
+## ScrapeCreators — `/v1/instagram/post` — V1 CAPTURED: a genuinely counts-disabled post (2026-08-06)
+
+⚠️ **CLOSES the "OPEN / UNVERIFIED GAP" section above.** A real counts-disabled Instagram post has
+now been captured. The gap recorded there ("the shape of a real counts-disabled payload is
+UNVERIFIED") is resolved for this sample. Do not delete that section — read it, then read this one,
+per this file's supersede convention.
+
+- **Authorisation:** PRD `docs/prd/PRD-3B-performance-scoring-and-3C-analyses-table.md` §10.2, V1,
+  approved 2026-08-05, ~1 SC credit budgeted.
+- **Call path used: the real production entry point**, not a hand-rolled request —
+  `fetchMetadata(classifyUrl(url))` → `fetchInstagramMetadata()` → `getInstagramPost()` →
+  `scRequest()`, exercised via a throwaway script that wrapped `globalThis.fetch` to capture the raw
+  body (same method as the 2026-08-05 `/v1/instagram/profile` capture). Not a copy of the request
+  shape — the actual client code, unmodified.
+- **How the candidate was found:** free, zero-cost reconnaissance before spending anything. Public
+  Instagram post pages served without login still carry an `og:description` meta tag of the form
+  `"{N} likes, {M} comments - {username} on {date}: "{caption}""` for an ordinary post. A batch of
+  ~15 candidate post URLs (gathered via web search, zero API cost) were probed with a plain `curl`
+  against that meta tag before any ScrapeCreators call was made. One candidate's `og:description`
+  had **no like/comment count prefix at all** — `"manda.socially on September 9, 2025: "✨ Did you
+  know you can hide like counts..."` — which is the public-page signature of a counts-hidden post.
+  The post's own caption confirms it explicitly: *"PS. This post has likes removed. 😊"* — a
+  creator demonstrating the feature on their own post while writing a tutorial about it, the same
+  self-referential pattern that made V1 discoverable at all (guessing blind did not converge; this
+  did, on the first live-spend attempt).
+- **Tested URL:** `https://www.instagram.com/p/DOZNyVdEk4y/` (`@manda.socially`, single image post,
+  `XDTGraphImage`).
+- **Raw capture (committed, byte-unmodified):**
+  `.claude/context/fixtures/scrapecreators-instagram/ig_post_counts_disabled.json`
+- **HTTP 200, `success: true`, `credits_charged: 1`, `credits_remaining: 31986`.** This is also the
+  first live `credits_remaining` reading since 2026-08-05 (31989) — discharged for free, per
+  instruction, by reading it off a call that was already being made. Net drift since 2026-08-05: 3
+  credits (this call plus 2 untracked calls elsewhere in the interim — consistent with the two
+  ScrapeCreators calls a completed YouTube Short analysis costs, RUNBOOK.md §5).
+
+### The shape — CONFIRMED, and it contradicts an assumption nobody had stated as fact but everyone was defaulting to
+
+`like_and_view_counts_disabled: true` is present at `data.xdt_shortcode_media.like_and_view_counts_disabled`, exactly where every other captured fixture puts it. That part matches expectation.
+
+**What does NOT match the unstated default expectation:** `edge_media_preview_like` is **not omitted**, and its `count` is **not `0` and not `null`**. It is:
+
+```json
+"edge_media_preview_like": {
+  "count": -1,
+  "edges": [
+    { "node": { "id": "...", "username": "nikkires94", ... } },
+    { "node": { "id": "...", "username": "coachviktoriav", ... } },
+    { "node": { "id": "...", "username": "aaronswitzerrealtor", ... } }
+  ]
+}
+```
+
+**`count: -1`.** A negative-one sentinel, not a null, not an absence, not a zero — genuinely `-1`,
+the one state the existing `CountState` discriminated union (`lib/api/analyses/helpers.ts`,
+`classifyLikeCount`/`classifyViewCount`) does not name. `edges` is still populated with real
+usernames (3 of presumably more) — Instagram still tells an unauthenticated scraper *who* liked the
+post, just not *how many*.
+
+**§4.4/D3's four-state model (`AVAILABLE`/`HIDDEN`/`UNKNOWN`/`ZERO`) is not contradicted by this**
+— `like_and_view_counts_disabled === true` still correctly drives `HIDDEN` regardless of what the
+underlying count field says, and `lib/server/analysis/fetcher/adapter.ts`'s existing strict
+`raw.like_and_view_counts_disabled === true` gate already nulls `likeCount` on this exact payload
+(confirmed: `adaptPostResponse()` returned `likeCount: null` for this fixture, see the script output
+below) — **so today's shipped behaviour is already correct on this payload, by construction, not by
+luck.** But this is exactly the kind of shape a *new*, independently-written piece of 3B code could
+get wrong if it ever reads `edge_media_preview_like.count` directly instead of going through the
+flag: a naive `likes ?? 0` or `Math.max(likes, 0)` would silently produce `0` liked-count math (or
+worse, `-1` propagating into a ratio, e.g. `(likes + comments) / followers` in §12.2 going negative)
+instead of the required `HIDDEN`/no-score state. **Recorded as a concrete "do not" for whoever
+implements R-4.4 / R-12.2.3: never read `edge_media_preview_like.count` before checking
+`like_and_view_counts_disabled`, even defensively — the sentinel is actively wrong, not just
+absent.**
+
+**Comments are unaffected**, as the flag name implies (`like_and_view_counts_disabled`, not
+"engagement"): `comments_disabled: false`, `edge_media_to_parent_comment.count: 1` (a real,
+trustworthy value — matches `commentCountInt` behaviour being independent of the likes/views flag).
+The adapter correctly returned `commentCount: 1` (not nulled) for this fixture.
+
+**No video fields exist on this fixture to inform the "does a counts-disabled video still expose
+`video_view_count`" half of the original open question** — this sample is `XDTGraphImage`, no
+`video_url`/`video_view_count`/`video_play_count` keys at all (consistent with every other
+`XDTGraphImage` fixture, disabled or not). **That specific sub-question (a counts-disabled *video*
+post/reel) remains open** — flagging rather than silently claiming full closure. What V1 *does*
+close is the higher-priority half: whether the like-count field itself survives as `0`/`null`/absent
+vs. something else entirely under the flag. It survives as a **populated, actively-misleading
+negative sentinel**, which no prior entry in this file anticipated.
+
+**Envelope-level, consistent with prior captures:** the same non-fatal `errors` array
+(`location.address_json` execution error) as `ig_carousel_mixed_video_and_image_10_slides.json`
+appears here too — third occurrence, strengthens "this is a routine partial-error shape, not
+carousel-specific" (revises the earlier "new envelope-level finding" framing which implied it might
+be carousel-only).
+
+### Adapter output, for the record (real `adaptPostResponse()`, this exact fixture)
+
+```
+likeCount: null            (nulled — countsDisabled gate fired correctly)
+commentCount: 1            (NOT nulled — comments unaffected)
+likeAndViewCountsDisabled: true
+viewCount: null            (no reach field exists on an image post regardless of the flag)
+```
+
+### Credit ledger — this capture
+
+| Call | credits_remaining after |
+|---|---|
+| `/p/DOZNyVdEk4y/` (the counts-disabled post, via the real fetcher) | 31986 |
+
+**Total spend: 1 credit.** Exactly the one call authorised. Discovery (curl probing of `og:description`
+on ~15 public post pages, and several rounds of web search) cost zero ScrapeCreators credits — see
+the "How the candidate was found" note above.
+
+---
+
+## ScrapeCreators — `/v1/youtube/video` — V2, YouTube likes-hidden: BLOCKED, checkpointing per instruction (2026-08-06)
+
+⚠️ **NOT CAPTURED.** This is a checkpoint, not a result. Recorded per the task's explicit instruction
+to stop and report rather than silently burn discovery attempts.
+
+- **Authorisation:** PRD §10.2, V2, approved 2026-08-05, ~1 SC credit budgeted. **Zero credits have
+  been spent on V2** — the blocker is entirely in finding a real candidate video, before any paid
+  call is justified.
+- **What is confirmed, not from a live call but from current (2026-08-06) documentation research:**
+  YouTube creators can hide a video's/Short's public like count per-video via YouTube Studio →
+  video details → "Show More" → uncheck "Show how many viewers like this video" — this applies to
+  Shorts as well as long-form. This is **distinct** from YouTube's platform-wide dislike-count
+  hiding (2021, all videos, not creator-optional) and from a March-2026-reported *viewer-side* test
+  that hid like counts from some viewers regardless of creator intent — neither of those is the
+  per-video creator toggle V2 needs to observe. Source: general web documentation, not a live
+  YouTube API response; **do not treat the mechanism description above as confirmed against a live
+  payload** — only the *existence* of the setting is established, not what ScrapeCreators returns
+  for `likeCountInt`/`likeCountText` on such a video.
+- **What was tried, free, before requesting a checkpoint:** the same `og:description`/page-source
+  probing technique that found V1's candidate in one shot was attempted for YouTube. It does not
+  transfer cleanly — a normal YouTube watch/Shorts page's server-rendered JSON (`ytInitialData`)
+  does carry a `"likeCount":"<N>"` string for an ordinary video (confirmed by probing
+  `youtube.com/shorts/tPEE9ZwTmy0`, the channel already in `verified-facts.md`, which returned
+  `"likeCount":"1357552"`), but unlike Instagram's self-referential "tutorial post that also hides
+  its own likes" pattern, no candidate Short surfaced whose own page source omitted that key. Roughly
+  a dozen web searches for tutorial/demo/testimonial Shorts about the feature, plus direct probes of
+  the ones that did surface (e.g. `youtube.com/shorts/xBr4x9ndG08`, a Hindi-language "how to hide
+  likes" tutorial — its own `likeCount` was present, `"4865"`, not hidden) did not find one.
+- **Why this is being reported now rather than continuing to guess:** the task's own instruction is
+  explicit — "if finding a suitable post starts costing many attempts, STOP and report rather than
+  burning URLs silently." No ScrapeCreators credits were spent chasing this (all discovery was free
+  web search / `curl` against public pages), but the discovery effort itself had grown large enough
+  relative to the rest of this task's budget that continuing to guess blind was the wrong use of the
+  remaining session.
+- **What would unblock this cheaply:** a single real YouTube Shorts URL known (by the tech lead, the
+  owner, or a fresh, more targeted search session) to have "Show how many viewers like this video"
+  turned off. Once a candidate exists, the capture itself is a single `fetchShortMetadata()`/
+  `getYoutubeVideo()` call through the real production path (same pattern as V1 above) — 1 credit,
+  0 on a 404 per the existing confirmed cost table.
+- **Interim guidance, unchanged from the PRD and still binding:** per §4.7/R2, **a bare `0` on
+  `likeCountInt` must continue to be treated as `UNKNOWN`, not zero**, until this is captured. Do
+  not write code that assumes any particular shape (`0`, `null`, or field-absent) for a likes-hidden
+  YouTube payload — none of those three has been observed.
+
+---
+
+## Gemini production `ANALYSIS_RESPONSE_SCHEMA` — V3, multi-slide carousel token headroom (2026-08-06)
+
+**Closes PRD §9.1's "Unmeasured risk" row and §10.2's V3, and discharges the carried-forward item
+from `docs/HANDOFF-2026-08-05.md` (item 6) referenced there.** The 83% headroom figure in the
+"Gemini production `ANALYSIS_RESPONSE_SCHEMA` @ `temperature: 0` — LIVE call (2026-08-05, ticket #66
+closeout)" section above was measured on a **single-video reel**. This entry measures the same
+mechanism on a **10-slide, video-bearing carousel** — the more media-heavy case §9.1 flagged as the
+one that would actually stress `MAX_TOKENS`.
+
+- **Authorisation:** PRD §10.2, V3, approved 2026-08-05, 1 billed Gemini `generateContent` call
+  budgeted. **Actual Gemini spend: 1 billed call**, on the second of two attempts (see credit ledger
+  below for why there were two attempts and why only one reached Gemini).
+- **Free-reuse check performed first, per instruction, before any spend:** the local `analyses`
+  table was queried for any `analysis_mode` involving a carousel with a still-populated
+  `gemini_file_uri`. **None existed.** The one prior all-image-carousel analysis in the DB
+  (`ffc14e85-...`, `/p/DVtNQtmCQnO/`, `analysis_mode: images_only`) has `gemini_file_uri: NULL` —
+  expected and correct, not a gap: `prepareParts.ts` only routes **video** parts through the Gemini
+  File API (images are inlined as base64, see that file's own doc comment), and an all-image
+  carousel has no video parts to upload, so it never had a File API asset to reuse in the first
+  place. The one video-bearing carousel this codebase has ever captured
+  (`ig_carousel_mixed_video_and_image_10_slides.json`, `/p/DZCPPJTjKVy/`) was **never actually
+  analysed** (no `analyses` row references it), so there was no prior File API asset for it either.
+  **Conclusion: unlike V3's single-video-reel predecessor, no zero-cost reuse path existed for a
+  carousel** — the "check first" step correctly found nothing to reuse, rather than being skipped.
+- **CDN-link staleness, checked before spending:** the `video_url` values already committed in
+  `ig_carousel_mixed_video_and_image_10_slides.json` (captured 2026-07-22) were tested with a direct
+  request before assuming a live re-fetch was required. The request could not be completed (no
+  response from the CDN host) — consistent with the 2026-08-05 entry's finding that these
+  short-lived signed URLs expire in days, not weeks. A live re-fetch of the post was therefore
+  necessary to get workable media URLs.
+
+### What was actually called — the real production pipeline, not a harness or a hand-assembled request
+
+Unlike the 2026-08-05 reel entry (which called `analyzeContent()` directly with a manually
+reconstructed `MediaMetadata`), this capture invoked **`runAnalysis()`** itself — the literal
+function `app/api/analyze/route.ts` calls for every real user-submitted URL — via `tsx`, against
+`https://www.instagram.com/p/DZCPPJTjKVy/` with an empty custom-prompt string (same default the API
+route uses for an unset `prompt`). This is the single highest-fidelity capture in this file to date:
+`classifyUrl()` → `fetchMetadata()` → `resolveProfile()` → `prepareParts()` (real download + Gemini
+File API upload for the 7 video slides, real base64 inlining for the 3 image slides) →
+`buildSystemInstruction()`/`buildUserPrompt()` → `analyzeContent()` → `parseContentAnalysis()` → a
+real row written to (and left in) the app's own `analyses` table — end to end, nothing mocked,
+nothing hand-rolled.
+
+- **The carousel:** `@businesssecretsclub`, 10 slides (7 video + 3 image, matching the `__typename`
+  mix already on record for this post), `carouselItemCount: 10`, `likeCount: 14192`,
+  `commentCount: 1639`.
+- **Media sent to Gemini:** all 10 slides — 7 videos uploaded to the Gemini File API (one
+  `fileUri` per video, `analyses.gemini_file_uri` persisted the first slide's,
+  `files/runp6fexdjou`, expiring 2026-08-08T03:29:21.711Z — available for a future zero-cost reuse
+  the same way the reel's was), 3 images inlined as base64. **This is a materially larger single
+  request than the reel** (10 media parts vs. 1).
+- **Prompt length: 23,222 characters** — comparable to, marginally larger than, the reel's 22,500
+  (the 10-item slide manifest and multi-slide framing add some length, but not dramatically).
+- **`config` was the real, untouched production config**: `temperature: 0`,
+  `responseMimeType: "application/json"`, `responseSchema: ANALYSIS_RESPONSE_SCHEMA`,
+  `maxOutputTokens: 32768` — same as the reel capture, and **still the pre-3B prompt/schema**, since
+  3B has not been implemented yet. This measures headroom for the *current* contract on a
+  carousel, exactly mirroring what the reel entry measured for the current contract on a reel. It
+  does **not** measure 3B's not-yet-written extended prompt — that remains a future measurement once
+  3B ships, same caveat the PRD itself states.
+
+### Result
+
+```
+finishReason: STOP  (implicit, by the same fail-closed-guard construction as the reel capture:
+                      analyzeContent() did not throw, and its guard only lets execution past the
+                      finishReason check when it is exactly FinishReason.STOP)
+usageMetadata: {
+  promptTokenCount: 15663,
+  candidatesTokenCount: 2192,
+  totalTokenCount: 20421,
+  thoughtsTokenCount: 2566,
+  promptTokensDetails: [
+    { modality: "TEXT", tokenCount: 6210 },
+    { modality: "IMAGE", tokenCount: 774 },
+    { modality: "VIDEO", tokenCount: 8679 }
+  ],
+  serviceTier: "standard"
+}
+JSON.parse succeeded with zero repair/fallback logic (parseContentAnalysis did not throw); the
+analysis completed and a real row (id 237d9ceb-e0c7-482a-8f55-b045c817a0f3) was written with
+status='completed'.
+```
+
+- **Output-budget spend: `candidatesTokenCount` (2192) + `thoughtsTokenCount` (2566) = 4758 tokens**
+  against the 32,768 `maxOutputTokens` ceiling — **~85.5% headroom remaining** (28,010 tokens free).
+- **⚠️ This CONTRADICTS the risk framing in PRD §9.1, and it should be read as good news, not
+  ignored.** §9.1's "Unmeasured risk" row and the PRD's own framing throughout ("a 10-slide carousel
+  plus a longer prompt is the case that would actually bind") both anticipated a **carousel would
+  show materially *less* headroom than the reel's 83%.** The measured result is the opposite: **the
+  carousel's headroom (85.5%) is not worse than the reel's (83%) — it is marginally better.**
+  `promptTokenCount` is lower for the carousel (15,663 vs. the reel's 24,052 — the reel's 61 seconds
+  of continuous video plus its audio track evidently costs more input tokens than 7 short video
+  slides plus 3 images), and both `candidatesTokenCount` and `thoughtsTokenCount` came out lower too
+  (2192+2566=4758 vs. the reel's 1574+3994=5568). **Do not carry the PRD's "carousels are the
+  higher-risk case for MAX_TOKENS" framing into 3B implementation without revisiting it** — on this
+  one sample, a 10-slide mixed carousel was cheaper on every token axis than a single 61-second reel,
+  not more expensive. This is one sample (same single-sample caveat as every other carousel finding
+  in this file) but it is a direct, measured contradiction of a stated risk, not a minor footnote.
+- **Both real-world samples (this carousel, the earlier reel) remain comfortably clear of
+  `MAX_TOKENS`** — the headroom risk itself is not eliminated as a *possibility* (3B's longer,
+  not-yet-written prompt could still change the picture), but the specific "carousels are worse
+  than reels for this" hypothesis is now measured and falsified for the current (pre-3B) contract.
+
+### Credit ledger — this capture
+
+| Attempt | What happened | ScrapeCreators cost | Gemini cost |
+|---|---|---|---|
+| 1st `runAnalysis()` call | Fetched the post (1 credit), downloaded + uploaded all 10 media parts to Gemini's File API successfully, then **failed before reaching the Gemini `generateContent` call** — this worktree's local `my-content.db` had migrations 006–011 unapplied (`RUNBOOK.md` §8.1's exact documented trap: a stale local DB surfacing as an opaque failure, here `SQLITE_ERROR: no such column: play_count`) | 1 credit | **0 — never reached** |
+| `npm run db:migrate` | Applied the missing migrations to this worktree's local DB (a schema fix, not a data mutation) | 0 | 0 |
+| 2nd `runAnalysis()` call, same URL | Re-fetched the post (a fresh fetch was simplest and safest, rather than trying to resume mid-pipeline with the first attempt's now-orphaned File API uploads) — full pipeline completed, including the one billed Gemini call | 1 credit | **1 billed call** |
+| **Total this capture** | | **2 credits** | **1 billed call** |
+
+**The extra ScrapeCreators credit (vs. the 1 budgeted) was a self-inflicted local-environment issue
+(unmigrated worktree DB), not a retry against an unstable API or a wasted discovery attempt — flagged
+plainly per instruction rather than rounded down to "1, as budgeted."** The Gemini spend stayed at
+exactly the 1 call authorised; the first attempt's DB failure occurred strictly before that call, so
+no Gemini billing was wasted.
+
+The local `analyses` row this run wrote (`237d9ceb-e0c7-482a-8f55-b045c817a0f3`) and the local
+`my-content.db` migration state are both artifacts of running the real pipeline in this worktree —
+consistent with the precedent set by the 2026-08-05 `/v1/instagram/profile` capture, which also left
+a real cache-write behind. The `analyses` row is **not** included in this PR's diff (a local SQLite
+file is not meaningful to review as a text diff and the migration state is worktree-local, not a
+product fact); this file is the durable record of what was verified.
+
+---
+
+## Credit ledger for this verification session (2026-08-06)
+
+| Call | credits_remaining after |
+|---|---|
+| (before, last known 2026-08-05) | 31989 |
+| ~2 untracked calls elsewhere between 2026-08-05 and this session (inferred, not directly observed) | ~31987 |
+| V1 — `/p/DOZNyVdEk4y/` (counts-disabled post) | 31986 |
+| V3 attempt 1 — `/p/DZCPPJTjKVy/` (failed before Gemini call, local DB migration gap) | ~31985 |
+| V3 attempt 2 — `/p/DZCPPJTjKVy/` (succeeded) | ~31984 |
+| V2 | **not attempted — 0 credits spent, see checkpoint above** |
+
+**Total this session: 3 ScrapeCreators credits (1 for V1, 2 for V3) + 1 billed Gemini
+`generateContent` call (V3).** The exact post-session `credits_remaining` was not independently
+re-checked (that would itself be a balance-check-only call, which is exactly what the task
+instructions prohibit) — the ~31984 figure above is arithmetic from the one directly-observed
+reading (31986 after V1) minus V3's two calls, not a second live reading.</new_string>
+
