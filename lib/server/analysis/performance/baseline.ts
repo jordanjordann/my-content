@@ -327,14 +327,59 @@ export async function computeBaseline(input: ComputeBaselineInput): Promise<Base
   const sampleSize = candidateMetrics.length;
 
   if (sampleSize < BASELINE_MIN_SAMPLE) {
-    return { bucketKey: input.bucketKey, sampleSize, median: null, multiplier: null };
+    return {
+      state: "COLD_START",
+      bucketKey: input.bucketKey,
+      sampleSize,
+    };
   }
 
   const medianValue = median(candidateMetrics.map((m) => m.value));
-  const multiplier =
-    currentMetric && medianValue > 0 ? currentMetric.value / medianValue : null;
 
-  return { bucketKey: input.bucketKey, sampleSize, median: medianValue, multiplier };
+  // Priority order matches the type doc (types.ts `BaselineResult`):
+  // this post's own unresolved metric is checked before median-zero,
+  // because an unresolved numerator can't be multiplied regardless of
+  // what the median is.
+  if (!currentMetric) {
+    return {
+      state: "NOT_COMPARABLE",
+      bucketKey: input.bucketKey,
+      sampleSize,
+      median: medianValue,
+      reason: "POST_METRIC_UNRESOLVED",
+    };
+  }
+
+  // Non-negative-metric invariant: this collapse into NOT_COMPARABLE/
+  // MEDIAN_ZERO (rather than a division) is only correct because every
+  // metric value flowing into `median()` is non-negative by construction —
+  // `metricFor()`'s REACH branch requires `post.reachValue >= 0`, and its
+  // ENGAGEMENT_COUNT branch only accepts values `usableEngagementCount()`
+  // has already rejected below zero. Given that, `medianValue === 0` can
+  // only mean "every comparator scored exactly zero", never "the bucket
+  // skews negative" — so `!currentMetric` (checked above) and
+  // `medianValue === 0` (checked here) are jointly exhaustive of the
+  // "no multiplier" cases; anything else falls through to a real division.
+  // If a metric were ever allowed to go negative, this guard would stop
+  // being equivalent to "can't multiply" and this branch would instead let
+  // a genuinely negative `multiplier` fall through as MEASURED, silently.
+  if (medianValue === 0) {
+    return {
+      state: "NOT_COMPARABLE",
+      bucketKey: input.bucketKey,
+      sampleSize,
+      median: medianValue,
+      reason: "MEDIAN_ZERO",
+    };
+  }
+
+  return {
+    state: "MEASURED",
+    bucketKey: input.bucketKey,
+    sampleSize,
+    median: medianValue,
+    multiplier: currentMetric.value / medianValue,
+  };
 }
 
 export type { BaselineDenominator, BaselineResult } from "./types";

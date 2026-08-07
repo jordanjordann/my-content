@@ -190,10 +190,9 @@ describe("computeBaseline — AC-1/AC-2 threshold behaviour", () => {
     });
 
     expect(result).toEqual({
+      state: "COLD_START",
       bucketKey: "instagram:reel:full_video",
       sampleSize: 0,
-      median: null,
-      multiplier: null,
     });
   });
 
@@ -218,8 +217,10 @@ describe("computeBaseline — AC-1/AC-2 threshold behaviour", () => {
     });
 
     expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE - 1);
-    expect(result.median).toBeNull();
-    expect(result.multiplier).toBeNull();
+    // COLD_START has no `median`/`multiplier` fields at all (post-#159-review
+    // fix) — the state tag itself is the proof, not a null check on fields
+    // that no longer exist on this variant.
+    expect(result.state).toBe("COLD_START");
   });
 
   it("AC-2: at exactly BASELINE_MIN_SAMPLE prior analyses, the multiplier activates", async () => {
@@ -244,6 +245,10 @@ describe("computeBaseline — AC-1/AC-2 threshold behaviour", () => {
     });
 
     expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE);
+    expect(result.state).toBe("MEASURED");
+    // Narrow before reading `median`/`multiplier` — un-narrowed access no
+    // longer compiles now that those fields don't exist on every variant.
+    if (result.state !== "MEASURED") throw new Error("unreachable");
     expect(result.median).toBe(3_000);
     expect(result.multiplier).toBe(3); // 9000 / 3000
   });
@@ -272,6 +277,7 @@ describe("computeBaseline — median, in JS", () => {
     });
 
     // Sorted: 8, 10, 20, 300, 500 -> median 20.
+    if (result.state !== "MEASURED") throw new Error("unreachable");
     expect(result.median).toBe(20);
   });
 });
@@ -305,15 +311,16 @@ describe("computeBaseline — AC-23: engagement-count baseline for a no-reach bu
     });
 
     expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE);
+    if (result.state !== "MEASURED") throw new Error("unreachable");
     expect(result.median).toBe(300);
     expect(result.multiplier).toBe(2); // 600 / 300
   });
 });
 
 describe("computeBaseline — R-4.3.2/R-12.3.2: the denominator comes from the bucket, never row-level nullness", () => {
-  it("a reach-hidden reel in a reach bucket is excluded, not relabelled ENGAGEMENT_COUNT (BLOCKING 1)", async () => {
-    // This row is NOT a corrupt fixture — it is what a reach-hidden reel
-    // looks like in production (hidden play/view counts,
+  it("a reach-hidden video-bearing carousel in a reach bucket is excluded, not relabelled ENGAGEMENT_COUNT (BLOCKING 1)", async () => {
+    // This row is NOT a corrupt fixture — it is what a reach-hidden
+    // video-bearing carousel looks like in production (hidden play/view counts,
     // `perf_reach_derived_from: 'NONE'` is out of scope, but the resulting
     // `perf_reach_value: NULL` on an otherwise reach-denominated bucket row
     // is exactly this shape). Before the fix, `metricFor()` inferred the
@@ -351,6 +358,7 @@ describe("computeBaseline — R-4.3.2/R-12.3.2: the denominator comes from the b
     // The reach-hidden row must not count toward the sample, and must not
     // throw — it is simply not a usable comparator this round.
     expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE);
+    if (result.state !== "MEASURED") throw new Error("unreachable");
     expect(result.median).toBe(1_000);
   });
 
@@ -378,8 +386,12 @@ describe("computeBaseline — R-4.3.2/R-12.3.2: the denominator comes from the b
     });
 
     expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE);
+    // `multiplier` does not exist on NOT_COMPARABLE (post-#159-review fix) —
+    // `reason` is the field that proves no multiplier could be produced.
+    expect(result.state).toBe("NOT_COMPARABLE");
+    if (result.state !== "NOT_COMPARABLE") throw new Error("unreachable");
     expect(result.median).toBe(1_000);
-    expect(result.multiplier).toBeNull();
+    expect(result.reason).toBe("POST_METRIC_UNRESOLVED");
   });
 });
 
@@ -428,8 +440,155 @@ describe("computeBaseline — usableEngagementCount excludes hidden-count candid
     // median. If it had been scored 0, sampleSize would be
     // BASELINE_MIN_SAMPLE + 1 and the median would shift downward.
     expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE);
+    if (result.state !== "MEASURED") throw new Error("unreachable");
     expect(result.median).toBe(300);
     expect(result.multiplier).toBe(2); // 600 / 300
+  });
+});
+
+describe("computeBaseline — three-state result (post-#154-review: COLD_START vs NOT_COMPARABLE must not collapse)", () => {
+  it("COLD_START (below threshold) is tagged 'COLD_START', not merely null median/multiplier", async () => {
+    const { computeBaseline } = await import("@/lib/server/analysis/performance/baseline");
+    const profileId = randomUUID();
+    await insertProfile(client, profileId);
+
+    const result = await computeBaseline({
+      profileId,
+      bucketKey: "instagram:reel:full_video",
+      schemaVersion: SCHEMA_VERSION,
+      excludeAnalysisId: randomUUID(),
+      minPostAgeHours: 72,
+      currentPost: { reachValue: 10_000, likeCount: 500, commentCount: 20 },
+    });
+
+    expect(result.state).toBe("COLD_START");
+  });
+
+  it("NOT_COMPARABLE (full baseline, this post's own reach unresolved) is tagged 'NOT_COMPARABLE' and is NOT confusable with COLD_START", async () => {
+    // The exact regression this ticket closes: a full baseline exists
+    // (sampleSize >= BASELINE_MIN_SAMPLE, median non-null) but this
+    // specific post's own reach is unresolved, so no multiplier can be
+    // produced. Before this fix, this state was distinguishable from
+    // COLD_START only by inference (checking median !== null), which a
+    // downstream consumer (#142) could get wrong and render "2 of 5
+    // posts" for a creator who actually has a full baseline.
+    const { computeBaseline } = await import("@/lib/server/analysis/performance/baseline");
+    const { BASELINE_MIN_SAMPLE } = await import("@/lib/server/analysis/performance/constants");
+    const profileId = randomUUID();
+    await insertProfile(client, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    for (let i = 0; i < BASELINE_MIN_SAMPLE; i++) {
+      await insertAnalysis(client, { profileId, bucketKey, reachValue: 1_000 });
+    }
+
+    const result = await computeBaseline({
+      profileId,
+      bucketKey,
+      schemaVersion: SCHEMA_VERSION,
+      excludeAnalysisId: randomUUID(),
+      minPostAgeHours: 72,
+      currentPost: { reachValue: null, likeCount: 10, commentCount: 5 },
+    });
+
+    expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE);
+    expect(result.state).toBe("NOT_COMPARABLE");
+    expect(result.state).not.toBe("COLD_START");
+    // `multiplier` does not exist on NOT_COMPARABLE at all (post-#159-review
+    // fix) — narrowing to this branch is required just to read `median`;
+    // `reason` is what proves no multiplier could be produced, not a
+    // `multiplier === null` check a caller could get away with skipping.
+    if (result.state !== "NOT_COMPARABLE") throw new Error("unreachable");
+    expect(result.median).toBe(1_000);
+    expect(result.reason).toBe("POST_METRIC_UNRESOLVED");
+  });
+
+  it("MEASURED (full baseline, this post's own metric resolved) is tagged 'MEASURED'", async () => {
+    const { computeBaseline } = await import("@/lib/server/analysis/performance/baseline");
+    const { BASELINE_MIN_SAMPLE } = await import("@/lib/server/analysis/performance/constants");
+    const profileId = randomUUID();
+    await insertProfile(client, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    for (let i = 0; i < BASELINE_MIN_SAMPLE; i++) {
+      await insertAnalysis(client, { profileId, bucketKey, reachValue: 1_000 * (i + 1) });
+    }
+
+    const result = await computeBaseline({
+      profileId,
+      bucketKey,
+      schemaVersion: SCHEMA_VERSION,
+      excludeAnalysisId: randomUUID(),
+      minPostAgeHours: 72,
+      currentPost: { reachValue: 9_000, likeCount: null, commentCount: null },
+    });
+
+    expect(result.state).toBe("MEASURED");
+    if (result.state !== "MEASURED") throw new Error("unreachable");
+    expect(result.multiplier).toBe(3);
+  });
+
+  it("MEDIAN_ZERO: full baseline where every comparator scored zero produces NOT_COMPARABLE/MEDIAN_ZERO, never a fabricated multiplier", async () => {
+    const { computeBaseline } = await import("@/lib/server/analysis/performance/baseline");
+    const { BASELINE_MIN_SAMPLE } = await import("@/lib/server/analysis/performance/constants");
+    const profileId = randomUUID();
+    await insertProfile(client, profileId);
+    const bucketKey = "instagram:carousel:images_only";
+
+    for (let i = 0; i < BASELINE_MIN_SAMPLE; i++) {
+      await insertAnalysis(client, {
+        profileId,
+        bucketKey,
+        reachValue: null,
+        likeCount: 0,
+        commentCount: 0,
+      });
+    }
+
+    const result = await computeBaseline({
+      profileId,
+      bucketKey,
+      schemaVersion: SCHEMA_VERSION,
+      excludeAnalysisId: randomUUID(),
+      minPostAgeHours: 72,
+      currentPost: { reachValue: null, likeCount: 5, commentCount: 5 },
+    });
+
+    expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE);
+    expect(result.state).toBe("NOT_COMPARABLE");
+    if (result.state !== "NOT_COMPARABLE") throw new Error("unreachable");
+    expect(result.median).toBe(0);
+    expect(result.reason).toBe("MEDIAN_ZERO");
+  });
+
+  it("un-narrowed `.multiplier`/`.median` access on a bare BaselineResult no longer compiles (pins the #159 fix)", async () => {
+    // This is a type-level assertion, not a runtime one. Before the fix,
+    // `median`/`multiplier` were present (typed `number | null`) on every
+    // variant, so this compiled and let a consumer branch on nullness
+    // instead of `state` — exactly the #142 misreport risk. After dropping
+    // the fields from COLD_START/NOT_COMPARABLE, both lines below are
+    // `tsc` errors on the un-narrowed union; `@ts-expect-error` fails the
+    // build if either one ever compiles again (e.g. if the fields were
+    // reintroduced by a future edit).
+    const { computeBaseline } = await import("@/lib/server/analysis/performance/baseline");
+    const profileId = randomUUID();
+    await insertProfile(client, profileId);
+
+    const result = await computeBaseline({
+      profileId,
+      bucketKey: "instagram:reel:full_video",
+      schemaVersion: SCHEMA_VERSION,
+      excludeAnalysisId: randomUUID(),
+      minPostAgeHours: 72,
+      currentPost: { reachValue: 10_000, likeCount: 500, commentCount: 20 },
+    });
+
+    // @ts-expect-error — `multiplier` does not exist on the un-narrowed
+    // BaselineResult union (only on the narrowed "MEASURED" variant).
+    expect(result.multiplier).toBeUndefined();
+    // @ts-expect-error — `median` does not exist on the un-narrowed
+    // BaselineResult union (absent on "COLD_START").
+    expect(result.median).toBeUndefined();
   });
 });
 
@@ -470,8 +629,7 @@ describe("computeBaseline — no cross-bucket substitution (AC-23/AC-24)", () =>
 
     // The 20 reels must not have leaked into this bucket's count.
     expect(result.sampleSize).toBe(3);
-    expect(result.median).toBeNull();
-    expect(result.multiplier).toBeNull();
+    expect(result.state).toBe("COLD_START");
   });
 });
 
@@ -499,6 +657,7 @@ describe("computeBaseline — D5 part 3: age-bounded baseline", () => {
     });
 
     expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE);
+    if (result.state !== "MEASURED") throw new Error("unreachable");
     expect(result.median).toBe(1_000);
   });
 });
@@ -520,7 +679,7 @@ describe("computeBaseline — R-8.4.4: sample size is never null when a multipli
       currentPost: { reachValue: 1_000, likeCount: null, commentCount: null },
     });
     expect(typeof coldStart.sampleSize).toBe("number");
-    expect(coldStart.multiplier).toBeNull();
+    expect(coldStart.state).toBe("COLD_START");
 
     for (let i = 0; i < BASELINE_MIN_SAMPLE; i++) {
       await insertAnalysis(client, { profileId, bucketKey, reachValue: 1_000 });
@@ -534,6 +693,7 @@ describe("computeBaseline — R-8.4.4: sample size is never null when a multipli
       currentPost: { reachValue: 1_000, likeCount: null, commentCount: null },
     });
     expect(typeof full.sampleSize).toBe("number");
+    if (full.state !== "MEASURED") throw new Error("unreachable");
     expect(full.multiplier).not.toBeNull();
   });
 });
