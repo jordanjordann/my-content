@@ -9,10 +9,21 @@
 > **V2 remains uncaptured but no longer blocks anything** (owner ruling: `0`/`null`/absent all mean `UNKNOWN`).
 > The corrected passages are marked in place. The binding decision record is
 > `docs/TDD-3A-3B-3C-phase-3.md` §0, rulings **OR-19 … OR-25**.
+
+> **⚠️ AMENDED 2026-08-07 — §14 added: two settled behaviours that will otherwise be filed as bugs.**
+> Both were already decided by the owner and neither is open. **§14.1** — a re-analysis can change a
+> creator's **style classification**, and that is **expected product behaviour**, not a fault. **§14.2** —
+> Tier 2's minimum is **5 comparable posts per format bucket, not 5 posts per creator**; a creator with
+> **4 reels and 4 carousels has 8 posts and still gets no comparison at all.** Every earlier passage in
+> this document that stated a bare "minimum of 5" has been corrected in place and now points at §14.2.
+> **§14.2 is binding on the 3C frontend tickets (#145–#149) — the cold-start copy may not say "5 posts".**
+> *(§14 here is a section of this PRD. It is unrelated to `TDD-3A-3B-3C-phase-3.md` §14, which is that
+> document's own amendment log.)*
+
 **Owner:** Oden (product owner)
 **Author:** Dan (PM)
 **Created:** 2026-08-05
-**Revised:** 2026-08-05 (owner acceptances recorded; §12 added; **§13 score explainability added** — new owner requirement, and the primary input to the UI/UX designer's next pass)
+**Revised:** 2026-08-05 (owner acceptances recorded; §12 added; **§13 score explainability added** — new owner requirement, and the primary input to the UI/UX designer's next pass) · 2026-08-07 (**§14 added** — expected behaviours that will be mistaken for defects: classification drift on re-analysis, and Tier 2's per-bucket minimum)
 **Extends:** `docs/PRD-analysis-schema-redesign.md` (the live analysis contract). This PRD **adds a third tier** to that contract and **bumps `schemaVersion`**. Everything in that PRD not contradicted here still stands.
 **Primary input:** `docs/product-direction-plan.md` §3, Phase 3 (3B and 3C).
 **Out of scope:** 3A (the job queue). Referenced only where a real dependency exists (§9.3).
@@ -52,6 +63,7 @@ The analysis scorecard judges **content only**. Nothing in the product says whet
 | S6 | Gemini output token usage stays under 50% of the `maxOutputTokens` budget on a production-sized request | Read `usageMetadata` from one live call. **Two baselines now exist in `verified-facts.md`: ~83% headroom on a single reel and ~85.5% on a 10-slide carousel (V3, 2026-08-06).** Both are far inside the 50% criterion — actual spend was 5,568 and 4,758 tokens against 32,768. Compare against the **carousel** figure, since it is the more media-heavy request. |
 | S7 | **No user can mistake a follower-denominated engagement % for a reach-denominated one.** Every rendered engagement value carries its denominator in accessible text, and no sort or aggregate mixes the two | Component tests AC-20, AC-21; plus explicit designer sign-off at mockup review |
 | S8 | **Every displayed score can be explained on the surface it appears on** (§13). No score, and no absent score, renders without its metric, its inputs, its evidence base and — where applicable — its reason | Component tests AC-25 to AC-30, each asserting rendered text content |
+| S9 | **No user can read a working feature as broken.** The two expected behaviours of §14 — a style classification that changes on re-analysis, and a "vs their usual" comparison that is still filling up — are both stated to the user in the product, in the user's terms, at the point they occur | Component tests AC-31 to AC-33; plus a string search proving **no user-facing string frames the Tier 2 threshold at creator level** (R-14.2.5) |
 
 ---
 
@@ -72,6 +84,8 @@ The analysis scorecard judges **content only**. Nothing in the product says whet
 - **US-6.** As an agency strategist, I want to **scan a creator's analysed library in one table** and sort by performance, so I can find their best work without opening every row.
 - **US-7.** As an agency strategist, I want **every score to explain itself inside the app** — what it measured, what went into it, how much evidence sits behind it, and why it says what it says — so I can defend the number in a client meeting instead of just repeating it. **(§13. Owner requirement, 2026-08-05.)**
 - **US-8.** As an agency strategist, I want the app to **stop me from comparing two numbers that are not comparable**, so I do not confidently tell a client something untrue. **(§13.6, §12.3.)**
+- **US-9.** As an agency strategist, when I re-analyse a post and its **style classification comes back different**, I want the app to have told me up front that this can happen, so I do not conclude the tool is broken or that the creator changed. **(§14.1.)**
+- **US-10.** As an agency strategist waiting for the "vs their usual" comparison to switch on, I want the app to tell me **how many more posts of that particular format** it needs, so I can see the feature working rather than assume it is stuck. **(§14.2.)**
 
 ---
 
@@ -114,7 +128,8 @@ Three tiers, evaluated together, presented in priority order. This is the boss's
 - **Tier 2 is the one the agency will actually quote.** It is self-normalising: it does not care whether the follower count is stale, whether the creator has 500 or 500k followers, or whether two platforms count reach differently — the denominator is *the same creator, measured the same way*.
 - **Median, not mean.** One viral post would drag a mean baseline upward and make every subsequent post look like a failure. Median is also what the industry tools use (§3.1).
 - **Cost:** one extra database read at analysis time (the creator's prior analyses). **Zero extra ScrapeCreators credits** — the follower count already comes from the existing 7-day-TTL profile cache, which the pipeline already resolves today. Gemini: ~+600–1,000 prompt tokens and ~+300–600 output tokens. Against the measured **83% output headroom on a real production-sized request** (`verified-facts.md`, 2026-08-05), this is comfortable.
-- **Weakness:** Tier 2 has a **cold-start problem** — meaningless until several of that creator's videos are analysed, and it inherits the style fingerprint's minimum of 5 (roadmap §1). See decision **D4**.
+- **Weakness:** Tier 2 has a **cold-start problem** — meaningless until several of that creator's posts are analysed.
+  **⚠️ CORRECTED 2026-08-07. This bullet previously read *"it inherits the style fingerprint's minimum of 5 (roadmap §1)"*, and that framing is wrong in exactly the way that matters.** The style fingerprint's 5 is **5 posts per creator**. Tier 2's 5 is **5 comparable posts per format bucket**. They are not the same threshold, and a creator can clear the fingerprint's bar while still having **no Tier 2 comparison anywhere**. **The rule, the worked example and the reason are in §14.2, which is binding on the 3C cold-start copy.** See also decision **D4**.
 
 ### 3.4 Option C — Score against a universal industry benchmark
 
@@ -211,7 +226,7 @@ Reels, carousels and YouTube Shorts **do not perform comparably** and must not s
 - **Reels / Shorts (video):** full Tier 1 + 2 + 3. Reach available.
 - **Video-bearing carousels:** reach exists per slide, not per post. A post-level reach is a **derived choice** (first slide? max? sum? — summing is wrong; it double-counts the same viewer). **Recommendation:** use the **first slide's** view count as post-level reach, label it as such, and drop confidence one level. Alternatives in D4.
 - **All-image carousels and single images:** **no reach exists in the payload at all.** Reach-denominated Tier 1 is impossible. **This is now fully resolved in §12** — they are scored on a follower-denominated engagement rate plus an untouched Tier 2, not excluded. Read §12 before implementing anything in this bullet.
-- **Baselines are bucketed.** A creator's median is computed within `(platform, content kind)`, never across. Consequence: cold start applies **per bucket**, so a creator with 5 reels and 2 carousels gets Tier 2 on reels only. That is correct, and it must be visible in the UI, not silent.
+- **Baselines are bucketed.** A creator's median is computed within `(platform, content kind)`, never across. Consequence: **the cold-start minimum of 5 applies per bucket, not per creator** — so a creator with 5 reels and 2 carousels gets Tier 2 on reels only, and a creator with **4 reels and 4 carousels gets it on neither, despite having 8 analysed posts.** That is correct, it is deliberate, and it must be visible in the UI, not silent. **The reason reels and carousels cannot share a pool is R-4.3.2 — reels are measured in plays and carousels in views, and a ratio across two different reach kinds must fail loudly rather than be averaged. §14.2 states this in full and is binding on the 3C copy.**
 
 ### 4.7 YouTube: at parity — and this contradicts the roadmap's framing [CONFIRMED — D6]
 
@@ -296,9 +311,9 @@ Gherkin, phrased so each is actually checkable. **No screenshot-only criteria** 
 *When* the analysis completes,
 *Then* `tierUsed` is `REACH_ONLY`, `performanceScore` is an integer 1–5, `basedOnVideos` is 0, and the verdict prose contains no baseline or multiplier claim.
 
-**AC-2 — Tier 2 activates at the threshold**
-*Given* a creator with exactly N−1 prior completed analyses in the same bucket (N = the confirmed minimum from D4),
-*When* one more completes,
+**AC-2 — Tier 2 activates at the threshold, per bucket**
+*Given* a creator with exactly N−1 prior completed analyses **in the same format bucket** (N = the confirmed minimum from D4, **5, counted per bucket and never per creator** — §14.2),
+*When* one more **in that same bucket** completes,
 *Then* the newest analysis reports `tierUsed: CREATOR_BASELINE` with `basedOnVideos` equal to the prior count, and the prior analyses' stored scores are **unchanged** (frozen, per D8).
 
 **AC-3 — Hidden counts produce no score**
@@ -353,8 +368,10 @@ divergence was **not confined to prose**: `formatArchetype` flipped `TEXT_SLIDES
 scorecard dimensions were stable, but stability was **observed, not guaranteed**, on n=2.
 
 **This drift is accepted, not defended against** (TDD OR-22): an analysis runs once and is stored, so it is
-only observable via Re-analyze. **Its one real consequence is recorded in TDD §13 E8** — `formatArchetype`
+only observable via Re-analyze. **Its one real consequence is now specified as product behaviour in §14.1**
+(and engineering-side in TDD §13 E8) — `formatArchetype`
 and `pacing` feed the style fingerprint, so a re-analysis can legitimately change a creator's classification.
+**§14.1 is the citable statement; a ticket should cite R-14.1.1, not this criterion.**
 **Do not write a test asserting `performanceScore` is reproducible; it would be a flaky test asserting a
 false claim.**
 
@@ -379,6 +396,8 @@ false claim.**
 - **Cross-creator comparison / leaderboards.**
 - **Predicting future performance.**
 - **The job queue (3A).** Separate workstream.
+- **Any machinery to keep a creator's style classification stable across re-analyses.** No reconciliation, no versioned re-analysis records, no re-run-until-they-agree, no best-of-three vote. **The drift is accepted product behaviour and is specified in §14.1.** Considered and declined; do not re-open.
+- **Pooling formats into a shared Tier 2 baseline, or a lower threshold for any one format.** Both were considered and declined. **§14.2.**
 
 ---
 
@@ -442,6 +461,7 @@ Ordered left to right. The goal is US-6: scan a creator's library and find what 
 - **R-8.4.6** Contrast: any new badge is measured in **gamma-encoded sRGB** against `--background`, `--card` **and** the row-hover surface, ≥ 4.5:1 on all three. This exact error class has shipped non-compliant twice (RUNBOOK §8.4). It is checkable numerically and is therefore a real acceptance criterion, not a screenshot.
 - **R-8.4.7** **The engagement denominator is visible without interaction** on every row that shows an engagement percentage (R-12.3.1). No hover, no legend, no prior knowledge of the content type required. **This is a hard constraint on the design, not a preference**; the mockup review must sign it off explicitly (caveat C2).
 - **R-8.4.8** Every row carries the **table-tier explainability information defined in §13.7** (R-13.7.1 to R-13.7.6). See §13 — explainability is a requirement on this table, not a detail-view-only concern.
+- **R-8.4.9** **Cold-start copy must be bucket-honest — see R-14.2.5, which is binding on tickets #145–#149.** No empty, cold-start or insufficient-history string in this table may say **"5 posts"**, because the threshold is 5 posts **of that format**, and a creator who has already analysed 8 posts will read "5 posts" as a broken feature. The progress figure and the format noun travel together.
 
 ### 8.5 Acceptance criteria (3C)
 
@@ -471,10 +491,10 @@ Ordered left to right. The goal is US-6: scan a creator's library and find what 
 - **R1 — ⚠️ RESOLVED 2026-08-06 — V1 IS CAPTURED, and it found something worse than expected.** ~~The counts-disabled payload shape is unverified… approved but not yet captured.~~ Fixture committed at `.claude/context/fixtures/scrapecreators-instagram/ig_post_counts_disabled.json`. **The finding: on a genuinely counts-disabled post, `edge_media_preview_like.count` is `-1`** — not `0`, not `null`, not absent — **with `edges[]` still populated with real usernames.** The shipped adapter is safe only because it gates on `like_and_view_counts_disabled === true` *before* reading the count. **New 3B code that reads the count first produces a negative engagement ratio and renders it as real.** Binding rule: **a negative count is `UNKNOWN`, never data; never `?? 0`, never `Math.max(x, 0)`.** See TDD §1.7 / OR-20 and ticket #140. §12.1's finding stands unchanged: on an all-image carousel the flag is absent entirely, so absence must never be read as `false` (R-12.2.3). **Still open:** V1's sample is an image post, so a counts-disabled *video* remains unobserved — nothing may infer reach behaviour from the flag.
 - **R2 — YouTube likes-hidden behaviour is UNCAPTURED, and is now RULED rather than blocking** ([VERIFY] V2). **0 credits were spent** — the blocker is finding a real candidate video, not budget. **Owner ruling (TDD OR-21), binding and not provisional: on `likeCountInt`, `0`, `null` and field-absent ALL mean `UNKNOWN`.** No score is fabricated, no fake zero is stored. **The accepted cost, deliberately taken: a genuinely zero-like video will read "unknown".** **3B is NOT blocked on V2**; if V2 is ever captured it can only narrow this rule, and nothing has to be rewritten to accept it. See §4.7.
 - **R3 — The follower count is up to 7 days stale.** Accepted by the owner. Mitigated by Tier 2 being the headline (it does not use the follower count at all), and by never presenting Tier 3 as exact.
-- **R4 — Tier 2 on a 5-post baseline is statistically thin.** Same caveat the fingerprint carries. Mitigated by always showing the sample size, never by hiding it.
+- **R4 — Tier 2 on a 5-post baseline is statistically thin.** Same caveat the fingerprint carries. Mitigated by always showing the sample size, never by hiding it. **⚠️ CLARIFIED 2026-08-07: that 5 is 5 posts *in one format bucket*, not 5 posts by the creator (§14.2). The nearby "same caveat the fingerprint carries" must not be read as "same threshold" — the fingerprint counts per creator, Tier 2 counts per bucket.**
 - **R5 — The table gets too wide.** Mitigated by §8.3's explicit non-default list. If the designer pushes back, cut from the bottom of the default list, not from #7/#8.
 - **R6 — Two engagement percentages that look identical but are not comparable** (§12.3). **The highest-severity *product* risk introduced by §12**, because the failure is silent: nothing errors, a user simply draws a wrong conclusion and repeats it to a client. Mitigated by R-12.2.2 (a required denominator discriminator that must survive every layer, so dropping it is a type error), R-12.3.1–.3.3, AC-20/21, and explicit designer sign-off at mockup review. **Also the reason §13 exists:** R-12.2.2 makes the system *correct*; **§13.6 requires that the user cannot *misread* it.** Those are two different requirements and R6 is not mitigated until both are met.
-- **R7 — Slow Tier 2 cold start on image carousels** (§12.4). For a creator who rarely posts carousels, the bucket may sit under the minimum of 5 indefinitely, leaving image posts on a `MEDIUM`-confidence follower ratio with no baseline. **Accepted deliberately** — lowering the threshold would produce a number we could not defend. Mitigated by showing the state ("3 of 5"), never hiding it. Revisit when bulk ingestion (3A) lands.
+- **R7 — Slow Tier 2 cold start on image carousels** (§12.4). For a creator who rarely posts carousels, the bucket may sit under the minimum of 5 indefinitely, leaving image posts on a `MEDIUM`-confidence follower ratio with no baseline. **Accepted deliberately** — lowering the threshold would produce a number we could not defend. Mitigated by showing the state ("3 of 5 carousels"), never hiding it. **The general form of this risk — it is not carousel-specific, it hits any creator who posts a steady mix of formats — is §14.2, and the honest-copy requirement that mitigates it is R-14.2.5.** Revisit when bulk ingestion (3A) lands.
 
 ### 9.3 Dependency on 3A (the only genuine one)
 
@@ -512,6 +532,7 @@ A creator's median is computed within `(platform, content kind)` and never acros
 *Rejected:* (a) platform-only bucketing — mixes reels and carousels, which do not perform comparably. (c) minimum 3 at `LOW` confidence — too thin to quote to a client.
 *Sub-question, also confirmed:* for **video-bearing** carousels, post-level reach is the **first slide's** count, labelled as such, at one confidence level lower. Summing slides is invalid (it double-counts the same viewer).
 *Consequence now made explicit:* see §12.4 — an **all-image-carousel bucket needs its own 5**, which is a slow cold start for creators who post carousels rarely.
+**⚠️ READ THIS AS "5 PER BUCKET", NOT "5 PER CREATOR" (2026-08-07).** Every bucket needs its own 5 independently — this is not a carousel-only footnote. **A creator with 4 reels and 4 carousels has 8 analysed posts and receives no Tier 2 comparison at all.** **§14.2 states the rule, the worked example and the rationale, and is binding on the 3C cold-start copy.** *Also re-confirmed 2026-08-07:* a **lower threshold for the carousel bucket was considered and declined** (`docs/HANDOFF-2026-08-06.md` §11). `BASELINE_MIN_SAMPLE` is **5 for every bucket**. Do not re-open it.
 
 **D5 — Recency. [CONFIRMED → age in prompt + maturity floor + age-bounded baselines]**
 All three parts: post age in days is passed to Gemini and weighed in the verdict; posts under the maturity floor are marked `provisional`; posts under the floor are excluded from other analyses' baseline medians.
@@ -668,9 +689,9 @@ So for an all-image carousel, Tier 2 reads: **"this post got 1.8× this creator'
 **Consistency with the confirmed D4 bucketing — and the cold-start cost, which is real:**
 
 - D4 confirms bucketing by `(platform, content kind)` with a **minimum of 5 per bucket**. An all-image carousel therefore compares only against **that creator's other all-image carousels** — correct, and required, since carousel engagement and reel engagement are not comparable either.
-- **R-12.4.1** The all-image-carousel bucket needs **its own 5 analysed posts**. It does not inherit, borrow or pool with the creator's reel bucket.
+- **R-12.4.1** The all-image-carousel bucket needs **its own 5 analysed posts**. It does not inherit, borrow or pool with the creator's reel bucket. **This is the image-carousel instance of the general rule in §14.2 (R-14.2.1); §14.2 is the citable statement, and it applies to every bucket, not only this one.**
 - **Flagging this plainly, because it is a genuine cost of the confirmed decision:** for a creator who posts carousels rarely, this is a **slow cold start**. A creator with 20 reels and 3 image carousels gets Tier 2 on reels and **nothing** on carousels — and the carousels are exactly the posts where Tier 2 matters most, because they have no reach-based Tier 1 to fall back on. **In the worst case an image carousel shows only a `MEDIUM`-confidence follower-denominated ratio and no baseline.**
-- **R-12.4.2** That state must be **shown, not hidden**: "not enough carousel history yet — 3 of 5" (exact wording is the designer's). Per D3 and R-8.4.3, it renders as its reason, never as blank or `0`.
+- **R-12.4.2** That state must be **shown, not hidden**: "not enough carousel history yet — 3 of 5 carousels" (exact wording is the designer's). Per D3 and R-8.4.3, it renders as its reason, never as blank or `0`. **The copy must be format-scoped, not creator-scoped — R-14.2.5.**
 - I am **not** recommending lowering the threshold for this bucket. D4 rejected a minimum of 3 for good reason, and a baseline built on two posts would be a number we could not defend in a client meeting. **The honest slow start is the right trade.** It is worth revisiting once bulk ingestion (3A) exists, since a batch import would fill several buckets at once — recorded in §9.3, not a 3B ticket.
 
 ### 12.5 Net effect, and what Gemini is told
@@ -781,7 +802,7 @@ The product computes **different metrics for different content types** (§12). A
 - **R-13.3.1** For any score, the user can see **the actual counts used** — likes and comments as captured — and **the audience figure it was measured against** (the reach value, or the follower count). Not a formula the user has to evaluate; the operands themselves.
 - **R-13.3.2** The audience figure is **attributed and dated**. The follower count comes from a cache with up to a 7-day TTL (§4.2, R3). Where a follower count is used, **its staleness must be inspectable** — the computed block already stores the cached profile record's age precisely so this is possible (§5.1). **A follower-denominated percentage presented as if exact is a false precision the product must not create.**
 - **R-13.3.3** For a **Tier 2** figure, the user can see **what the comparison was against**: the creator's own median, the bucket it was drawn from *(this creator's image carousels — not their reels)*, and the number of posts in it. The **bucket identity is part of the explanation**, not an implementation detail — "3.2× typical" is meaningless until the user knows *typical what*.
-- **R-13.3.4** **Every numeral shown in an explanation must exist in the stored computed block** (§5.1), **with one stated allow-list**: the configuration constants `BASELINE_MIN_SAMPLE` (the `5` in `3 of 5`) and the profile cache TTL (the `week` in the staleness copy) are exempt and are **not** stored per row **[AMENDED 2026-08-06 — OR-10; see AC-27]**. This extends S2/AC-7 from Gemini's prose to the explainability layer. **Apart from the allow-list, the explanation is not a place where new numbers may appear.**
+- **R-13.3.4** **Every numeral shown in an explanation must exist in the stored computed block** (§5.1), **with one stated allow-list**: the configuration constants `BASELINE_MIN_SAMPLE` (the `5` in `3 of 5 carousels`) and the profile cache TTL (the `week` in the staleness copy) are exempt and are **not** stored per row **[AMENDED 2026-08-06 — OR-10; see AC-27]**. This extends S2/AC-7 from Gemini's prose to the explainability layer. **Apart from the allow-list, the explanation is not a place where new numbers may appear.**
 - **R-13.3.5** Post age at analysis time is available alongside any score (§4.5), because no performance figure can be read honestly without it.
 
 ### 13.4 Confidence and provenance — how much evidence, and is it final
@@ -797,7 +818,7 @@ The product computes **different metrics for different content types** (§12). A
 **A blank cell is the single worst outcome this feature can produce**, because it looks like a bug and teaches the user to distrust every other cell. D3 is confirmed: **no score, plus a visible reason.** §13 makes the *reason* a product requirement rather than an enum.
 
 - **R-13.5.1** Wherever a score is absent, the surface renders a **reason legible to a non-technical user**. `CONTENT_KIND_UNSUPPORTED` is a storage value, **not** something a user may ever read. `REACH_HIDDEN` / `REACH_UNKNOWN` / `NO_AUDIENCE_DATA` / insufficient-history each map to a plain sentence.
-- **R-13.5.2** The reason must distinguish the cases a user would act on differently: **the creator hid their counts** (nothing we can do), **we do not have enough of this creator's history yet** (it will resolve itself — and per R-12.4.2 the progress is shown, e.g. 3 of 5), and **this data does not exist for this content type** (a permanent property of the platform). **Collapsing these into one "unavailable" is a failure of this requirement.**
+- **R-13.5.2** The reason must distinguish the cases a user would act on differently: **the creator hid their counts** (nothing we can do), **we do not have enough of this creator's history yet** (it will resolve itself — and per R-12.4.2 the progress is shown, e.g. `3 of 5 carousels`; **the progress and the reason are per format, and R-14.2.5 forbids a creator-level "5 posts" framing here**), and **this data does not exist for this content type** (a permanent property of the platform). **Collapsing these into one "unavailable" is a failure of this requirement.**
 - **R-13.5.3 — the case we genuinely cannot attribute, specified rather than left undefined.** On an all-image carousel the `like_and_view_counts_disabled` flag is **absent from the payload entirely** (§12.1; `.claude/context/verified-facts.md`, 2026-08-05 correction). Absence means **we cannot tell** whether the creator hid their counts. So where a score is unavailable on such a post, **the app must not assert a cause it cannot evidence** — it must not say "counts hidden by creator", because we do not know that.
   **What the app says instead:** it states **what it does know** — that Instagram published no performance data for this post — and **does not speculate as to why**. The honest form is a statement of the observation, not a diagnosis.
   - **R-13.5.3a** A distinct stored reason is required for *cause not determinable*, separate from *counts confirmed hidden*. **Two different facts must not share one enum value**, or the UI is structurally unable to tell the truth.
@@ -896,3 +917,146 @@ Each asserts **rendered text content or stored data** and is mechanically checka
 *Given* four analyses — (a) `like_and_view_counts_disabled === true`, (b) insufficient bucket history, (c) an all-image carousel with no usable inputs and the flag **absent** from the payload, (d) no cached follower count —
 *When* each renders in the table,
 *Then* each shows a distinct plain-language reason; **none** renders as blank, `0` or an em-dash; **none** contains an enum identifier, a field name or an error code; and case (c) specifically **does not** assert that the creator hid their counts, because that is not determinable from an absent flag (R-13.5.3). Component test asserting the four strings are distinct plus a negative assertion on case (c).
+
+---
+
+## 14. Expected behaviours that will be mistaken for defects [CONFIRMED — both settled; do not re-open]
+
+**Why this section exists.** Two behaviours in this product look like bugs and are not. Both were decided by
+the owner. Both currently live only in engineering notes — one in `TDD` §13 E8, the other scattered across a
+handoff and a constant — which means **nobody building the UI will see them**, and the first person who hits
+one will file it as a defect and lose a day proving it is not.
+
+**This section is product behaviour, in product language.** It is not a footnote, an engineering caveat or a
+known-issues list. Each behaviour has a requirement ID so tickets can cite it. **Neither is an open question:
+alternatives were considered and declined, and both are listed in `docs/HANDOFF-2026-08-06.md` §11 as
+deferred/accepted — "do NOT re-litigate as new findings".**
+
+**The through-line, and the owner's standing preference in both cases: reliability over coverage.** Where the
+two conflict, this product prefers the option that **cannot produce a confident-looking wrong number**, even
+when that means scoring fewer posts or telling the user we do not know yet.
+
+### 14.1 Re-analysing a post can change the creator's style classification. This is expected.
+
+**The behaviour, stated plainly.** If a user re-analyses a post they have already analysed, the post's **style
+classification can come back different** — the format it was filed under, or its pacing — with **no change to
+the content, no change to the inputs, and no bug anywhere in the system.** Because those classifications feed
+the creator's style fingerprint, **the creator's overall style profile can shift too.**
+
+**Why it happens, in one sentence for a non-engineer:** the classification is a judgement made by an AI model,
+and asking the same model the same question twice does not guarantee the same answer — this was **measured, not
+assumed** (`.claude/context/verified-facts.md`, V4; TDD OR-22).
+
+**What is *not* affected, and this is the important half.** The **scores hold.** The overall content score and
+every scorecard dimension were **identical** across repeated identical runs. **The numbers an agency would
+quote to a client are the stable part; the descriptive labels are the part that moves.** Anyone weighing how
+seriously to take this should weigh it against that.
+
+- **R-14.1.1 (binding, product behaviour)** A style classification that differs after a re-analysis is
+  **expected behaviour and is not evidence of a fault.** It must not be triaged as a defect, and no ticket
+  should be opened to "fix" it. A ticket that observes it should cite **R-14.1.1** and close.
+- **R-14.1.2 (binding, non-goal)** **No reconciliation machinery will be built.** Not versioned re-analysis
+  records, not retry-until-they-agree, not a best-of-three vote, not a "classification changed" alert. All
+  were considered and **declined** (§7; TDD OR-22; handoff §11). They would buy consistency in a field nobody
+  has complained about, at the price of multiplying the per-analysis AI spend on every single analysis.
+- **R-14.1.3** **The blast radius is genuinely small, and that is why this is tolerable.** An analysis runs
+  **once and is stored**. There is no background re-run and no cache-expiry path that could silently
+  reclassify a row. **The only way a user ever sees this is by pressing Re-analyze themselves.**
+- **R-14.1.4 (a requirement on whoever builds the style-fingerprint UI)** A style fingerprint **must not be
+  presented as a fixed, permanent fact about a creator.** It is the product's current reading of the posts
+  analysed so far. Wording that implies permanence — "this creator **is** a…" — is non-compliant; wording that
+  frames it as a current read, and that makes clear it is derived from the analysed set, is compliant. **The
+  exact wording is the designer's, per §13.8.**
+- **R-14.1.5** **This is not a licence to loosen anything else.** The classification labels drift; the
+  **performance layer does not**, because §5.2/OR-13 moved every mechanical field into code precisely so that
+  it cannot. Nothing in §14.1 weakens S3, AC-10, or the computed block's byte-identical guarantee.
+- **R-14.1.6** **Do not write a test asserting a classification is reproducible.** It would be a flaky test
+  asserting a claim we have measured to be false. (Restates AC-10; repeated here because this is the section
+  someone will actually be reading when they are tempted.)
+
+**AC-31 — The fingerprint does not claim permanence**
+*Given* a rendered style fingerprint,
+*When* its copy is inspected,
+*Then* no string presents the classification as a permanent or immutable property of the creator, and the
+surface makes clear the reading is derived from the posts analysed so far. Asserted by string search over the
+UI copy source plus a component test on rendered text.
+
+### 14.2 Tier 2 needs 5 comparable posts **per format bucket** — not 5 posts per creator
+
+**⚠️ This corrects a figure stated wrongly across the documentation. Earlier passages in this PRD, and the
+figure the 3C frontend tickets (#145–#149) were about to be built against, read as a flat "5 posts". That is
+wrong.** The corrected passages are §3.3, §4.6, AC-2, D4, §9.2 R4, §9.2 R7 and R-12.4.1.
+
+**The rule.** The "vs their usual" comparison (Tier 2) needs **5 analysed posts of the same format, by the same
+creator, on the same platform.** Reels count only against reels; carousels only against carousels. **Each pool
+reaches 5 independently. Nothing is borrowed, pooled or inherited between them.**
+
+**Why, in plain terms.** To say *"this post did 3× better than usual"* we compare a post against the creator's
+own past posts. But **reels and carousels are not measured in the same unit** — Instagram reports reels in
+**plays** and carousels in **views**. Those are different quantities. **R-4.3.2 forbids computing a ratio
+across two different reach kinds, and requires that any attempt to do so fails loudly rather than being
+quietly averaged.** So reels and carousels sit in separate baseline pools by construction, and each pool needs
+its own 5 before it can say anything.
+
+**The worked example — state this one, it is the case that gets filed as a bug.**
+
+> A creator has **4 reels and 4 carousels** analysed. That is **8 posts**. They get **no "vs their usual"
+> comparison at all** — not on the reels, not on the carousels — because **neither pool has reached 5.**
+
+**The consequence, stated rather than buried:** **someone posting a steady mix of formats waits considerably
+longer than someone who only posts reels.** A creator with 5 reels and nothing else has the comparison
+immediately; a creator alternating formats needs 10 posts to get it on both. That is a real cost and it is
+**accepted**.
+
+**The rationale, which is the owner's standing preference.** **A shaky comparison is worse than no
+comparison.** "3.2× their usual" is the single most quotable thing this product says — a strategist will put
+it in a client deck, and once it is there it cannot be corrected. A multiplier computed off two posts, or off
+a pool that quietly mixed plays with views, would look exactly as authoritative as a good one. **We would
+rather tell the user "not yet" than hand them a number we cannot defend.**
+
+- **R-14.2.1 (binding)** The Tier 2 minimum of 5 is counted **per format bucket** (`platform`, `content
+  kind`), **never per creator**. Each bucket qualifies independently.
+- **R-14.2.2 (binding)** Buckets never pool, borrow, substitute or fall back to one another. A creator's reel
+  baseline may **never** stand in for their carousel baseline, however sparse the carousel bucket is
+  (restates R-12.4.1 and AC-24 as a general rule).
+- **R-14.2.3 (settled — not an open question)** The threshold is **5 for every bucket**. **A lower threshold
+  for carousels was considered and declined** (handoff §11); **a minimum of 3 at low confidence was considered
+  and declined** (D4); **pooling formats was considered and declined** (§7). **Do not propose any of the three
+  again.** The single configurable constant `BASELINE_MIN_SAMPLE` exists for tuning, not for per-format
+  exceptions.
+- **R-14.2.4** The waiting state is **product behaviour, not an error state.** A creator below the threshold in
+  a bucket is a **normal, expected, temporary condition that resolves itself as more posts are analysed.** It
+  must never be rendered as a failure, a blank, an em-dash or a `0` (restates D3, R-8.4.3, R-13.5.4).
+- **R-14.2.5 (binding on 3C — cite this in tickets #145–#149)** **No empty-state, cold-start or
+  insufficient-history copy anywhere in the product may say "5 posts", or any other creator-level framing of
+  the threshold.** It sets an expectation the product will not meet, and **a user who has already analysed 8
+  posts and still sees "needs 5 posts" will read a correctly-working feature as broken.** The honest framing
+  must carry **all three** of:
+  1. **the format**, named in the user's words — carousels, reels, Shorts (the bucket noun of R-13.4.1 / OR-9);
+  2. **the progress**, so the user can see it moving — e.g. `3 of 5 carousels`;
+  3. **the reassurance that it resolves on its own**, so it does not read as a permanent limitation.
+  **The exact wording is the designer's** (§13.8, R-13.1.3). What is not negotiable is that the copy is
+  bucket-scoped and that the number the user sees is the number for **that format**.
+- **R-14.2.6** Where a user could reasonably expect the comparison to exist — a creator with plenty of posts
+  overall but few in this bucket — the product should make the **per-format** nature of the wait evident,
+  rather than leaving the user to infer that the tool is stuck. This is the §13.6 principle ("correct
+  underneath is not sufficient") applied to the cold start.
+- **R-14.2.7** The `5` in this copy remains a **configuration constant on the allow-list** (R-13.3.4, AC-27,
+  OR-10) and is **not** stored per row. Unchanged by this section; noted so nobody reconciles the two rules in
+  the wrong direction.
+
+**AC-32 — Two half-full buckets produce no comparison, and say so honestly**
+*Given* a creator with exactly 4 completed reel analyses and 4 completed all-image-carousel analyses in the
+same platform — 8 analysed posts in total,
+*When* a further post in **either** bucket is analysed and the table renders,
+*Then* `tierUsed` is **not** `CREATOR_BASELINE` for either bucket; **neither bucket's posts are used as a
+baseline for the other**; the cell renders an insufficient-history state rather than a blank, `0` or em-dash;
+and the rendered text names the **format** and shows the **per-format progress**. Component test on rendered
+text plus an assertion on the stored tier.
+
+**AC-33 — No cold-start copy states a creator-level threshold**
+*Given* the full set of user-facing copy strings for empty, cold-start and insufficient-history states,
+*When* they are searched,
+*Then* **no string** frames the threshold in creator-level or format-agnostic terms — no `5 posts`, no
+`5 analyses`, no `5 videos` on a carousel bucket — and every string that names the threshold also names the
+format it applies to. Asserted by string search over the UI copy source (R-14.2.5).
