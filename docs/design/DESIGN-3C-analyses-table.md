@@ -452,6 +452,9 @@ These are the ones I could not answer alone. **Questions 1, 5 and 6 were ruled o
 
 **What this sign-off does not cover**, recorded so that nobody reads it as broader than it is:
 
-- **§13 — the explainability surfaces are signed off separately** in the companion spec's own record, which is **still empty**. That document remains PROPOSED. Every user-facing string this table renders lives there.
+- **§13 — the explainability surfaces are signed off separately** in the companion spec's own record. Every user-facing string this table renders lives there.
+
+  > **Corrected 2026-08-07, after this sign-off was recorded.** As approved, this bullet continued: *"…in the companion spec's own record, **which is still empty**. That document remains PROPOSED."* **That was true when the owner approved this document** — 3C was signed off before 3B — and it is **now superseded**: [`DESIGN-3B-score-explainability.md`](./DESIGN-3B-score-explainability.md) was signed off by the owner on **2026-08-07** and merged in **PR #165** (`main` @ `642f2e5`); its **§10** carries the full record. Recorded as a superseded statement rather than a silent rewrite, so the reason it was written stays legible. **The exclusion itself is unchanged** — this sign-off still does not extend to §13; the companion document is signed off in its own record, on its own terms.
+
 - The remaining items in **§11** on which no ruling is recorded here: the Status-column cut (Q2), the Style column's default state (Q3), and whether the 1–5 performance score belongs in the table at all (Q4). They are implemented as this document proposes, but they are not signed off.
 - **R-N1's data dependency** (§5.4's engineering consequence). If the resolver does not carry the reach value and kind, `REACH_NOT_ON_FIRST_SLIDE` must not render at all. Approving the design does not approve shipping the state without its figure.
