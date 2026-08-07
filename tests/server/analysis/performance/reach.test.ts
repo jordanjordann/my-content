@@ -105,6 +105,40 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
     expect(result.someSlideHasReach).toBe(true);
   });
 
+  it("OR-26 / PR #158 review — SYNTHETIC MUTANT: mixed carousel with an image at slide 0 and every later video slide's counts nulled out resolves NONE with someSlideHasReach FALSE — merely carrying the reach KEYS on a later slide must not fabricate REACH_NOT_ON_FIRST_SLIDE when none of those slides has a usable number", () => {
+    // Same reordering as the mutant above (proves the interleaved shape is
+    // real, witnessed data, not a hypothesis) but additionally nulls out
+    // every remaining video slide's video_view_count/video_play_count. The
+    // keys are still PRESENT (hasReachFields would still say true for all
+    // of them) — only the VALUES are unusable. This is exactly the
+    // regression the owner's ruling on PR #158 flagged: a presence-only
+    // check flips someSlideHasReach true here; the fix must not.
+    const media = loadMedia("ig_carousel_mixed_video_and_image_10_slides.json");
+    const cloned = structuredClone(media) as ScrapeCreatorsMedia & {
+      edge_sidecar_to_children: {
+        edges: Array<{ node: Record<string, unknown> & { is_video: boolean } }>;
+      };
+    };
+    const edges = cloned.edge_sidecar_to_children.edges;
+    const slide0 = edges[0]!;
+    const slide5 = edges[5]!;
+    edges[0] = slide5;
+    edges[5] = slide0;
+    for (const edge of edges) {
+      if (edge.node.is_video) {
+        edge.node.video_view_count = null as unknown as number;
+        edge.node.video_play_count = null as unknown as number;
+      }
+    }
+
+    const result = resolveInstagramReach(cloned);
+
+    expect(result.derivedFrom).toBe("NONE");
+    expect(result.value).toBeNull();
+    expect(result.kind).toBeNull();
+    expect(result.someSlideHasReach).toBe(false);
+  });
+
   it("OR-20 negative assertion — reach is never negative for any committed Instagram fixture", () => {
     for (const file of fs.readdirSync(fixturesDir)) {
       // ig_profile_business_account.json is a /v1/instagram/profile capture
@@ -167,6 +201,17 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
     // OR-26 / #155: this is exactly case 2 — slide 0 has no reach fields
     // but a later slide does — so the boolean must flag it.
     expect(result.someSlideHasReach).toBe(true);
+  });
+
+  it("OR-26 / PR #158 review — a later slide carrying the reach KEYS but only unusable values (both null) is NOT usable — someSlideHasReach stays false, distinguishing it from the genuinely-usable-later-slide case above", () => {
+    const media = makeCarousel([
+      makeImageChild(),
+      makeVideoChild({ video_view_count: null as unknown as number, video_play_count: null }),
+    ]);
+
+    const result = resolveInstagramReach(media);
+    expect(result.derivedFrom).toBe("NONE");
+    expect(result.someSlideHasReach).toBe(false);
   });
 
   it("R-4.3.1 — a carousel first slide corroborated at exactly 0 is a genuine ZERO labelled VIEWS, never PLAYS — the child's authoritative field is video_view_count, not video_play_count", () => {

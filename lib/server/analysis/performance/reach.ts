@@ -88,6 +88,28 @@ function resolveNodeReach(
   return { value: null, kind: "UNKNOWN", state: "UNKNOWN" };
 }
 
+/**
+ * OR-26 / #155 / owner ruling on PR #158's code review. `someSlideHasReach`
+ * must mean "a later slide yields a genuinely usable number", not merely
+ * "a later slide carries the reach keys" — `hasReachFields` alone is
+ * presence-only and is flipped `true` by a video child whose
+ * `video_view_count` is `null`/unusable, which would make ticket #143 write
+ * `REACH_NOT_ON_FIRST_SLIDE` ("the count is on a later slide") for a slide
+ * that has no count at all. Reuses `resolveNodeReach(node, "view")` — the
+ * SAME resolution path that already rejects the false-zero pattern
+ * (`ig_reel_1_zero_view_count.json`) and already applies the child
+ * authority reversal (divergence 13: carousel children trust
+ * `video_view_count`, never `video_play_count`) — rather than inventing a
+ * second, independent definition of "usable" that would walk straight past
+ * cases the existing resolver already handles correctly. `AVAILABLE` and
+ * `ZERO` both count as usable (a corroborated zero is a real fact, R-4.3.1);
+ * only `UNKNOWN` does not.
+ */
+function childHasUsableReach(node: ScrapeCreatorsCarouselChildNode): boolean {
+  const resolved = resolveNodeReach(node, "view");
+  return resolved.state === "AVAILABLE" || resolved.state === "ZERO";
+}
+
 function noneResult(someSlideHasReach = false): ReachResult {
   return { value: null, kind: null, state: "UNKNOWN", derivedFrom: "NONE", someSlideHasReach };
 }
@@ -126,7 +148,14 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
       // reach field" from "slide 0 doesn't, but a later slide does" —
       // the latter is a live reach fact D4's first-slide rule never
       // consulted, not a permanent content-kind limitation.
-      const someSlideHasReach = children.some(hasReachFields);
+      //
+      // Owner ruling on PR #158's review: presence of the reach KEYS is not
+      // enough — a later video slide with e.g. `video_view_count: null`
+      // must not flip this to `true` (that would make #143 fabricate
+      // `REACH_NOT_ON_FIRST_SLIDE` for a slide with no usable number). Only
+      // a slide `resolveNodeReach` actually resolves to AVAILABLE/ZERO
+      // counts.
+      const someSlideHasReach = children.some(childHasUsableReach);
       return noneResult(someSlideHasReach);
     }
 
