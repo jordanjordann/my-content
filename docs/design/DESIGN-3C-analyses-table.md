@@ -8,6 +8,17 @@
 **Companion:** [`DESIGN-3B-score-explainability.md`](./DESIGN-3B-score-explainability.md) — the explainability surfaces, including every copy string this table renders. **The two documents are one design; read both.**
 **Precedent it must not contradict:** [`DESIGN-engagement-count-display-states.md`](./DESIGN-engagement-count-display-states.md) — the four count states (`Hidden` / `0` / `—` / `N plays`) are already owner-confirmed and are **reused verbatim** here. This document does not invent a second visual language for "the count is missing."
 
+### Amendment record
+
+| # | Date | What changed | Why |
+|---|---|---|---|
+| **A1** | 2026-08-07 | **Cold-start copy is bucket-scoped, never creator-scoped.** The bare `3 of 5` in §2.2 is withdrawn; the state is fully specified in the new **§5.3**. | **R-14.2.5 / R-8.4.9** (PRD §14.2, merged in PR #160) forbid any cold-start string that says "5 posts" or otherwise frames the threshold per creator. The bare figure told a creator with 8 analysed posts something false about what they were waiting for. |
+| **A2** | 2026-08-07 | **New absent-reason state `REACH_NOT_ON_FIRST_SLIDE`**, fully specified in the new **§5.4**, with a new rule **R-D4** in §4.1. | Raised by code review on PR #161, on top of **OR-26** (TDD §0, §3.1, §5.3). The sentence "the count is on a later slide" is a non-answer without the count beside it — and a non-answer is what **R-13.5.3a** exists to forbid. |
+
+**Neither amendment reopens a settled decision.** The column set, density, sort behaviour and the Direction A engagement split are unchanged. Both are copy/state corrections consequent on rules ruled on *after* the mockup review, and §5.3 largely brings this document into line with what the mockup already drew.
+
+⚠️ **Note for the owner, not acted on here:** the status header above still reads *PROPOSED — NOT APPROVED* and §12's sign-off record is still empty, but `docs/HANDOFF-2026-08-06.md` §"Design / table (3C)" records the design as **approved, 12 columns cut to 9, engagement split Direction A**. That is a stale header, not a live question — but **recording an approval is the owner's act, not the designer's**, so I have left both untouched and am flagging them instead.
+
 ---
 
 ## 1. What this document decides, and what it does not
@@ -15,6 +26,8 @@
 **Decides:** which columns exist by default and which are cut, how the two non-comparable engagement percentages are separated, how a 1–5 performance score renders inside a small cell, sort and filter behaviour, row density, and the empty/loading/error states.
 
 **Does not decide:** the scoring model (PRD §3, confirmed), the stored contract (PRD §5, confirmed), or any copy string — every user-facing string lives in the companion explainability spec so that there is exactly one place to change wording.
+
+**Exception, from amendments A1 and A2:** §5.3 and §5.4 do state exact wording, because in both cases the *structure* of the sentence is the requirement — a figure that can be separated from its format noun, or a diagnosis that can be rendered without its figure, is non-compliant however it is worded. **The companion spec remains the single home for these strings and must be updated to match in the same pass** (its §3, §5 row 5, and the §9 constants note still carry the withdrawn bare `3 of 5`). Where the two documents disagree, this one is the newer and the companion is the one to fix.
 
 **Scope constraints inherited and not reopened:**
 
@@ -57,7 +70,7 @@ Left to right, at a 1440px viewport:
 | 4 | **Counts** | 132px | yes (by reach) | Reach + its kind word (`plays` / `views`) using the shipped four states; likes · comments on line 2 |
 | 5 | **Content** score | 84px | yes | 1–5 numeral + pips. Header group "Scores" shared with #6. |
 | 6 | **Performance** | 156px | yes | 1–5 numeral + pips, tier phrase, confidence word, **or** the plain-language absent reason. Carries the row's one explain affordance. |
-| 7 | **vs their usual** | 128px | yes | Tier 2 multiplier `3.2×` + `based on 7 reels`, **or** the cold-start progress `3 of 5` |
+| 7 | **vs their usual** | 128px | yes | Tier 2 multiplier `3.2×` + `based on 7 reels`, **or** the bucket-scoped cold-start state (§5.3) — **never a bare `3 of 5`**, which is the R-14.2.5 violation this column is most likely to reintroduce |
 | 8 | **Eng. / reach** | 116px | yes | `4.1%` + `of 116.3K plays` |
 | 9 | **Eng. / followers** | 124px | yes | `≈4.0%` + `of 284K followers` |
 | — | *Style* (optional) | 150px | no | `formatArchetype` + `hookType` badges. Off by default. |
@@ -95,9 +108,9 @@ Two density modes. **Comfortable is the default** because §13.7's requirements 
 
 ### 3.2 Compact — 40px rows (opt-in)
 
-Row padding halves and the non-load-bearing second lines drop out. **What Compact loses:** the caption snippet, the platform word (the creator handle stays), and the likes/comments line. **What Compact keeps, unconditionally:** every denominator qualifier (`of 482.1K views`, `of 284K followers`), every tier phrase, every confidence word, every `based on N …`, every cold-start progress figure, the `Early` badge, the post age, and every absent-score reason.
+Row padding halves and the non-load-bearing second lines drop out. **What Compact loses:** the caption snippet, the platform word (the creator handle stays), and the likes/comments line. **What Compact keeps, unconditionally:** every denominator qualifier (`of 482.1K views`, `of 284K followers`), every tier phrase, every confidence word, every `based on N …`, every cold-start progress figure **with its format noun attached** (§5.3 — the noun is not an optional decoration on the figure, it is the half of it that makes it true), the `Early` badge, the post age, and every absent-score reason **including any figure that reason cites** (§5.4).
 
-**Rule: no density mode may drop a denominator, a tier, a sample size, a provisional badge, or an absent-score reason.** If it cannot fit them, it is not a legal density mode. The mockup shows Compact obeying this.
+**Rule: no density mode may drop a denominator, a tier, a sample size, a provisional badge, an absent-score reason, a format noun, or a figure an absent-score reason refers to.** If it cannot fit them, it is not a legal density mode. The mockup shows Compact obeying this.
 
 ### 3.3 The failed / non-completed row
 
@@ -156,6 +169,7 @@ Direction B is in the mockup under the toggle so the trade-off is visible and re
 - **R-D1** No aggregate, total, average or "typical engagement" row exists anywhere in this table, in either direction (R-12.3.3). Where a user might reasonably expect one, the table footer says so in words: `No totals — these posts are measured against different things.` (R-13.6.3.)
 - **R-D2** Any future CSV/export inherits the qualifier as its own column. A percentage that leaves this product without its denominator is the failure this whole section exists to prevent (PRD §13.7). Export is not in 3C scope; this is a standing constraint.
 - **R-D3** A video-bearing carousel is reach-denominated but its reach is **derived from the first slide** (D4). Its qualifier reads `of 88.2K views · first slide only`, and it is the one reach-denominated figure whose confidence is one level lower. It sits in the reach column — it belongs there — but it must not read as an unqualified per-post reach.
+- **R-D4** *(amendment A2)* The **mirror case of R-D3** — first slide is an image, a later slide has the count (`REACH_NOT_ON_FIRST_SLIDE`, §5.4) — has **no** reach-denominated figure and its `Eng. / reach` cell renders the reason `no post-level reach`. The later slide's count appears **once**, in the Performance cell, attached to the sentence that says what it is. **It must never appear in the Counts column, in either engagement column, or in any export**, because a figure in any of those positions is a per-post reach claim, and this row has no per-post reach.
 
 ---
 
@@ -192,6 +206,85 @@ This is the second-hardest thing in the table, and it has three traps.
 
 The badge reads `Early` with the age immediately beside it (`2d ago · Early`). Copy and the a11y string are in the companion spec §6, including the R-13.4.4 constraint that **no string anywhere may imply the maturity floor is a measured threshold**.
 
+### 5.3 Cold start — the `vs their usual` cell while a format bucket is still filling *(amendment A1)*
+
+**This supersedes the bare `3 of 5` this document previously showed.** PRD **§14.2** is binding: the Tier 2 minimum of 5 is counted **per format bucket**, never per creator, because reels are measured in plays and carousels in views and **R-4.3.2 forbids a ratio across two reach kinds**, so the pools never combine. The case that decides the copy: **a creator with 4 reels and 4 carousels has 8 analysed posts and gets no comparison on either.** A bare `3 of 5` in front of that user is not merely terse — it is a false statement about what they are waiting for, and it is the string that makes a correctly-working feature read as broken.
+
+**The design requirement, then, is not "add a noun". It is that the figure and the noun are one atom and must never be separated** — a `2 of 5` that can be rendered without `carousels` is a bug waiting for a narrow column, exactly the way §13.5.4's explanations were going to get ellipsised.
+
+#### The cell, at 128px
+
+```
+ 2 of 5 carousels        ← the progress, format-scoped. The noun is not optional.
+ builds as you           ← the reassurance. Wraps to two lines at 128px; that is fine.
+ analyse more            
+```
+
+**Line 1 — `2 of 5 carousels`.** The format noun is the bucket noun of R-13.4.1 / OR-9, in the user's words (`carousels`, `reels`, `Shorts`), **pluralised and lowercase**, sitting inside the same phrase as the number so that no truncation, no density mode and no future width tweak can separate them. `2 of 5` and `carousels` are never in separate elements that could wrap apart or be independently hidden.
+
+**Line 2 — `builds as you analyse more`.** This is R-14.2.5's third mandatory element, the reassurance that it resolves on its own, and **it is in the cell, not in the popover.** R-13.6.2 forbids hover-gating information, and "is this permanent or temporary?" is precisely the question the user is asking at the moment they read the cell. A user who never opens the popover must still learn that this state ends.
+
+**Neither line is styled as a failure (R-14.2.4).** No rose, no warning glyph, no `—`, no `0`, no empty cell. Both lines are `text-muted-foreground` at full opacity — the same treatment as every other line-2 qualifier in the table (§9.2, **7.91 / 7.73 / 7.35 / 6.78** against background / card / hover / muted). **No new colour value is introduced by this state**, deliberately: a waiting state that needed its own colour would be a waiting state that had been designed as an alert.
+
+#### The full sentence, in the popover
+
+> `“vs their usual” compares this post against the same creator's own past carousels. Carousels and reels are measured in different units — views and plays — so they're counted separately and never pooled. @dapurbunda has 2 of 5 carousels analysed so far. The comparison appears on its own once the fifth is in.`
+
+The second sentence is **R-14.2.6**: it is what stops a creator with plenty of posts overall concluding the tool is stuck. It names the mechanism in the user's terms — different units — rather than asserting a rule they have to take on trust.
+
+#### Rules binding on this state
+
+- **R-C1** No string in this table, in any state, at any density, in any popover, empty state, filter label, sink label or tooltip, may frame the threshold at creator level. **The literal string `5 posts` must not appear**, nor any paraphrase of it (`5 analysed posts`, `five posts`, `needs 5 more posts`). Every occurrence of the threshold carries its format noun. This is directly assertable by string search (PRD S9 / AC-33) and should be.
+- **R-C2** The `5` remains a configuration constant on the R-13.3.4 allow-list (**R-14.2.7**). It is read from config for display; it is **not** stored per row, and the copy must not hard-code it.
+- **R-C3** The count in the cell is **the count for that bucket**, never the creator's total analysed posts. Rendering a creator-level count in a bucket-scoped sentence is the same failure as the bare `3 of 5`, one layer down.
+- **R-C4** This is a **partial** absence, not an absent score. A cold-start row may still carry a Tier 1 or Tier 3 performance score; only the `vs their usual` cell is waiting. It therefore **does not** move to the sink group under the default sort, and its Performance cell renders normally.
+
+### 5.4 `REACH_NOT_ON_FIRST_SLIDE` — the count exists, on a slide we did not read *(amendment A2)*
+
+New state, from **OR-26** (TDD §0, §3.1, §5.3) and the PR #161 review. The situation: a carousel whose cover slide is an image. D4's rule reads reach from slide 0, finds neither reach key, and derives nothing — but a **later slide carries a real play or view count**. `derivedFrom` stays `NONE`; `unavailableReason` is `REACH_NOT_ON_FIRST_SLIDE`, which splits this off from `CONTENT_KIND_UNSUPPORTED` ("this post type doesn't report counts" — true for an all-image carousel, **false here**).
+
+**The constraint, and it is the whole of this section: the figure appears alongside the sentence, or the state is not shown at all.**
+
+> `Reach isn't on slide 1` / `a later slide: 0 views` is honest.
+> `The count is on a later slide` is a **non-answer** — and at `0` it is worse than a non-answer, because the user is left assuming a number was withheld when in fact it was measured and it is zero.
+
+**Zero is a measurement here, not missing data**, and must read as one. That is the same discipline as the shipped `0` count state in `DESIGN-engagement-count-display-states.md`, and this state reuses it rather than inventing a second language for it.
+
+#### The Performance cell, at 156px
+
+```
+ Reach isn't on slide 1
+ a later slide: 0 views  ⓘ
+```
+
+- Line 1 names **where we looked** and says plainly that the number is not there. `slide 1` rather than `the first slide` for width; the table already uses one-based slide language in the Content column's `Carousel ×10` overlay.
+- Line 2 carries **the figure and its kind word**, in the same phrase. `0 views`, `234.1K views`, `18.4K plays` — whichever the later slide actually reports.
+- The `ⓘ` sits at the end of line 2, the row's single explain affordance as always (§5.1).
+- Both lines `text-muted-foreground` at full opacity — **7.73:1 on card**, 7.91 / 7.35 / 6.78 on background / hover / muted (§9.2). **No new colour, no new component, no new width.** This state is a reason like any other reason and is styled identically to the two that already ship in the mockup.
+
+#### The other cells on this row
+
+| Cell | Renders | Why |
+|---|---|---|
+| **Counts (#4)** | `—` / `no reach on slide 1` | The post's reach is genuinely underived. **The later slide's count must not appear here**, because this column is sortable by reach and a number in it would be sorted, exported and read as *the post's* reach. It is not — it is one slide's. The figure appears exactly once, in the Performance cell, where it is attached to the sentence that says what it is. |
+| **vs their usual (#7)** | `no reach to compare` | No reach, no multiplier. Sinks under R-S1. |
+| **Eng. / reach (#8)** | `—` / `no post-level reach` | Distinct from the image-carousel row's `not published for image posts` — this post **does** publish counts, so that string would be false here (R-13.5.2 forbids collapsing these two). |
+| **Eng. / followers (#9)** | the follower ratio, if audience size is known | Unaffected by where reach lives. |
+
+#### The full sentence, in the popover
+
+> `This carousel's first slide is an image, so there's no view count where the score reads it. A later slide does report one — 0 views — but the score uses the first slide only, so this post has no reach figure and no performance comparison. This isn't a missing number: it's a number in a place we don't read.`
+
+#### Rules binding on this state
+
+- **R-N1 (binding — the figure is not optional)** The figure and its kind word are **required** whenever this state renders. If the value is unavailable to the UI, **this state must not be rendered**; the row falls back to `CAUSE_NOT_DETERMINABLE` and its existing copy. A bare "the count is on a later slide", with no count, must never ship — it is a fabricated-adjacent diagnosis of exactly the class **R-13.5.3a** exists to forbid, and it is the sentence the PR #161 review objected to.
+- **R-N2 (binding — R-4.3.1)** The kind word must match the key the later slide actually carries: `video_play_count` → **plays**, `video_view_count` → **views**. A play count is **never** labelled "Views". If the kind cannot be established, **R-N1 applies** — degrade to `CAUSE_NOT_DETERMINABLE` rather than print an unlabelled number. There is no `UNKNOWN`-kind rendering of this state, because "a later slide reports 234,050 of something" is not a sentence worth showing anyone.
+- **R-N3** If **more than one** later slide carries a count, the cell shows the count of the **first slide that carries one**, and the popover says which: `slide 6 of 10`. It must **never** show a sum, a maximum or a mean across slides — that would be a per-post reach figure we have explicitly declined to compute (D4, R-D3), reintroduced through the back door of an error message.
+- **R-N4** The slide index is a **nice-to-have, not a requirement**. If the resolver carries it, the cell reads `slide 6: 0 views` and the popover names it; if not, `a later slide: 0 views` is fully compliant. The design must not be built such that a missing index suppresses the figure.
+- **R-N5** This state **never** uses the failed-row treatment (§3.3). Nothing failed. It is a completed analysis with a reach figure we deliberately do not consult.
+
+> **Engineering consequence, flagged rather than assumed.** TDD §3.1's ruling gives `ReachResult` **one additive boolean** (`children.some(hasReachFields)`). **A boolean cannot satisfy R-N1.** For this state to render at all, the resolver must carry forward **the value and its reach kind** (and, optionally, the slide index) — not merely the fact that one exists. That is a change to ticket **#155**'s scope, and **#143** depends on it. If it is not carried, R-N1 binds and this state must not ship: the honest fallback is `CAUSE_NOT_DETERMINABLE`, which is worse product but not a false one.
+
 ---
 
 ## 6. Sorting, filtering, search
@@ -207,6 +300,13 @@ Three rules, all of which have precedent in this repo and none of which is new i
 - **R-S3 — No sort mixes denominators.** In Direction A this is free. In Direction B, sorting the engagement column requires choosing a denominator and pushes the other denominator's rows into the sink group with the label `12 posts measured against followers — not comparable in this ordering`.
 
 **Sorting `vs their usual`** sinks every row without Tier 2, and the sink label distinguishes *no history yet* from *wrong bucket* — those are different facts and R-13.5.2 forbids collapsing them.
+
+**Sink labels are bucket-honest too (R-C1).** A sink label is a cold-start string like any other and is the easiest place for a creator-level framing to survive a copy audit of the cells. The labels read:
+
+- `9 posts waiting on more of the same format — reels and carousels build up separately`
+- **not** `9 posts with fewer than 5 analysed posts`, and **not** any variant naming a count without its format.
+
+The second clause is doing real work: it is where a user sorting this column learns *why* a creator with a full library still has rows down here (**R-14.2.6**).
 
 ### 6.2 Filtering
 
@@ -269,6 +369,8 @@ Surfaces measured against: `--background` `#02060f`, `--card` `#030a17`, row-hov
 | Performance numeral | `text-primary` `#8092e7` | 6.94 | 6.78 | 6.45 | 5.95 | pass |
 | Failed-row text | rose `#fda4af` | 10.72 | 10.48 | 9.97 | 9.19 | pass |
 
+**Amendments A1 and A2 add no colour values.** Both new states (§5.3, §5.4) render entirely in the **Line-2 qualifier** row of the table above — `text-muted-foreground` at full opacity, **7.91 / 7.73 / 7.35 / 6.78** against background / card / hover / muted, all ≥ 4.5:1. That is deliberate and load-bearing in two directions: the cold-start state must not be styled as an alert (**R-14.2.4**), and the reach state must not be styled as a failure (**R-N5**). If either state acquires a colour treatment later, it needs its own row here with all four ratios re-measured — and it should first have to argue why a normal waiting state needs a colour the other reasons do not.
+
 **Hard rule: qualifier text is `text-muted-foreground` at FULL opacity.** Not `/70` (4.42:1 vs background — fails), not `/80` (5.53:1 — passes but has no margin and is the exact value that had to be patched in PR #113). Any opacity modifier on a text token in this table must be re-measured against all four surfaces before it ships.
 
 ### 9.3 Badges (tinted-background pattern)
@@ -303,6 +405,8 @@ Checkable claim: **printed in greyscale, this table loses nothing.** Every disti
 | provisional | the word `Early` |
 | failed row | the words `Analysis failed` + the reason |
 | absent score | a full plain-language sentence |
+| cold start vs. a real absence | the words `2 of 5 carousels` and `builds as you analyse more` — a progress figure, not a treatment |
+| count on a later slide vs. no count at all | the figure itself, with its kind word (`0 views` vs `no counts published`) |
 
 ---
 
@@ -313,6 +417,8 @@ Checkable claim: **printed in greyscale, this table loses nothing.** Every disti
 - **Score cells** announce as `Performance 4 out of 5, compared to their usual, high confidence`. Pips are `aria-hidden`.
 - **Engagement cells** announce the number and its denominator **in one phrase** — `4.1 percent of 482,100 views`, not `4.1 percent` followed by a detached label. Same discipline already applied to State 4's `plays` label.
 - **Absent cells** announce the full reason sentence. An absent score must never announce as empty.
+- **The cold-start cell (§5.3)** announces as one phrase, format noun included: `2 of 5 carousels analysed — this comparison builds as you analyse more`. It must never announce as `2 of 5`, which is meaningless read aloud with no column context.
+- **The `REACH_NOT_ON_FIRST_SLIDE` cell (§5.4)** announces the figure and its kind in the same phrase as the sentence: `Reach isn't on slide 1 — a later slide reports 0 views`. **`0` is announced as a number, never skipped**; a screen-reader user must not be able to come away thinking the count was absent.
 - **The explain affordance** has an accessible name phrased as the question it answers — `How was this score worked out?` — so a screen-reader user knows what opening it gets them.
 - **No information anywhere is hover-only.** This is a correctness constraint (R-8.4.7, R-13.6.2), and it is also what makes the table usable by keyboard at all.
 
