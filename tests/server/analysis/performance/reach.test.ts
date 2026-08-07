@@ -32,7 +32,7 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
       kind: "PLAYS",
       state: "AVAILABLE",
       derivedFrom: "TOP_LEVEL",
-      someSlideHasReach: false,
+      laterSlideReach: { usable: false },
     });
   });
 
@@ -46,7 +46,7 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
       kind: "VIEWS",
       state: "AVAILABLE",
       derivedFrom: "CAROUSEL_FIRST_SLIDE",
-      someSlideHasReach: false,
+      laterSlideReach: { usable: false },
     });
   });
 
@@ -60,7 +60,7 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
       kind: null,
       state: "UNKNOWN",
       derivedFrom: "NONE",
-      someSlideHasReach: false,
+      laterSlideReach: { usable: false },
     });
   });
 
@@ -76,10 +76,10 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
     // §3.1): a single image post is metadata_only, not images_only, so a
     // reader keyed off analysis_mode would misread this as case 2. It is
     // case 1 — no node anywhere carries a reach field.
-    expect(result.someSlideHasReach).toBe(false);
+    expect(result.laterSlideReach).toEqual({ usable: false });
   });
 
-  it("OR-26 / #155 — SYNTHETIC MUTANT: a real mixed carousel with its slide-5 image reordered to index 0 resolves NONE with someSlideHasReach true", () => {
+  it("OR-26 / #155 / DESIGN-3C §5.4 — SYNTHETIC MUTANT: a real mixed carousel with its slide-5 image reordered to index 0 resolves NONE, and laterSlideReach carries the FIRST usable later slide's own value/kind/index (R-N2/R-N3), not just a flag", () => {
     // No committed fixture has an image at slide 0 with a video later.
     // `ig_carousel_mixed_video_and_image_10_slides.json` proves this shape
     // is real (images and videos interleave arbitrarily within one
@@ -87,6 +87,13 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
     // test just reorders slides 0 and 5 of that SAME captured payload via
     // deep clone, so it is a reordering of witnessed data, not a
     // hypothesis. No API credits used or authorised for this ticket.
+    //
+    // After the swap: index 0 is the (unusable) image, index 1 is the
+    // ORIGINAL index-1 video slide (video_view_count: 163868, witnessed in
+    // the raw fixture) — the first usable later slide — and index 5 is the
+    // original index-0 video slide (234050 views). R-N3 requires the FIRST
+    // usable slide (index 1, value 163868), never a sum/max/mean across the
+    // several usable slides this carousel actually has.
     const media = loadMedia("ig_carousel_mixed_video_and_image_10_slides.json");
     const cloned = structuredClone(media) as ScrapeCreatorsMedia & {
       edge_sidecar_to_children: { edges: Array<{ node: Record<string, unknown> }> };
@@ -102,17 +109,22 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
     expect(result.derivedFrom).toBe("NONE");
     expect(result.value).toBeNull();
     expect(result.kind).toBeNull();
-    expect(result.someSlideHasReach).toBe(true);
+    expect(result.laterSlideReach).toEqual({
+      usable: true,
+      value: 163_868,
+      kind: "VIEWS",
+      slideIndex: 1,
+    });
   });
 
-  it("OR-26 / PR #158 review — SYNTHETIC MUTANT: mixed carousel with an image at slide 0 and every later video slide's counts nulled out resolves NONE with someSlideHasReach FALSE — merely carrying the reach KEYS on a later slide must not fabricate REACH_NOT_ON_FIRST_SLIDE when none of those slides has a usable number", () => {
+  it("OR-26 / PR #158 review — SYNTHETIC MUTANT: mixed carousel with an image at slide 0 and every later video slide's counts nulled out resolves NONE with laterSlideReach { usable: false } — merely carrying the reach KEYS on a later slide must not fabricate a figure when none of those slides has a usable number (R-N1)", () => {
     // Same reordering as the mutant above (proves the interleaved shape is
     // real, witnessed data, not a hypothesis) but additionally nulls out
     // every remaining video slide's video_view_count/video_play_count. The
     // keys are still PRESENT (hasReachFields would still say true for all
     // of them) — only the VALUES are unusable. This is exactly the
     // regression the owner's ruling on PR #158 flagged: a presence-only
-    // check flips someSlideHasReach true here; the fix must not.
+    // check would fabricate a figure here; the fix must not.
     const media = loadMedia("ig_carousel_mixed_video_and_image_10_slides.json");
     // `Omit<..., "edge_sidecar_to_children">` (not a plain intersection) so
     // the declared `Record<string, unknown>` node shape is authoritative
@@ -151,7 +163,7 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
     expect(result.derivedFrom).toBe("NONE");
     expect(result.value).toBeNull();
     expect(result.kind).toBeNull();
-    expect(result.someSlideHasReach).toBe(false);
+    expect(result.laterSlideReach).toEqual({ usable: false });
   });
 
   it("OR-20 negative assertion — reach is never negative for any committed Instagram fixture", () => {
@@ -190,7 +202,7 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
       kind: "PLAYS",
       state: "ZERO",
       derivedFrom: "TOP_LEVEL",
-      someSlideHasReach: false,
+      laterSlideReach: { usable: false },
     });
   });
 
@@ -205,7 +217,7 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
     expect(result.derivedFrom).toBe("TOP_LEVEL");
   });
 
-  it("a carousel whose first slide (index 0) is an image with a later video slide still resolves NONE — the rule is literally the FIRST slide, not the first video slide", () => {
+  it("a carousel whose first slide (index 0) is an image with a later video slide still resolves NONE — the rule is literally the FIRST slide, not the first video slide — and laterSlideReach carries that later slide's own value/kind/index", () => {
     const media = makeCarousel([
       makeImageChild(),
       makeVideoChild({ video_view_count: 999 }),
@@ -213,12 +225,18 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
 
     const result = resolveInstagramReach(media);
     expect(result.derivedFrom).toBe("NONE");
-    // OR-26 / #155: this is exactly case 2 — slide 0 has no reach fields
-    // but a later slide does — so the boolean must flag it.
-    expect(result.someSlideHasReach).toBe(true);
+    // OR-26 / #155 / R-N2: this is exactly case 2 — slide 0 has no reach
+    // fields but a later slide does, with a genuinely usable value — so the
+    // figure and its kind must travel together, at the later slide's index.
+    expect(result.laterSlideReach).toEqual({
+      usable: true,
+      value: 999,
+      kind: "VIEWS",
+      slideIndex: 1,
+    });
   });
 
-  it("OR-26 / PR #158 review — a later slide carrying the reach KEYS but only unusable values (both null) is NOT usable — someSlideHasReach stays false, distinguishing it from the genuinely-usable-later-slide case above", () => {
+  it("OR-26 / PR #158 review — a later slide carrying the reach KEYS but only unusable values (both null) is NOT usable — laterSlideReach stays { usable: false }, distinguishing it from the genuinely-usable-later-slide case above", () => {
     const media = makeCarousel([
       makeImageChild(),
       makeVideoChild({ video_view_count: null, video_play_count: null }),
@@ -226,12 +244,12 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
 
     const result = resolveInstagramReach(media);
     expect(result.derivedFrom).toBe("NONE");
-    expect(result.someSlideHasReach).toBe(false);
+    expect(result.laterSlideReach).toEqual({ usable: false });
   });
 
-  it("PR #161 review R1 — a later slide corroborated at exactly 0 (both fields 0) counts as usable, someSlideHasReach TRUE — pins the ZERO clause in childHasUsableReach against deletion", () => {
+  it("PR #161 review R1 — a later slide corroborated at exactly 0 (both fields 0) counts as usable, laterSlideReach carries figure 0 with kind VIEWS — pins the ZERO clause against deletion (R-N1: 0 is a real measurement, not a missing figure)", () => {
     // This is the single judgement call this PR exists to make: `ZERO` is
-    // usable, same as `AVAILABLE`. If `childHasUsableReach` were narrowed to
+    // usable, same as `AVAILABLE`. If the resolver were narrowed to
     // `resolved.state === "AVAILABLE"` (dropping the `|| state === "ZERO"`
     // clause), this test is the one that would fail — see the mutation
     // proof in the PR thread.
@@ -242,18 +260,23 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
 
     const result = resolveInstagramReach(media);
     expect(result.derivedFrom).toBe("NONE");
-    expect(result.someSlideHasReach).toBe(true);
+    expect(result.laterSlideReach).toEqual({
+      usable: true,
+      value: 0,
+      kind: "VIEWS",
+      slideIndex: 1,
+    });
   });
 
-  it("PR #161 review R2 — a later slide's false zero (video_view_count: 0 beside a real non-zero video_play_count) is NOT usable, someSlideHasReach FALSE — pins the ig_reel_1_zero_view_count.json false-zero rejection on the CHILD path, not just the top-level path AC-4 already covers", () => {
+  it("PR #161 review R2 — a later slide's false zero (video_view_count: 0 beside a real non-zero video_play_count) is NOT usable, laterSlideReach { usable: false } — pins the ig_reel_1_zero_view_count.json false-zero rejection on the CHILD path, not just the top-level path AC-4 already covers", () => {
     // The child's authoritative field is video_view_count (divergence 13),
     // and here it reads 0 while video_play_count — a field this node is NOT
     // authoritative for — is a real non-zero count. resolveNodeReach must
     // not corroborate a ZERO from a field it isn't authoritative for, and
     // must not treat the authoritative-but-zero field as usable without
     // that corroboration. Without this pin, nothing in the child path
-    // exercises the exact shape that would fabricate
-    // REACH_NOT_ON_FIRST_SLIDE off a false zero.
+    // exercises the exact shape that would fabricate a figure off a false
+    // zero.
     const media = makeCarousel([
       makeImageChild(),
       makeVideoChild({ video_view_count: 0, video_play_count: 116_333 }),
@@ -261,10 +284,10 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
 
     const result = resolveInstagramReach(media);
     expect(result.derivedFrom).toBe("NONE");
-    expect(result.someSlideHasReach).toBe(false);
+    expect(result.laterSlideReach).toEqual({ usable: false });
   });
 
-  it("PR #161 review R3 — a realistic zero-view child (video_view_count: 0, video_play_count: null, the shape every real video carousel child actually has per divergence 12) resolves someSlideHasReach FALSE, not ZERO — documents that this conservative outcome is deliberate, not accidental", () => {
+  it("PR #161 review R3 — a realistic zero-view child (video_view_count: 0, video_play_count: null, the shape every real video carousel child actually has per divergence 12) resolves laterSlideReach { usable: false }, not a ZERO figure — documents that this conservative outcome is deliberate, not accidental", () => {
     // Divergence 12: every real carousel video child carries
     // video_play_count: null (confirmed across all 7 video children in
     // ig_carousel_mixed_video_and_image_10_slides.json). ZERO requires BOTH
@@ -278,7 +301,26 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
 
     const result = resolveInstagramReach(media);
     expect(result.derivedFrom).toBe("NONE");
-    expect(result.someSlideHasReach).toBe(false);
+    expect(result.laterSlideReach).toEqual({ usable: false });
+  });
+
+  it("R-N3 — when MULTIPLE later slides are usable, laterSlideReach reports the FIRST one only, never a sum, max or mean across slides", () => {
+    const media = makeCarousel([
+      makeImageChild(),
+      makeVideoChild({ video_view_count: 100 }),
+      makeVideoChild({ video_view_count: 99_999 }),
+    ]);
+
+    const result = resolveInstagramReach(media);
+    expect(result.derivedFrom).toBe("NONE");
+    // Not 100_099 (sum), not 99_999 (max), not 50_049.5 (mean) — the first
+    // usable slide's own figure, at its own index.
+    expect(result.laterSlideReach).toEqual({
+      usable: true,
+      value: 100,
+      kind: "VIEWS",
+      slideIndex: 1,
+    });
   });
 
   it("R-4.3.1 — a carousel first slide corroborated at exactly 0 is a genuine ZERO labelled VIEWS, never PLAYS — the child's authoritative field is video_view_count, not video_play_count", () => {
@@ -291,7 +333,7 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
       kind: "VIEWS",
       state: "ZERO",
       derivedFrom: "CAROUSEL_FIRST_SLIDE",
-      someSlideHasReach: false,
+      laterSlideReach: { usable: false },
     });
   });
 
@@ -305,7 +347,7 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
       kind: null,
       state: "UNKNOWN",
       derivedFrom: "NONE",
-      someSlideHasReach: false,
+      laterSlideReach: { usable: false },
     });
   });
 
@@ -337,7 +379,7 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
       kind: "VIEWS",
       state: "AVAILABLE",
       derivedFrom: "CAROUSEL_FIRST_SLIDE",
-      someSlideHasReach: false,
+      laterSlideReach: { usable: false },
     });
   });
 
@@ -358,7 +400,7 @@ describe("resolveYoutubeReach", () => {
       kind: "VIEWS",
       state: "AVAILABLE",
       derivedFrom: "TOP_LEVEL",
-      someSlideHasReach: false,
+      laterSlideReach: { usable: false },
     });
   });
 
@@ -373,10 +415,10 @@ describe("resolveYoutubeReach", () => {
     expect(result.state).toBe("UNKNOWN");
     expect(result.value).toBeNull();
     expect(result.derivedFrom).toBe("NONE");
-    // OR-26 / #155: YouTube has no slides — always false, and neither
+    // OR-26 / #155: YouTube has no slides — always unusable, and neither
     // carousel-specific unavailableReason value may ever appear on this
     // path.
-    expect(result.someSlideHasReach).toBe(false);
+    expect(result.laterSlideReach).toEqual({ usable: false });
   });
 
   it("null (field present but null) resolves UNKNOWN with derivedFrom TOP_LEVEL — the key exists, just its value doesn't", () => {
@@ -398,7 +440,7 @@ describe("resolveYoutubeReach", () => {
       kind: "VIEWS",
       state: "ZERO",
       derivedFrom: "TOP_LEVEL",
-      someSlideHasReach: false,
+      laterSlideReach: { usable: false },
     });
   });
 });

@@ -1,5 +1,5 @@
 import type { ScrapeCreatorsCarouselChildNode, ScrapeCreatorsMedia } from "@/lib/server/scrapecreators";
-import type { ReachDerivedFrom, ReachKind, ReachResult } from "./types";
+import type { LaterSlideReach, ReachDerivedFrom, ReachKind, ReachResult } from "./types";
 
 /**
  * Reach resolution (TDD §3, ticket #140 step 2). **R-12.7.1 is binding:
@@ -89,29 +89,46 @@ function resolveNodeReach(
 }
 
 /**
- * OR-26 / #155 / owner ruling on PR #158's code review. `someSlideHasReach`
- * must mean "a later slide yields a genuinely usable number", not merely
- * "a later slide carries the reach keys" — `hasReachFields` alone is
- * presence-only and is flipped `true` by a video child whose
- * `video_view_count` is `null`/unusable, which would make ticket #143 write
- * `REACH_NOT_ON_FIRST_SLIDE` ("the count is on a later slide") for a slide
- * that has no count at all. Reuses `resolveNodeReach(node, "view")` — the
- * SAME resolution path that already rejects the false-zero pattern
- * (`ig_reel_1_zero_view_count.json`) and already applies the child
- * authority reversal (divergence 13: carousel children trust
- * `video_view_count`, never `video_play_count`) — rather than inventing a
- * second, independent definition of "usable" that would walk straight past
- * cases the existing resolver already handles correctly. `AVAILABLE` and
- * `ZERO` both count as usable (a corroborated zero is a real fact, R-4.3.1);
- * only `UNKNOWN` does not.
+ * OR-26 / #155 / DESIGN-3C §5.4 (R-N1/R-N2/R-N3). Scans a carousel's
+ * children for the FIRST one that yields a genuinely usable reach number —
+ * "usable" means the SAME thing it always has here (owner ruling on PR
+ * #158's review): merely carrying the reach KEYS is not enough, a video
+ * child whose `video_view_count` is `null`/unusable must not be reported.
+ * Reuses `resolveNodeReach(node, "view")` — the SAME resolution path that
+ * already rejects the false-zero pattern (`ig_reel_1_zero_view_count.json`)
+ * and already applies the child authority reversal (divergence 13:
+ * carousel children trust `video_view_count`, never `video_play_count`) —
+ * rather than inventing a second, independent definition of "usable" that
+ * would walk straight past cases the existing resolver already handles
+ * correctly. `AVAILABLE` and `ZERO` both count as usable (a corroborated
+ * zero is a real fact, R-4.3.1); only `UNKNOWN` does not.
+ *
+ * R-N3 is binding: this returns the FIRST usable slide only, never a sum,
+ * max or mean across slides — a per-post reach figure D4/R-D3 has
+ * explicitly declined to compute. `slideIndex` is the 0-based index into
+ * `children`, carried because it falls out of the scan for free (R-N4).
+ *
+ * Scans the WHOLE `children` array, not `children.slice(1)`: this is only
+ * ever called from the branch where slide 0 has already failed
+ * `hasReachFields`, so slide 0 is guaranteed to resolve `UNKNOWN` here too
+ * — scanning it again is harmless and keeps the index arithmetic simple.
  */
-function childHasUsableReach(node: ScrapeCreatorsCarouselChildNode): boolean {
-  const resolved = resolveNodeReach(node, "view");
-  return resolved.state === "AVAILABLE" || resolved.state === "ZERO";
+function resolveLaterSlideReach(children: ScrapeCreatorsCarouselChildNode[]): LaterSlideReach {
+  for (let index = 0; index < children.length; index += 1) {
+    const resolved = resolveNodeReach(children[index]!, "view");
+    if (
+      (resolved.state === "AVAILABLE" || resolved.state === "ZERO") &&
+      resolved.value !== null &&
+      resolved.kind !== "UNKNOWN"
+    ) {
+      return { usable: true, value: resolved.value, kind: resolved.kind, slideIndex: index };
+    }
+  }
+  return { usable: false };
 }
 
-function noneResult(someSlideHasReach = false): ReachResult {
-  return { value: null, kind: null, state: "UNKNOWN", derivedFrom: "NONE", someSlideHasReach };
+function noneResult(laterSlideReach: LaterSlideReach = { usable: false }): ReachResult {
+  return { value: null, kind: null, state: "UNKNOWN", derivedFrom: "NONE", laterSlideReach };
 }
 
 function getCarouselChildren(raw: ScrapeCreatorsMedia): ScrapeCreatorsCarouselChildNode[] {
@@ -149,18 +166,22 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
       // the latter is a live reach fact D4's first-slide rule never
       // consulted, not a permanent content-kind limitation.
       //
-      // Owner ruling on PR #158's review: presence of the reach KEYS is not
-      // enough — a later video slide with e.g. `video_view_count: null`
-      // must not flip this to `true` (that would make #143 fabricate
-      // `REACH_NOT_ON_FIRST_SLIDE` for a slide with no usable number). Only
-      // a slide `resolveNodeReach` actually resolves to AVAILABLE/ZERO
-      // counts.
-      const someSlideHasReach = children.some(childHasUsableReach);
-      return noneResult(someSlideHasReach);
+      // Owner ruling on PR #158's review, carried into DESIGN-3C §5.4's
+      // R-N1/R-N2/R-N3: presence of the reach KEYS is not enough — a later
+      // video slide with e.g. `video_view_count: null` must not surface a
+      // figure (that would make #143 fabricate a number for a slide that
+      // has none). Only a slide `resolveNodeReach` actually resolves to
+      // AVAILABLE/ZERO, and only its OWN value/kind, travel forward.
+      const laterSlideReach = resolveLaterSlideReach(children);
+      return noneResult(laterSlideReach);
     }
 
     const node = resolveNodeReach(firstSlide, "view");
-    return { ...node, derivedFrom: "CAROUSEL_FIRST_SLIDE" as ReachDerivedFrom, someSlideHasReach: false };
+    return {
+      ...node,
+      derivedFrom: "CAROUSEL_FIRST_SLIDE" as ReachDerivedFrom,
+      laterSlideReach: { usable: false },
+    };
   }
 
   if (!hasReachFields(raw)) {
@@ -168,7 +189,7 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
   }
 
   const node = resolveNodeReach(raw, "play");
-  return { ...node, derivedFrom: "TOP_LEVEL" as ReachDerivedFrom, someSlideHasReach: false };
+  return { ...node, derivedFrom: "TOP_LEVEL" as ReachDerivedFrom, laterSlideReach: { usable: false } };
 }
 
 /**
@@ -185,20 +206,20 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
  */
 export function resolveYoutubeReach(viewCountInt: unknown): ReachResult {
   if (viewCountInt === undefined) {
-    return { value: null, kind: "UNKNOWN", state: "UNKNOWN", derivedFrom: "NONE", someSlideHasReach: false };
+    return { value: null, kind: "UNKNOWN", state: "UNKNOWN", derivedFrom: "NONE", laterSlideReach: { usable: false } };
   }
 
   const value = num(viewCountInt);
 
   if (value === null) {
-    return { value: null, kind: "UNKNOWN", state: "UNKNOWN", derivedFrom: "TOP_LEVEL", someSlideHasReach: false };
+    return { value: null, kind: "UNKNOWN", state: "UNKNOWN", derivedFrom: "TOP_LEVEL", laterSlideReach: { usable: false } };
   }
   if (value < 0) {
-    return { value: null, kind: "UNKNOWN", state: "UNKNOWN", derivedFrom: "TOP_LEVEL", someSlideHasReach: false };
+    return { value: null, kind: "UNKNOWN", state: "UNKNOWN", derivedFrom: "TOP_LEVEL", laterSlideReach: { usable: false } };
   }
   if (value === 0) {
-    return { value: 0, kind: "VIEWS", state: "ZERO", derivedFrom: "TOP_LEVEL", someSlideHasReach: false };
+    return { value: 0, kind: "VIEWS", state: "ZERO", derivedFrom: "TOP_LEVEL", laterSlideReach: { usable: false } };
   }
 
-  return { value, kind: "VIEWS", state: "AVAILABLE", derivedFrom: "TOP_LEVEL", someSlideHasReach: false };
+  return { value, kind: "VIEWS", state: "AVAILABLE", derivedFrom: "TOP_LEVEL", laterSlideReach: { usable: false } };
 }
