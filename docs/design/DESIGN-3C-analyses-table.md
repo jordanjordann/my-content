@@ -1,6 +1,6 @@
 # Design Decision Record — Phase 3C, the Analyses Table
 
-**Status:** **PROPOSED — NOT APPROVED.** Nothing in this document is signed off. It is the mockup-review checkpoint that caveat **C2** of the PRD reserved, and the owner has not yet ruled. **No developer should start building from this file.** Two design directions are presented for the highest-risk decision (§4); the owner picks one.
+**Status:** **APPROVED — 2026-08-07, by the owner.** This is the mockup-review checkpoint that caveat **C2** of the PRD reserved, and the owner has ruled: the 9-column table, **Direction A** for the engagement split (§4), Comfortable density, and pagination with newest-analysis-first as the default sort. The full record, including what is and is not covered, is in **§12**. Development may proceed against this file within that scope; anything §11 still lists as open is not covered by the sign-off.
 **Author:** Jessica (UI/UX)
 **Created:** 2026-08-06
 **Mockup:** [`docs/design/3c-analyses-table-mockup.html`](./3c-analyses-table-mockup.html) — open in a browser. It carries a Direction A / Direction B toggle at the top.
@@ -17,7 +17,7 @@
 
 **Neither amendment reopens a settled decision.** The column set, density, sort behaviour and the Direction A engagement split are unchanged. Both are copy/state corrections consequent on rules ruled on *after* the mockup review, and §5.3 largely brings this document into line with what the mockup already drew.
 
-⚠️ **Note for the owner, not acted on here:** the status header above still reads *PROPOSED — NOT APPROVED* and §12's sign-off record is still empty, but `docs/HANDOFF-2026-08-06.md` §"Design / table (3C)" records the design as **approved, 12 columns cut to 9, engagement split Direction A**. That is a stale header, not a live question — but **recording an approval is the owner's act, not the designer's**, so I have left both untouched and am flagging them instead.
+**Resolved, 2026-08-07.** The flag previously carried here — that the status header read *PROPOSED — NOT APPROVED* and §12 was empty while `docs/HANDOFF-2026-08-06.md` §"Design / table (3C)" recorded the design as approved — has been cleared. The owner approved this document explicitly in the 2026-08-07 session, and that approval, not the handoff line, is what §12 records.
 
 ---
 
@@ -27,7 +27,7 @@
 
 **Does not decide:** the scoring model (PRD §3, confirmed), the stored contract (PRD §5, confirmed), or any copy string — every user-facing string lives in the companion explainability spec so that there is exactly one place to change wording.
 
-**Exception, from amendments A1 and A2:** §5.3 and §5.4 do state exact wording, because in both cases the *structure* of the sentence is the requirement — a figure that can be separated from its format noun, or a diagnosis that can be rendered without its figure, is non-compliant however it is worded. **The companion spec remains the single home for these strings and must be updated to match in the same pass** (its §3, §5 row 5, and the §9 constants note still carry the withdrawn bare `3 of 5`). Where the two documents disagree, this one is the newer and the companion is the one to fix.
+**Exception, from amendments A1 and A2:** §5.3 and §5.4 do state exact wording, because in both cases the *structure* of the sentence is the requirement — a figure that can be separated from its format noun, or a diagnosis that can be rendered without its figure, is non-compliant however it is worded. **The companion spec remains the single home for these strings.** It has now been brought into line: its amendment **B1** (2026-08-07) withdraws the bare `3 of 5` from all six places it appeared — §4.1, §4.3, §4.4, §5 row 5, §5.2, §9 — and from its mockup, and states the binding rules in its own new §5.3. **The two documents no longer diverge**, and the cold-start wording is now identical in both. Where they ever disagree again, the companion is the canonical home for the *string* and this document is the canonical home for the *cell it renders in* — change the string there first.
 
 **Scope constraints inherited and not reopened:**
 
@@ -426,23 +426,32 @@ Checkable claim: **printed in greyscale, this table loses nothing.** Every disti
 
 ## 11. Open questions for the owner
 
-Nothing below is decided. These are the ones I cannot answer alone.
+These are the ones I could not answer alone. **Questions 1, 5 and 6 were ruled on by the owner on 2026-08-07 and are marked RULED below; 2, 3 and 4 are still open** and are not covered by the §12 sign-off.
 
-1. **Direction A or Direction B for the engagement split (§4)?** I recommend A. This is the C2 sign-off the PRD reserved and it should be recorded explicitly.
+1. **RULED — Direction A** for the engagement split (§4), 2026-08-07. Two dedicated columns; there is no single engagement column to sort, so R-12.3.2 is structurally unviolable. This was the C2 sign-off the PRD reserved.
 2. **Do you accept cutting the Status column** in favour of a distinct failed-row treatment (§2.1)?
 3. **Style (`formatArchetype` + `hookType`) default-on or default-off?** I propose off.
 4. **Do you want the 1–5 performance score in the table at all?** Provocative, and I mean it: `3.2× their usual` is a *measured* number and by your own PRD (§3.1, §3.5) the most quotable thing this product makes, while the 1–5 is a *model judgement*. Keeping both costs 156px and creates the "score says 2 but the multiplier says 3.2×, which do I believe?" question. Keeping only the multiplier would be narrower and more defensible — but it loses the read on posts with no Tier 2 yet. I lean toward keeping both, with the score explicitly labelled as a judgement (see the companion spec §7). Worth your ruling.
-5. **Default density** — Comfortable (68px, ~9 rows visible) or Compact (40px, ~15 rows)? I propose Comfortable.
-6. **Should the table paginate or infinitely scroll?** Not specified in the PRD and it interacts with sorting. I propose pagination at 50 rows, because a sink group at the bottom of an infinite scroll is a sink group nobody ever sees.
+5. **RULED — Comfortable** is the default density (68px, ~9 rows visible), 2026-08-07. Compact stays as the opt-in of §3.2, bound by the rule that no density mode may drop a qualifier.
+6. **RULED — pagination**, 2026-08-07, with **newest analysis first as the default sort** and **performance explicitly not the default sort**. This confirms §6.1's `Posted, descending` default and settles the interaction with the sink group: a sink group at the bottom of an infinite scroll is a sink group nobody ever sees.
 
 ---
 
 ## 12. Sign-off record
 
-**Empty. This document is not approved.**
+**Approved by the owner on 2026-08-07.** Recorded here because the PRD (§13.8, caveat C2) requires the sign-off to be explicit — *"we assumed the designer had handled it"* is precisely how R6 ships.
 
-When the owner rules, the following must be recorded here by name, because the PRD (§13.8, caveat C2) requires the sign-off be explicit and *"we assumed the designer had handled it"* is precisely how R6 ships:
+**What is approved:**
 
-- [ ] **§12.3 / R-12.3.4 — the comparability treatment is signed off**, direction named.
-- [ ] **§13 — the explainability surfaces are signed off** (see the companion spec's own record).
-- [ ] The final default column set is recorded, with any owner-directed additions or cuts.
+- [x] **§12.3 / R-12.3.4 — the comparability treatment, direction named: Direction A** (§4). Two dedicated columns, `Eng. / reach` and `Eng. / followers`, never one.
+- [x] **The default column set: 9 columns** (§2.2), cut from the PRD's 12 as proposed in §2.1.
+- [x] **Row density: Comfortable** (§3.1) as the default.
+- [x] **Pagination**, with **newest analysis first as the default sort**. **Performance is explicitly not the default sort.**
+- [x] **Amendment A1 — §5.3, the bucket-scoped cold-start copy** (`2 of 5 carousels` / `builds as you analyse more`) and rules R-C1…R-C4, as merged in PR #162.
+- [x] **Amendment A2 — §5.4, `REACH_NOT_ON_FIRST_SLIDE`**, and rules R-D4 / R-N1 / R-N2 / R-N3, as merged in PR #162.
+
+**What this sign-off does not cover**, recorded so that nobody reads it as broader than it is:
+
+- **§13 — the explainability surfaces are signed off separately** in the companion spec's own record, which is **still empty**. That document remains PROPOSED. Every user-facing string this table renders lives there.
+- The remaining items in **§11** on which no ruling is recorded here: the Status-column cut (Q2), the Style column's default state (Q3), and whether the 1–5 performance score belongs in the table at all (Q4). They are implemented as this document proposes, but they are not signed off.
+- **R-N1's data dependency** (§5.4's engineering consequence). If the resolver does not carry the reach value and kind, `REACH_NOT_ON_FIRST_SLIDE` must not render at all. Approving the design does not approve shipping the state without its figure.
