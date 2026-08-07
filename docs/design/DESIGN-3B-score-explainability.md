@@ -8,6 +8,14 @@
 **Companion:** [`DESIGN-3C-analyses-table.md`](./DESIGN-3C-analyses-table.md) — where most of these strings render. **One design, two documents.**
 **Precedent it must not contradict:** [`DESIGN-engagement-count-display-states.md`](./DESIGN-engagement-count-display-states.md). That spec already solved "a count is missing — explain it honestly", and its four owner-confirmed states are reused verbatim rather than re-solved. This document extends the same vocabulary to *scores*; it does not start a second one.
 
+### Amendment record
+
+| # | Date | What changed | Why |
+|---|---|---|---|
+| **B1** | 2026-08-07 | **The Tier 2 cold-start copy is bucket-scoped, never creator-scoped.** The bare `3 of 5` is withdrawn everywhere it appeared: §4.1's string table, §4.4's constants note, §5 row 5 (both L1 and L2), §5.2, §9 item 2, and the mockup. §4.3's thin-sample confidence string loses its format-less `5 earlier posts` for the same reason. The strings are now **`2 of 5 carousels`** / **`builds as you analyse more`**, and the rules that bind them are stated in the new **§5.3**. | **R-14.2.4 / R-14.2.5 / R-14.2.6** (PRD §14.2) and **R-C1…R-C4** (companion §5.3, merged in PR #162). The threshold of 5 is counted **per format bucket**, because reels are measured in plays and carousels in views and R-4.3.2 forbids a ratio across two reach kinds. A bare `3 of 5` told a creator with 4 reels and 4 carousels — 8 analysed posts, no comparison on either — something false about what they were waiting for. This document is the canonical home for these strings, so it is the file tickets #145–#149 build against, and it had to stop disagreeing with its companion. |
+
+**B1 reopens no settled decision.** It is a copy correction consequent on rules ruled on *after* this document was written, and it brings this document into line with wording already merged in the companion spec's §5.3. No colour value, component, layout, density or interaction changes.
+
 ---
 
 ## 1. The design problem, restated
@@ -96,7 +104,7 @@ Always visible, never hover-gated:
 | Video-carousel reach | `of 88.2K views · first slide only` |
 | Follower-denominated engagement | `of 284K followers`, and the value carries an `≈` prefix |
 | Tier 2 multiplier | `based on 7 reels` / `based on 6 carousels` |
-| Tier 2 cold start | `not enough history yet · 3 of 5` |
+| Tier 2 cold start | `2 of 5 carousels` on line 1, `builds as you analyse more` on line 2 — **the format noun is part of the figure, not a decoration on it** (§5.3). Never a bare `2 of 5`, and never a creator-level count. |
 | Confidence | `high confidence` / `medium confidence` / `low confidence` |
 
 ### 4.2 Sample size — and a wording conflict I need ruled on
@@ -115,7 +123,7 @@ The word alone is at L1. **The reason it was lowered is at L2**, and all three k
 |---|---|
 | Cached follower denominator (R-12.2.5, capped MEDIUM) | `Medium confidence — measured against a follower count that may be up to a week old.` |
 | Carousel first-slide reach (D4, −1 level) | `Medium confidence — the post's reach is taken from the first slide, not the whole post.` |
-| Thin sample | `Low confidence — based on only 5 earlier posts. Treat the comparison as directional.` |
+| Thin sample | `Low confidence — based on only 5 earlier carousels. Treat the comparison as directional.` — the noun is the **bucket** noun of §4.2 (`reels` / `carousels` / `Shorts`), for the same reason as §5.3: a count of posts in a bucket-scoped sentence must never read as a count of the creator's posts (**R-C3**). |
 
 **Design note, flagged as a concern rather than solved:** `confidence` and `tierUsed` encode overlapping information — Tier 3 is never high-confidence, a follower denominator is capped at medium. A user seeing both a tier phrase *and* a confidence word may read them as two independent judgements when they are largely one. I have kept both because the PRD requires both, but I would support collapsing confidence into the tier phrase at L1 and keeping the word only at L2. See §9.
 
@@ -136,7 +144,7 @@ What went into this
 ```
 
 - **R-13.3.4 — every numeral in an explanation must exist in the stored computed block.** The layout above contains only stored operands and stored results. **It does not contain a worked division**, deliberately: showing `31,412 + 1,204 ÷ 482,100 = 6.8%` would put an intermediate numeral on screen that is not in the computed block. The em-rule is the only thing implying the operation.
-- **Two constants break R-13.3.4 as literally written** — the `5` in `3 of 5` (a config threshold) and the `week` in "up to a week old" (a TTL). Neither is in the computed block. Flagged in §9; the practical fix is that the computed block stores them, which is cheap.
+- **Two constants break R-13.3.4 as literally written** — the `5` in `2 of 5 carousels` (a config threshold) and the `week` in "up to a week old" (a TTL). Neither is in the computed block. Flagged in §9; the practical fix is that the computed block stores them, which is cheap. **The `5` is on the R-13.3.4 allow-list per R-14.2.7 and is read from config, never hard-coded into copy and never stored per row (R-C2).**
 
 ### 4.5 Staleness and as-of framing (R-13.3.2, R-13.4.5)
 
@@ -162,7 +170,7 @@ Two lines per state: an L1 **short form** that fits a 156px cell, and an L2 **fu
 | 2 | No view/play count returned; false-zero rejected | `REACH_UNKNOWN` | **`No view count published`** | `Instagram didn't return a view or play count for this post, so there's nothing to measure engagement against.` |
 | 3 | **Cause not determinable** — no usable inputs *and* the hidden-counts flag is absent from the payload | **needs a new value — see §5.1** | **`No performance data published`** | `Instagram published no view, like or comment data for this post. We can't tell whether the creator turned the counts off or whether Instagram simply didn't return them — so we're not going to guess.` |
 | 4 | No cached follower count | `NO_AUDIENCE_DATA` | **`No follower count available`** | `We don't have a recent follower count for this creator, and image posts have no reach data, so there's nothing to measure this post against yet.` |
-| 5 | Tier 2 cold start (a *partial* absence — Tier 1 may still exist) | *not an unavailable reason* | **`not enough history yet · 3 of 5`** | `We compare a post against this creator's other posts of the same kind. There are 3 image carousels analysed so far and we need 5 before the comparison is worth quoting. It'll fill in on its own.` |
+| 5 | Tier 2 cold start (a *partial* absence — Tier 1 may still exist) | *not an unavailable reason* | **`2 of 5 carousels`** / **`builds as you analyse more`** (two lines, both always visible — §5.3) | `“vs their usual” compares this post against the same creator's own past carousels. Carousels and reels are measured in different units — views and plays — so they're counted separately and never pooled. @dapurbunda has 2 of 5 carousels analysed so far. The comparison appears on its own once the fifth is in.` |
 | 6 | Caption-only analysis | `analysis_mode` | **`Caption only — video not analysed`** | `Only the caption and metadata were analysed for this post. The video itself wasn't watched, so there's no content read to go with the numbers.` |
 | 7 | Analysis failed / not completed | — | **`Not analysed`** | `This analysis didn't complete, so there's nothing to score. Try re-analysing it.` |
 
@@ -181,10 +189,25 @@ R-13.5.3a requires a **stored reason distinct from `REACH_HIDDEN`** for "cause n
 The user acts differently in each, and the copy makes that explicit in its **last clause**:
 
 - **Nothing we can do** → string 1: `There's nothing we can do about it.`
-- **It will resolve itself** → string 5: `It'll fill in on its own.` — with visible progress, `3 of 5`.
+- **It will resolve itself** → string 5: `builds as you analyse more`, with visible **bucket-scoped** progress, `2 of 5 carousels`, and `The comparison appears on its own once the fifth is in.` in the popover.
 - **A permanent property of the platform** → string 2 / the image-post explanation in §3.2.
 
 Collapsing these into one "Unavailable" is a failure of R-13.5.2, and it is the thing most likely to happen if a developer needs a fallback branch. **There is no fallback string.** If a new reason appears, it gets its own sentence.
+
+### 5.3 Cold start is counted per format bucket — the rules that bind string 5
+
+**This supersedes the bare `3 of 5` this document previously carried in §4.1, §4.4, §5 row 5, §5.2 and §9.** The wording above is the same wording merged in the companion spec's §5.3; the two documents now say one thing, and **this document is where it is changed.**
+
+The rule underneath the copy: **the Tier 2 minimum of 5 is counted per format bucket, never per creator.** Reels are measured in plays and carousels in views, and **R-4.3.2 forbids a ratio across two reach kinds**, so the pools never combine. The case that decides the copy: **a creator with 4 reels and 4 carousels has 8 analysed posts and still gets no comparison on either** — neither pool has reached 5. A bare `3 of 5` in front of that user is not merely terse; it is a false statement about what they are waiting for, and it is the string that makes a correctly-working feature read as broken.
+
+**So the requirement is not "add a noun". It is that the figure and its format noun are one atom and must never be separated** — a `2 of 5` that can be rendered without `carousels` is a bug waiting for a narrow column.
+
+- **R-C1** No cold-start string, at L1, L2 or L3, at any density, in any popover, empty state, filter label, sink label or tooltip, may frame the threshold at creator level. **The literal string `5 posts` must not appear**, nor any paraphrase (`5 analysed posts`, `five posts`, `needs 5 more posts`). Every occurrence of the threshold carries its format noun. This is directly assertable by string search (**PRD S9 / AC-33**) and should be.
+- **R-C2** The `5` is a configuration constant on the R-13.3.4 allow-list (**R-14.2.7**), read from config for display, never stored per row and never hard-coded into copy.
+- **R-C3** The count is **that bucket's** count, never the creator's total analysed posts. A creator-level count inside a bucket-scoped sentence is the same failure as the bare `3 of 5`, one layer down.
+- **R-C4** This is a **partial** absence. A cold-start row may still carry a Tier 1 or Tier 3 score; only the `vs their usual` figure is waiting. It is not an unavailable reason and does not suppress the Performance cell.
+- **R-C5 — it is a waiting state, not an error (R-14.2.4).** No rose, no warning glyph, no `—`, no `0`, no empty cell. Both lines render as ordinary L1 qualifier text (`text-muted-foreground` at full opacity), identical to every other line-2 qualifier. **This amendment introduces no new colour value** — a waiting state that needed its own colour would be a waiting state that had been designed as an alert.
+- **R-C6 — the per-format nature of the wait must be evident (R-14.2.6).** L1 carries it in the noun; L2 carries it in the mechanism sentence (*different units — views and plays*). Line 2, `builds as you analyse more`, is **at L1, not hover-gated** (R-13.6.2): "is this permanent or temporary?" is exactly the question being asked at the moment the cell is read.
 
 ---
 
@@ -243,7 +266,7 @@ R-13.1.1 asks for completeness of *information*, not of widgets. This is the aud
 Flagged rather than designed around.
 
 1. **`based on N videos` is wrong on image buckets.** R-13.4.1 and AC-28 mandate the literal word. I propose a bucket-aware noun (§4.2). Needs a PRD amendment or an explicit ruling that the literal string wins.
-2. **R-13.3.4 ("every numeral in an explanation exists in the computed block") is unachievable as written.** The `5` in `3 of 5` is a config constant and the `week` in the staleness copy is a TTL. Either the computed block stores them, or the rule needs a stated allow-list. Cheap either way, but it will fail AC-27 if nobody decides.
+2. **R-13.3.4 ("every numeral in an explanation exists in the computed block") is unachievable as written.** ~~The `5` in `3 of 5`~~ **Resolved for the threshold:** the `5` in `2 of 5 carousels` is a config constant and is now explicitly on the allow-list (**R-14.2.7**, §5.3 R-C2). **Still open:** the `week` in the staleness copy is a TTL and is not on the allow-list or in the computed block. Either the computed block stores it, or the allow-list is extended. Cheap either way, but it will fail AC-27 if nobody decides.
 3. **The 1–5 score's explainability is the weakest link in §13** (§7 above). §13 requires every score to explain itself; the 1–5 is a model judgement over two ratios and cannot be derived. I propose labelling it as a judgement. Needs a ruling.
 4. **`confidence` and `tierUsed` overlap** (§4.3). Showing both at L1 may read as two independent judgements when it is largely one. I would keep the tier phrase at L1 and demote the confidence word to L2. Needs a ruling.
 5. **The "both readings" sentence (§3.1) needs a high/low threshold** that §3.4 forbids sourcing from an industry benchmark. The only defensible source is the creator's own bucket median — which means the sentence is unavailable pre-Tier-2. Acceptable, but it should be a stated product decision, not an implementation accident.
@@ -260,5 +283,6 @@ PRD §13.8 and caveat C2 require the sign-off to be explicit and recorded. When 
 
 - [ ] **§13 explainability surfaces signed off**, including the three-level disclosure model.
 - [ ] **The absent-score copy set (§5) approved**, string by string, especially case 3 (`We can't tell`) which must survive later editing pressure.
+- [ ] **The cold-start copy set (§5.3) approved** — `2 of 5 carousels` / `builds as you analyse more`, and R-C1…R-C6. The same wording is already approved in the companion spec (its §5.3, sign-off 2026-08-07); **this document's copy set as a whole is still unapproved**, and that gap is deliberate, not an oversight.
 - [ ] **The provisional copy constraint (§6) approved** — no hour count in any user-facing string.
 - [ ] **Rulings on the seven items in §9.**
