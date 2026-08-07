@@ -33,6 +33,46 @@ export type ReachDerivedFrom = "TOP_LEVEL" | "CAROUSEL_FIRST_SLIDE" | "NONE";
  */
 export type AvailabilityState = "AVAILABLE" | "HIDDEN" | "UNKNOWN" | "ZERO";
 
+/**
+ * DESIGN-3C-analyses-table.md §5.4, R-N1/R-N2/R-N3 (OR-26 / ticket #155,
+ * scope note carried into #143's blocker by PR #162). Carousel only.
+ * Replaces the additive `someSlideHasReach: boolean` this field used to be
+ * (PR #158/#161) — a boolean says a count *exists* on a later slide, it
+ * cannot say *what it is*, and R-N1 makes the figure itself mandatory: "no
+ * figure, no state" — `REACH_NOT_ON_FIRST_SLIDE` must not render off a bare
+ * boolean.
+ *
+ * A **discriminated union**, not an object with optional `value`/`kind`
+ * fields, so R-N2 ("value and kind travel together; a value without an
+ * established kind must not be renderable") is a `tsc` failure to violate,
+ * not a doc comment to remember — the same discipline `BaselineResult`
+ * adopted in PR #159 after a doc-comment-only guard proved insufficient
+ * there. `{ usable: true, value }` with no `kind` does not type-check; the
+ * `usable: false` branch has no path to a value at all.
+ *
+ * `kind` excludes `"UNKNOWN"` deliberately (R-N2's second half): a later
+ * slide whose reach kind cannot be established must degrade the whole
+ * union to `{ usable: false }` (which #143 must read as
+ * `CAUSE_NOT_DETERMINABLE`, not print an unlabelled number) rather than
+ * carry a value paired with `kind: "UNKNOWN"`.
+ *
+ * `slideIndex` is the 0-based index into the carousel's child array (R-N4
+ * — "nice-to-have, not a requirement"; it falls out of the scan in
+ * `reach.ts` at no extra cost, so it is carried). Consumers add 1 for the
+ * mockup's one-based "slide 6" copy.
+ */
+export type LaterSlideReach =
+  | { usable: false }
+  | {
+      usable: true;
+      /** Never negative. The value `resolveNodeReach` (view authority) resolved for this slide. */
+      value: number;
+      /** Never `"UNKNOWN"` — see the type-level note above (R-N2). */
+      kind: Exclude<ReachKind, "UNKNOWN">;
+      /** 0-based index into the carousel's child array. Optional per R-N4. */
+      slideIndex?: number;
+    };
+
 /** Result of `resolveReach()` / `resolveInstagramReach()` / `resolveYoutubeReach()`. */
 export interface ReachResult {
   /** Never negative. `null` whenever `state !== "AVAILABLE" && state !== "ZERO"`. */
@@ -42,15 +82,17 @@ export interface ReachResult {
   state: AvailabilityState;
   derivedFrom: ReachDerivedFrom;
   /**
-   * OR-26 / ticket #155. Carousel only. `true` when slide 0 carries neither
-   * reach key but some later slide does — the post has reach data that D4's
-   * first-slide rule did not consult. Always `false` on every non-carousel
-   * and every YouTube path. Consumed by ticket #143 to pick
-   * `REACH_NOT_ON_FIRST_SLIDE` over `CONTENT_KIND_UNSUPPORTED` on
-   * `perf_unavailable_reason` — this field does not itself change
-   * `derivedFrom`, which stays `"NONE"` either way.
+   * OR-26 / ticket #155 / DESIGN-3C §5.4. Carousel only. `{ usable: true,
+   * value, kind, slideIndex? }` when slide 0 carries neither reach key but
+   * some **later** slide resolves a genuinely usable count (R-N3: the
+   * FIRST later slide that does — never a sum, max or mean across slides).
+   * `{ usable: false }` on every non-carousel path, every YouTube path, and
+   * every carousel where no later slide resolves usably. This field does
+   * not itself change `derivedFrom`, which stays `"NONE"` either way
+   * (OR-26: the split lives in `perf_unavailable_reason`, not
+   * `perf_reach_derived_from`).
    */
-  someSlideHasReach: boolean;
+  laterSlideReach: LaterSlideReach;
 }
 
 /** Result of a count-availability resolver (`availability.ts`). */
