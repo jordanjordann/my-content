@@ -247,13 +247,17 @@
             <span class="pop" id="p3" role="tooltip">
               <b class="text-fg">Why the confidence is lower</b><br/>
               <span class="text-mutedfg">Instagram publishes views per slide, not per post. This uses the first slide&rsquo;s view count as the post&rsquo;s reach, which is why the confidence is one level lower.</span>
-              <div class="mt-2 text-mutedfg">No baseline yet &mdash; we compare a post against this creator&rsquo;s other posts of the same kind, and there are 2 video carousels analysed so far. We need 5. It&rsquo;ll fill in on its own.</div>
+              <div class="mt-2 text-mutedfg">&ldquo;vs their usual&rdquo; compares this post against the same creator&rsquo;s own past video carousels. Carousels and reels are measured in different units &mdash; views and plays &mdash; so they&rsquo;re counted separately and never pooled. @warungmbaksri has <b class="text-fg">2 of 5 video carousels</b> analysed so far. The comparison appears on its own once the fifth is in.</div>
               <div class="mt-2 pt-2 border-t border-border text-mutedfg">Measured 6 Aug 2026 and frozen.</div>
             </span></span>
           </div>
           <div class="text-[11px] text-mutedfg">medium confidence</div>
         </td>
-        <td class="px-3 py-3"><div class="text-mutedfg text-[11px]">not enough history yet</div><div class="text-[11px] text-mutedfg num">2 of 5 carousels</div></td>
+        <!-- COLD START (design 5.3) — the progress and its format noun are ONE phrase in ONE element,
+             so no width, truncation or density change can separate them. R-14.2.5 / R-8.4.9.
+             Line 2 is the "it resolves on its own" reassurance, in the cell and not hover-gated (R-13.6.2).
+             Muted, never rose, never an em-dash: this is a waiting state, not an error (R-14.2.4). -->
+        <td class="px-3 py-3"><div class="text-[11px] text-mutedfg num">2 of 5 carousels</div><div class="text-[11px] text-mutedfg">builds as you analyse more</div></td>
         <td class="px-3 py-3" data-a><div class="num font-semibold">6.1%</div><div class="text-[11px] text-accent">of 88.2K views &middot; first slide only</div></td>
         <td class="px-3 py-3" data-a><div class="text-mutedfg">&mdash;</div><div class="text-[11px] text-mutedfg">no follower measure here</div></td>
         <td class="px-3 py-3 hidden-x" data-b><div class="num font-semibold">6.1%</div><div class="text-[11px] text-accent">of 88.2K views &middot; first slide only</div></td>
@@ -295,7 +299,7 @@
       <!-- SINK DIVIDER -->
       <tr class="bg-mutedbg/40">
         <td colspan="10" class="px-3 py-1.5 text-[10.5px] uppercase tracking-wider text-mutedfg border-y border-border">
-          3 posts with no performance score &mdash; sorted separately
+          4 posts with no performance score &mdash; sorted separately
         </td>
       </tr>
 
@@ -351,6 +355,42 @@
         <td class="px-3 py-3" data-a><div class="text-mutedfg text-[11px]">not published for image posts</div></td>
         <td class="px-3 py-3" data-a><div class="text-mutedfg text-[11px]">no counts published</div></td>
         <td class="px-3 py-3 hidden-x" data-b><div class="text-mutedfg text-[11px]">no counts published</div></td>
+      </tr>
+
+      <!-- ROW 6b — REACH_NOT_ON_FIRST_SLIDE (design 5.4, OR-26, PR #161 review)
+           Cover slide is an image; slide 6 carries a real count. The count EXISTS, so
+           "this post type doesn't report counts" (row 6's string) would be false here.
+           The figure and its kind word travel WITH the sentence — a bare "the count is on a
+           later slide" is a non-answer, and at 0 it reads as withheld data when it is a
+           measurement. R-N1 / R-N2 / R-13.5.3a / R-4.3.1.
+           The figure appears exactly ONCE, here. Never in Counts or either engagement
+           column, where it would be sorted and read as the post's own reach (R-D4). -->
+      <tr>
+        <td class="px-3 py-3">
+          <div class="flex gap-2.5">
+            <div class="thumb w-11 h-14 rounded shrink-0 relative"><span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Carousel &times;8</span></div>
+            <div class="min-w-0"><div class="font-medium truncate">Before / After &mdash; Makeover Dapur Sempit</div>
+            <div class="text-[11px] text-mutedfg truncate" data-l2>cover foto, video di slide 6</div></div>
+          </div>
+        </td>
+        <td class="px-3 py-3"><div class="truncate">@warungmbaksri</div><div class="text-[11px] text-mutedfg" data-l2>Instagram</div></td>
+        <td class="px-3 py-3 num"><div>28 Jul</div><div class="text-[11px] text-mutedfg">9d ago</div></td>
+        <td class="px-3 py-3"><div class="text-mutedfg">&mdash;</div><div class="text-[11px] text-mutedfg">no reach on slide 1</div><div class="text-[11px] text-mutedfg num mt-0.5" data-l2>1.9K &middot; 64</div></td>
+        <td class="px-3 py-3 border-l border-border/60"><div class="num font-semibold">4 <span class="ml-0.5" aria-hidden="true"><i class="pip onm"></i><i class="pip onm"></i><i class="pip onm"></i><i class="pip onm"></i><i class="pip"></i></span></div></td>
+        <td class="px-3 py-3 border-r border-border/60">
+          <div class="text-[11.5px]">Reach isn&rsquo;t on slide 1</div>
+          <div class="text-[11px] text-mutedfg">slide 6: <span class="num">0 views</span>
+            <span class="popwrap"><span class="ex" tabindex="0" role="button" aria-label="Why is there no score?" aria-describedby="p6b">i</span>
+            <span class="pop" id="p6b" role="tooltip"><b class="text-fg">Why there&rsquo;s no score</b><br/>
+              <span class="text-mutedfg">This carousel&rsquo;s first slide is an image, so there&rsquo;s no view count where the score reads it. Slide 6 does report one &mdash; <b class="text-fg">0 views</b> &mdash; but the score uses the first slide only, so this post has no reach figure and no performance comparison.</span>
+              <div class="mt-2 text-mutedfg"><b class="text-fg">This isn&rsquo;t a missing number.</b> It&rsquo;s a number in a place we don&rsquo;t read &mdash; and 0 is a real measurement, not an absence.</div>
+              <div class="mt-2 text-rose">This row deliberately does NOT say &ldquo;this post type doesn&rsquo;t report counts&rdquo; (row above) &mdash; that would be false, and a fabricated diagnosis of the class R-13.5.3a forbids. It also does not show the figure without its kind word: a play count is never labelled &ldquo;views&rdquo; (R-4.3.1).</div></span></span>
+          </div>
+        </td>
+        <td class="px-3 py-3"><div class="text-mutedfg text-[11px]">no reach to compare</div></td>
+        <td class="px-3 py-3" data-a><div class="text-mutedfg text-[11px]">no post-level reach</div></td>
+        <td class="px-3 py-3" data-a><div class="num font-semibold">&asymp;3.4%</div><div class="text-[11px] text-teal">of 58K followers</div></td>
+        <td class="px-3 py-3 hidden-x" data-b><div class="num font-semibold">34 <span class="text-[11px] font-normal">per 1K followers</span></div><div class="text-[11px] text-teal">58K followers &middot; approximate</div></td>
       </tr>
 
       <!-- ROW 7 — FAILED (replaces the Status column) -->
@@ -444,6 +484,7 @@
     </tbody>
   </table>
   <p class="text-[11px] text-mutedfg mt-3">Greyscale check: every distinction colour reinforces is also carried by text or shape &mdash; different column, different header, different qualifier words, the <b class="text-fg">&asymp;</b> prefix, the words <i>rough</i> / <i>Early</i> / <i>Analysis failed</i>, and full sentences on absent scores.</p>
+  <p class="text-[11px] text-mutedfg mt-3"><b class="text-fg">Amendments A1 and A2 add no colour values.</b> The cold-start cell (row 3) and the <code>REACH_NOT_ON_FIRST_SLIDE</code> row (row 6b) render entirely in the <b class="text-fg">line-2 qualifier</b> row above &mdash; <b class="text-fg">7.91 / 7.73 / 7.35 / 6.78</b> on background / card / row hover / muted, all &ge; 4.5:1. That is deliberate: a normal waiting state must not be styled as an alert (R-14.2.4), and a count we chose not to read must not be styled as a failure (R-N5).</p>
 </section>
 
 <p class="text-[11px] text-mutedfg pb-6">This mockup is <b class="text-accent">PROPOSED and NOT APPROVED</b>. It is the caveat-C2 review checkpoint. No developer should build from it until the owner has ruled on the open questions in <code>DESIGN-3C-analyses-table.md</code> &sect;11.</p>
