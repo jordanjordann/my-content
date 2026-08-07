@@ -110,14 +110,17 @@ export type BaselineDenominator = "REACH" | "ENGAGEMENT_COUNT";
  *
  * - `"COLD_START"` — fewer than `BASELINE_MIN_SAMPLE` comparable prior
  *   analyses exist (TDD §6 step 5). No baseline exists yet. `median` and
- *   `multiplier` are both `null`. This is the ONLY state in which "N of
+ *   `multiplier` do not exist on this variant — there is no value to be
+ *   null, there is no baseline. This is the ONLY state in which "N of
  *   `BASELINE_MIN_SAMPLE` posts" framing is accurate.
  * - `"MEASURED"` — a full baseline exists (`sampleSize >=
  *   BASELINE_MIN_SAMPLE`) and this specific post's own metric was
- *   resolvable against it. `median` and `multiplier` are both non-null.
+ *   resolvable against it. `median` and `multiplier` are both non-null
+ *   numbers.
  * - `"NOT_COMPARABLE"` — a full baseline exists (`sampleSize >=
- *   BASELINE_MIN_SAMPLE`, `median` is non-null — the creator genuinely has
- *   enough history) but no multiplier could be produced for *this* post.
+ *   BASELINE_MIN_SAMPLE`, `median` is a non-null number — the creator
+ *   genuinely has enough history) but no multiplier could be produced for
+ *   *this* post. `multiplier` does not exist on this variant (see below).
  *   `reason` says why:
  *     - `"POST_METRIC_UNRESOLVED"` — this post's own reach/engagement
  *       count for the bucket's denominator is unavailable (e.g. its own
@@ -127,19 +130,33 @@ export type BaselineDenominator = "REACH" | "ENGAGEMENT_COUNT";
  *     - `"MEDIAN_ZERO"` — this post's own metric DID resolve, but the
  *       bucket's median is exactly `0` (every comparator scored zero on
  *       this denominator). Division is undefined, not "1×" or "0×", so
- *       `multiplier` stays `null` rather than reporting a fabricated
- *       number.
+ *       there is no multiplier to report rather than a fabricated number.
  *
  * A consumer MUST switch on `state`; treating `multiplier === null` alone
  * as "cold start" is exactly the bug this type closes off.
+ *
+ * **`median`/`multiplier` are dropped, not typed `null`, on the variants
+ * where they don't apply (post-#159-review correction).** The first cut of
+ * this union kept `median: null` / `multiplier: null` on `COLD_START` and
+ * `multiplier: null` on `NOT_COMPARABLE`, reasoning that the union already
+ * blocked the illegal *value* combination (you cannot construct a
+ * `COLD_START` with a non-null median). That is true but insufficient: with
+ * the field present-but-null on every variant, the un-narrowed union type
+ * for `baseline.multiplier` is still `number | null` — `tsc` happily
+ * compiles `if (baseline.multiplier === null) renderColdStart(...)` on an
+ * un-narrowed `BaselineResult`, which is exactly the #142 misreport this
+ * type exists to make impossible (telling a creator "2 of 5 posts" when a
+ * full baseline exists and only this post's own metric is unmeasurable).
+ * Dropping the fields entirely turns any un-narrowed `.multiplier` access
+ * into a `tsc` error; the only way to reach a `multiplier` is a `state`
+ * check that narrows to `"MEASURED"`, where it is typed `number`, not
+ * `number | null`.
  */
 export type BaselineResult =
   | {
       state: "COLD_START";
       bucketKey: string;
       sampleSize: number;
-      median: null;
-      multiplier: null;
     }
   | {
       state: "MEASURED";
@@ -153,6 +170,25 @@ export type BaselineResult =
       bucketKey: string;
       sampleSize: number;
       median: number;
-      multiplier: null;
       reason: "POST_METRIC_UNRESOLVED" | "MEDIAN_ZERO";
     };
+
+/**
+ * Exhaustiveness helper (PR #159 review, item 2). Call this in the `default`
+ * (or final `else`) branch of a `switch (result.state)` over `BaselineResult`
+ * (or any other closed union). If a fourth state is ever added to the union
+ * without updating every switch, the argument at the call site stops being
+ * assignable to `never` and the build fails at compile time — the switch
+ * cannot silently fall through to a stale default at runtime instead.
+ *
+ * @example
+ * switch (result.state) {
+ *   case "COLD_START": return renderColdStart(result);
+ *   case "MEASURED": return renderMeasured(result);
+ *   case "NOT_COMPARABLE": return renderNotComparable(result);
+ *   default: return assertNever(result);
+ * }
+ */
+export function assertNever(value: never): never {
+  throw new Error(`assertNever: unreachable case reached with value ${JSON.stringify(value)}`);
+}

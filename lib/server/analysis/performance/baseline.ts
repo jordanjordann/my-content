@@ -331,8 +331,6 @@ export async function computeBaseline(input: ComputeBaselineInput): Promise<Base
       state: "COLD_START",
       bucketKey: input.bucketKey,
       sampleSize,
-      median: null,
-      multiplier: null,
     };
   }
 
@@ -348,18 +346,29 @@ export async function computeBaseline(input: ComputeBaselineInput): Promise<Base
       bucketKey: input.bucketKey,
       sampleSize,
       median: medianValue,
-      multiplier: null,
       reason: "POST_METRIC_UNRESOLVED",
     };
   }
 
+  // Non-negative-metric invariant: this collapse into NOT_COMPARABLE/
+  // MEDIAN_ZERO (rather than a division) is only correct because every
+  // metric value flowing into `median()` is non-negative by construction —
+  // `metricFor()`'s REACH branch requires `post.reachValue >= 0`, and its
+  // ENGAGEMENT_COUNT branch only accepts values `usableEngagementCount()`
+  // has already rejected below zero. Given that, `medianValue === 0` can
+  // only mean "every comparator scored exactly zero", never "the bucket
+  // skews negative" — so `!currentMetric` (checked above) and
+  // `medianValue === 0` (checked here) are jointly exhaustive of the
+  // "no multiplier" cases; anything else falls through to a real division.
+  // If a metric were ever allowed to go negative, this guard would stop
+  // being equivalent to "can't multiply" and this branch would instead let
+  // a genuinely negative `multiplier` fall through as MEASURED, silently.
   if (medianValue === 0) {
     return {
       state: "NOT_COMPARABLE",
       bucketKey: input.bucketKey,
       sampleSize,
       median: medianValue,
-      multiplier: null,
       reason: "MEDIAN_ZERO",
     };
   }
