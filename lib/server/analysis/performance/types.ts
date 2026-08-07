@@ -56,10 +56,31 @@ export type AvailabilityState = "AVAILABLE" | "HIDDEN" | "UNKNOWN" | "ZERO";
  * `CAUSE_NOT_DETERMINABLE`, not print an unlabelled number) rather than
  * carry a value paired with `kind: "UNKNOWN"`.
  *
- * `slideIndex` is the 0-based index into the carousel's child array (R-N4
- * — "nice-to-have, not a requirement"; it falls out of the scan in
- * `reach.ts` at no extra cost, so it is carried). Consumers add 1 for the
+ * `slideIndex` is the 0-based index into the carousel's PRE-FILTER `edges`
+ * array (R-N4 — "nice-to-have, not a requirement"; it falls out of the scan
+ * in `reach.ts` at no extra cost, so it is carried). Consumers add 1 for the
  * mockup's one-based "slide 6" copy.
+ *
+ * Deliberately NOT an index into the filtered child array
+ * (`edges.map(e => e.node).filter(Boolean)`): a null `edge.node` anywhere
+ * before the usable slide would silently shift every later index down by
+ * one, printing a confidently wrong slide number ("slide 6" for what is
+ * actually the 7th slide the user sees). `edges` — including any null-node
+ * entries — is the array whose positions match what a viewer actually sees
+ * scrolling the carousel, so it is the only array `slideIndex`/`slideCount`
+ * may be derived from (follow-up to PR #164's review, item 1/2).
+ *
+ * `slideCount` MUST be drawn from that SAME `edges` array
+ * (`edges.length`, pre-filter) — never from the filtered children array.
+ * Pairing a `slideIndex` from `edges` with a `slideCount` from the filtered
+ * array would produce a different, equally confident wrong number
+ * ("slide 6 of 9" when the carousel actually has 10 slides).
+ *
+ * Both fields are **required**, not optional: every production construction
+ * site (`resolveLaterSlideReach` in `reach.ts`) sets them — there is no
+ * producer that scans children without knowing its own position and the
+ * total it scanned. Optionality would force every consumer into a `??`
+ * fallback for a case that cannot occur.
  */
 export type LaterSlideReach =
   | { usable: false }
@@ -69,8 +90,10 @@ export type LaterSlideReach =
       value: number;
       /** Never `"UNKNOWN"` — see the type-level note above (R-N2). */
       kind: Exclude<ReachKind, "UNKNOWN">;
-      /** 0-based index into the carousel's child array. Optional per R-N4. */
-      slideIndex?: number;
+      /** 0-based index into the carousel's pre-filter `edges` array — the user-visible slide position. */
+      slideIndex: number;
+      /** Total user-visible slide count (`edges.length`, pre-filter) — the SAME array `slideIndex` is drawn from. */
+      slideCount: number;
     };
 
 /** Result of `resolveReach()` / `resolveInstagramReach()` / `resolveYoutubeReach()`. */
@@ -83,7 +106,7 @@ export interface ReachResult {
   derivedFrom: ReachDerivedFrom;
   /**
    * OR-26 / ticket #155 / DESIGN-3C §5.4. Carousel only. `{ usable: true,
-   * value, kind, slideIndex? }` when slide 0 carries neither reach key but
+   * value, kind, slideIndex, slideCount }` when slide 0 carries neither reach key but
    * some **later** slide resolves a genuinely usable count (R-N3: the
    * FIRST later slide that does — never a sum, max or mean across slides).
    * `{ usable: false }` on every non-carousel path, every YouTube path, and
