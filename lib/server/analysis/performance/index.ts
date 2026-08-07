@@ -18,8 +18,13 @@ export {
   computeReachPerFollower,
 } from "./ratios";
 
+export { computeBaseline, computeBucketKey, bucketNoun } from "./baseline";
+export type { AnalysisMode, ComputeBaselineInput, MediaType } from "./baseline";
+
 export type {
   AvailabilityState,
+  BaselineDenominator,
+  BaselineResult,
   CountAvailabilityResult,
   Denominator,
   FollowerDenominatedRatio,
