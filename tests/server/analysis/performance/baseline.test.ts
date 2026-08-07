@@ -190,6 +190,7 @@ describe("computeBaseline — AC-1/AC-2 threshold behaviour", () => {
     });
 
     expect(result).toEqual({
+      state: "COLD_START",
       bucketKey: "instagram:reel:full_video",
       sampleSize: 0,
       median: null,
@@ -311,9 +312,9 @@ describe("computeBaseline — AC-23: engagement-count baseline for a no-reach bu
 });
 
 describe("computeBaseline — R-4.3.2/R-12.3.2: the denominator comes from the bucket, never row-level nullness", () => {
-  it("a reach-hidden reel in a reach bucket is excluded, not relabelled ENGAGEMENT_COUNT (BLOCKING 1)", async () => {
-    // This row is NOT a corrupt fixture — it is what a reach-hidden reel
-    // looks like in production (hidden play/view counts,
+  it("a reach-hidden video-bearing carousel in a reach bucket is excluded, not relabelled ENGAGEMENT_COUNT (BLOCKING 1)", async () => {
+    // This row is NOT a corrupt fixture — it is what a reach-hidden
+    // video-bearing carousel looks like in production (hidden play/view counts,
     // `perf_reach_derived_from: 'NONE'` is out of scope, but the resulting
     // `perf_reach_value: NULL` on an otherwise reach-denominated bucket row
     // is exactly this shape). Before the fix, `metricFor()` inferred the
@@ -430,6 +431,121 @@ describe("computeBaseline — usableEngagementCount excludes hidden-count candid
     expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE);
     expect(result.median).toBe(300);
     expect(result.multiplier).toBe(2); // 600 / 300
+  });
+});
+
+describe("computeBaseline — three-state result (post-#154-review: COLD_START vs NOT_COMPARABLE must not collapse)", () => {
+  it("COLD_START (below threshold) is tagged 'COLD_START', not merely null median/multiplier", async () => {
+    const { computeBaseline } = await import("@/lib/server/analysis/performance/baseline");
+    const profileId = randomUUID();
+    await insertProfile(client, profileId);
+
+    const result = await computeBaseline({
+      profileId,
+      bucketKey: "instagram:reel:full_video",
+      schemaVersion: SCHEMA_VERSION,
+      excludeAnalysisId: randomUUID(),
+      minPostAgeHours: 72,
+      currentPost: { reachValue: 10_000, likeCount: 500, commentCount: 20 },
+    });
+
+    expect(result.state).toBe("COLD_START");
+  });
+
+  it("NOT_COMPARABLE (full baseline, this post's own reach unresolved) is tagged 'NOT_COMPARABLE' and is NOT confusable with COLD_START", async () => {
+    // The exact regression this ticket closes: a full baseline exists
+    // (sampleSize >= BASELINE_MIN_SAMPLE, median non-null) but this
+    // specific post's own reach is unresolved, so no multiplier can be
+    // produced. Before this fix, this state was distinguishable from
+    // COLD_START only by inference (checking median !== null), which a
+    // downstream consumer (#142) could get wrong and render "2 of 5
+    // posts" for a creator who actually has a full baseline.
+    const { computeBaseline } = await import("@/lib/server/analysis/performance/baseline");
+    const { BASELINE_MIN_SAMPLE } = await import("@/lib/server/analysis/performance/constants");
+    const profileId = randomUUID();
+    await insertProfile(client, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    for (let i = 0; i < BASELINE_MIN_SAMPLE; i++) {
+      await insertAnalysis(client, { profileId, bucketKey, reachValue: 1_000 });
+    }
+
+    const result = await computeBaseline({
+      profileId,
+      bucketKey,
+      schemaVersion: SCHEMA_VERSION,
+      excludeAnalysisId: randomUUID(),
+      minPostAgeHours: 72,
+      currentPost: { reachValue: null, likeCount: 10, commentCount: 5 },
+    });
+
+    expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE);
+    expect(result.median).toBe(1_000);
+    expect(result.multiplier).toBeNull();
+    expect(result.state).toBe("NOT_COMPARABLE");
+    expect(result.state).not.toBe("COLD_START");
+    if (result.state === "NOT_COMPARABLE") {
+      expect(result.reason).toBe("POST_METRIC_UNRESOLVED");
+    }
+  });
+
+  it("MEASURED (full baseline, this post's own metric resolved) is tagged 'MEASURED'", async () => {
+    const { computeBaseline } = await import("@/lib/server/analysis/performance/baseline");
+    const { BASELINE_MIN_SAMPLE } = await import("@/lib/server/analysis/performance/constants");
+    const profileId = randomUUID();
+    await insertProfile(client, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    for (let i = 0; i < BASELINE_MIN_SAMPLE; i++) {
+      await insertAnalysis(client, { profileId, bucketKey, reachValue: 1_000 * (i + 1) });
+    }
+
+    const result = await computeBaseline({
+      profileId,
+      bucketKey,
+      schemaVersion: SCHEMA_VERSION,
+      excludeAnalysisId: randomUUID(),
+      minPostAgeHours: 72,
+      currentPost: { reachValue: 9_000, likeCount: null, commentCount: null },
+    });
+
+    expect(result.state).toBe("MEASURED");
+    expect(result.multiplier).toBe(3);
+  });
+
+  it("MEDIAN_ZERO: full baseline where every comparator scored zero produces NOT_COMPARABLE/MEDIAN_ZERO, never a fabricated multiplier", async () => {
+    const { computeBaseline } = await import("@/lib/server/analysis/performance/baseline");
+    const { BASELINE_MIN_SAMPLE } = await import("@/lib/server/analysis/performance/constants");
+    const profileId = randomUUID();
+    await insertProfile(client, profileId);
+    const bucketKey = "instagram:carousel:images_only";
+
+    for (let i = 0; i < BASELINE_MIN_SAMPLE; i++) {
+      await insertAnalysis(client, {
+        profileId,
+        bucketKey,
+        reachValue: null,
+        likeCount: 0,
+        commentCount: 0,
+      });
+    }
+
+    const result = await computeBaseline({
+      profileId,
+      bucketKey,
+      schemaVersion: SCHEMA_VERSION,
+      excludeAnalysisId: randomUUID(),
+      minPostAgeHours: 72,
+      currentPost: { reachValue: null, likeCount: 5, commentCount: 5 },
+    });
+
+    expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE);
+    expect(result.median).toBe(0);
+    expect(result.multiplier).toBeNull();
+    expect(result.state).toBe("NOT_COMPARABLE");
+    if (result.state === "NOT_COMPARABLE") {
+      expect(result.reason).toBe("MEDIAN_ZERO");
+    }
   });
 });
 

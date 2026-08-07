@@ -96,13 +96,63 @@ export type BaselineDenominator = "REACH" | "ENGAGEMENT_COUNT";
 /**
  * Result of `computeBaseline()` (`baseline.ts`). `sampleSize` is **never
  * null** (R-8.4.4/R-13.3.4) — it is the count of prior mature, same-bucket,
- * same-schema-version analyses this creator has, even at zero. `median`
- * and `multiplier` are null together below `BASELINE_MIN_SAMPLE` — the
- * cold-start state (TDD §6 step 5) — and both non-null at or above it.
+ * same-schema-version analyses this creator has, even at zero.
+ *
+ * **Three states, not two** (post-#154-review correction — the prior doc
+ * comment here claimed `median`/`multiplier` were "both non-null at or
+ * above `BASELINE_MIN_SAMPLE`", which stopped being true the moment
+ * per-post exclusion (`metricFor()`) shipped: a full baseline can exist
+ * while THIS post's own metric is unresolvable). A discriminated union on
+ * `state`, not a comment, is the guard: a consumer (ticket #142) that
+ * switches on `state` physically cannot render `NOT_COMPARABLE` as
+ * `COLD_START` by accident, because there is no `median`/`multiplier`
+ * nullness inference left to get wrong.
+ *
+ * - `"COLD_START"` — fewer than `BASELINE_MIN_SAMPLE` comparable prior
+ *   analyses exist (TDD §6 step 5). No baseline exists yet. `median` and
+ *   `multiplier` are both `null`. This is the ONLY state in which "N of
+ *   `BASELINE_MIN_SAMPLE` posts" framing is accurate.
+ * - `"MEASURED"` — a full baseline exists (`sampleSize >=
+ *   BASELINE_MIN_SAMPLE`) and this specific post's own metric was
+ *   resolvable against it. `median` and `multiplier` are both non-null.
+ * - `"NOT_COMPARABLE"` — a full baseline exists (`sampleSize >=
+ *   BASELINE_MIN_SAMPLE`, `median` is non-null — the creator genuinely has
+ *   enough history) but no multiplier could be produced for *this* post.
+ *   `reason` says why:
+ *     - `"POST_METRIC_UNRESOLVED"` — this post's own reach/engagement
+ *       count for the bucket's denominator is unavailable (e.g. its own
+ *       reach is hidden). Takes priority over `"MEDIAN_ZERO"` below: an
+ *       unresolved numerator can't be multiplied no matter what the
+ *       median is.
+ *     - `"MEDIAN_ZERO"` — this post's own metric DID resolve, but the
+ *       bucket's median is exactly `0` (every comparator scored zero on
+ *       this denominator). Division is undefined, not "1×" or "0×", so
+ *       `multiplier` stays `null` rather than reporting a fabricated
+ *       number.
+ *
+ * A consumer MUST switch on `state`; treating `multiplier === null` alone
+ * as "cold start" is exactly the bug this type closes off.
  */
-export interface BaselineResult {
-  bucketKey: string;
-  sampleSize: number;
-  median: number | null;
-  multiplier: number | null;
-}
+export type BaselineResult =
+  | {
+      state: "COLD_START";
+      bucketKey: string;
+      sampleSize: number;
+      median: null;
+      multiplier: null;
+    }
+  | {
+      state: "MEASURED";
+      bucketKey: string;
+      sampleSize: number;
+      median: number;
+      multiplier: number;
+    }
+  | {
+      state: "NOT_COMPARABLE";
+      bucketKey: string;
+      sampleSize: number;
+      median: number;
+      multiplier: null;
+      reason: "POST_METRIC_UNRESOLVED" | "MEDIAN_ZERO";
+    };

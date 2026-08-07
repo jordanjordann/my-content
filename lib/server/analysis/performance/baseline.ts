@@ -327,14 +327,50 @@ export async function computeBaseline(input: ComputeBaselineInput): Promise<Base
   const sampleSize = candidateMetrics.length;
 
   if (sampleSize < BASELINE_MIN_SAMPLE) {
-    return { bucketKey: input.bucketKey, sampleSize, median: null, multiplier: null };
+    return {
+      state: "COLD_START",
+      bucketKey: input.bucketKey,
+      sampleSize,
+      median: null,
+      multiplier: null,
+    };
   }
 
   const medianValue = median(candidateMetrics.map((m) => m.value));
-  const multiplier =
-    currentMetric && medianValue > 0 ? currentMetric.value / medianValue : null;
 
-  return { bucketKey: input.bucketKey, sampleSize, median: medianValue, multiplier };
+  // Priority order matches the type doc (types.ts `BaselineResult`):
+  // this post's own unresolved metric is checked before median-zero,
+  // because an unresolved numerator can't be multiplied regardless of
+  // what the median is.
+  if (!currentMetric) {
+    return {
+      state: "NOT_COMPARABLE",
+      bucketKey: input.bucketKey,
+      sampleSize,
+      median: medianValue,
+      multiplier: null,
+      reason: "POST_METRIC_UNRESOLVED",
+    };
+  }
+
+  if (medianValue === 0) {
+    return {
+      state: "NOT_COMPARABLE",
+      bucketKey: input.bucketKey,
+      sampleSize,
+      median: medianValue,
+      multiplier: null,
+      reason: "MEDIAN_ZERO",
+    };
+  }
+
+  return {
+    state: "MEASURED",
+    bucketKey: input.bucketKey,
+    sampleSize,
+    median: medianValue,
+    multiplier: currentMetric.value / medianValue,
+  };
 }
 
 export type { BaselineDenominator, BaselineResult } from "./types";
