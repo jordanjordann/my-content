@@ -98,7 +98,13 @@ export function makeImageChild(
  * `video_view_count` is the field that's actually populated (C4 reversal).
  */
 export function makeVideoChild(
-  overrides: Partial<ScrapeCreatorsCarouselChildNode> = {},
+  overrides: Partial<Omit<ScrapeCreatorsCarouselChildNode, "video_view_count">> & {
+    // `ScrapeCreatorsCarouselChildNode.video_view_count` is `number | undefined`
+    // (ticket #71 owns modelling its real nullability — not fixed here).
+    // Widened locally so callers pinning a nulled-out child don't need a
+    // `null as unknown as number` double cast at the call site.
+    video_view_count?: number | null;
+  } = {},
 ): ScrapeCreatorsCarouselChildNode {
   return {
     __typename: "XDTGraphVideo",
@@ -111,7 +117,11 @@ export function makeVideoChild(
     display_url: "https://cdn.example/child-video-display.jpg",
     dimensions: { width: 1080, height: 1080 },
     ...overrides,
-  };
+    // Single cast here (not at every call site): `video_view_count` is
+    // widened above to accept the realistic `null` case #71 will formally
+    // model; the underlying value shape is still exactly what
+    // `ScrapeCreatorsCarouselChildNode` expects everywhere else.
+  } as ScrapeCreatorsCarouselChildNode;
 }
 
 /**

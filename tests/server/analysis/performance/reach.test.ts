@@ -105,6 +105,55 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
     expect(result.someSlideHasReach).toBe(true);
   });
 
+  it("OR-26 / PR #158 review — SYNTHETIC MUTANT: mixed carousel with an image at slide 0 and every later video slide's counts nulled out resolves NONE with someSlideHasReach FALSE — merely carrying the reach KEYS on a later slide must not fabricate REACH_NOT_ON_FIRST_SLIDE when none of those slides has a usable number", () => {
+    // Same reordering as the mutant above (proves the interleaved shape is
+    // real, witnessed data, not a hypothesis) but additionally nulls out
+    // every remaining video slide's video_view_count/video_play_count. The
+    // keys are still PRESENT (hasReachFields would still say true for all
+    // of them) — only the VALUES are unusable. This is exactly the
+    // regression the owner's ruling on PR #158 flagged: a presence-only
+    // check flips someSlideHasReach true here; the fix must not.
+    const media = loadMedia("ig_carousel_mixed_video_and_image_10_slides.json");
+    // `Omit<..., "edge_sidecar_to_children">` (not a plain intersection) so
+    // the declared `Record<string, unknown>` node shape is authoritative
+    // and doesn't structurally bleed with `ScrapeCreatorsCarouselChildNode`'s
+    // `number | undefined` typing for `video_view_count` — that bleed is
+    // what forced the `null as unknown as number` double casts below
+    // previously (a plain `A & B` intersection recomputes property types
+    // structurally on every access, even when the value was produced via an
+    // `unknown` bridge cast).
+    const cloned = structuredClone(media) as unknown as Omit<
+      ScrapeCreatorsMedia,
+      "edge_sidecar_to_children"
+    > & {
+      edge_sidecar_to_children: {
+        edges: Array<{ node: Record<string, unknown> }>;
+      };
+    };
+    const edges = cloned.edge_sidecar_to_children.edges;
+    const slide0 = edges[0]!;
+    const slide5 = edges[5]!;
+    edges[0] = slide5;
+    edges[5] = slide0;
+    for (const edge of edges) {
+      // R-12.7.1: `is_video` is forbidden as a discriminator even here in
+      // test setup — divergence 16 records that image-child key sets are
+      // not fixed, so gate on the same reach-key presence the module itself
+      // reads, not on a type-name-adjacent boolean.
+      if ("video_view_count" in edge.node) {
+        edge.node.video_view_count = null;
+        edge.node.video_play_count = null;
+      }
+    }
+
+    const result = resolveInstagramReach(cloned);
+
+    expect(result.derivedFrom).toBe("NONE");
+    expect(result.value).toBeNull();
+    expect(result.kind).toBeNull();
+    expect(result.someSlideHasReach).toBe(false);
+  });
+
   it("OR-20 negative assertion — reach is never negative for any committed Instagram fixture", () => {
     for (const file of fs.readdirSync(fixturesDir)) {
       // ig_profile_business_account.json is a /v1/instagram/profile capture
@@ -167,6 +216,69 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
     // OR-26 / #155: this is exactly case 2 — slide 0 has no reach fields
     // but a later slide does — so the boolean must flag it.
     expect(result.someSlideHasReach).toBe(true);
+  });
+
+  it("OR-26 / PR #158 review — a later slide carrying the reach KEYS but only unusable values (both null) is NOT usable — someSlideHasReach stays false, distinguishing it from the genuinely-usable-later-slide case above", () => {
+    const media = makeCarousel([
+      makeImageChild(),
+      makeVideoChild({ video_view_count: null, video_play_count: null }),
+    ]);
+
+    const result = resolveInstagramReach(media);
+    expect(result.derivedFrom).toBe("NONE");
+    expect(result.someSlideHasReach).toBe(false);
+  });
+
+  it("PR #161 review R1 — a later slide corroborated at exactly 0 (both fields 0) counts as usable, someSlideHasReach TRUE — pins the ZERO clause in childHasUsableReach against deletion", () => {
+    // This is the single judgement call this PR exists to make: `ZERO` is
+    // usable, same as `AVAILABLE`. If `childHasUsableReach` were narrowed to
+    // `resolved.state === "AVAILABLE"` (dropping the `|| state === "ZERO"`
+    // clause), this test is the one that would fail — see the mutation
+    // proof in the PR thread.
+    const media = makeCarousel([
+      makeImageChild(),
+      makeVideoChild({ video_play_count: 0, video_view_count: 0 }),
+    ]);
+
+    const result = resolveInstagramReach(media);
+    expect(result.derivedFrom).toBe("NONE");
+    expect(result.someSlideHasReach).toBe(true);
+  });
+
+  it("PR #161 review R2 — a later slide's false zero (video_view_count: 0 beside a real non-zero video_play_count) is NOT usable, someSlideHasReach FALSE — pins the ig_reel_1_zero_view_count.json false-zero rejection on the CHILD path, not just the top-level path AC-4 already covers", () => {
+    // The child's authoritative field is video_view_count (divergence 13),
+    // and here it reads 0 while video_play_count — a field this node is NOT
+    // authoritative for — is a real non-zero count. resolveNodeReach must
+    // not corroborate a ZERO from a field it isn't authoritative for, and
+    // must not treat the authoritative-but-zero field as usable without
+    // that corroboration. Without this pin, nothing in the child path
+    // exercises the exact shape that would fabricate
+    // REACH_NOT_ON_FIRST_SLIDE off a false zero.
+    const media = makeCarousel([
+      makeImageChild(),
+      makeVideoChild({ video_view_count: 0, video_play_count: 116_333 }),
+    ]);
+
+    const result = resolveInstagramReach(media);
+    expect(result.derivedFrom).toBe("NONE");
+    expect(result.someSlideHasReach).toBe(false);
+  });
+
+  it("PR #161 review R3 — a realistic zero-view child (video_view_count: 0, video_play_count: null, the shape every real video carousel child actually has per divergence 12) resolves someSlideHasReach FALSE, not ZERO — documents that this conservative outcome is deliberate, not accidental", () => {
+    // Divergence 12: every real carousel video child carries
+    // video_play_count: null (confirmed across all 7 video children in
+    // ig_carousel_mixed_video_and_image_10_slides.json). ZERO requires BOTH
+    // fields to read exactly 0 — no witnessed payload satisfies that, so
+    // this is the outcome real data actually produces today: UNKNOWN, not
+    // ZERO, and therefore not usable.
+    const media = makeCarousel([
+      makeImageChild(),
+      makeVideoChild({ video_view_count: 0, video_play_count: null }),
+    ]);
+
+    const result = resolveInstagramReach(media);
+    expect(result.derivedFrom).toBe("NONE");
+    expect(result.someSlideHasReach).toBe(false);
   });
 
   it("R-4.3.1 — a carousel first slide corroborated at exactly 0 is a genuine ZERO labelled VIEWS, never PLAYS — the child's authoritative field is video_view_count, not video_play_count", () => {
