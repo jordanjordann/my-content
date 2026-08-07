@@ -1,6 +1,6 @@
 # Design Decision Record — Phase 3B, Score Explainability
 
-**Status:** **PROPOSED — NOT APPROVED.** Nothing here is signed off; every copy string below is a proposal for the owner to accept, edit or reject. **No developer should start building from this file.** PRD §13.8 makes this mockup review the sign-off point, and it explicitly asks that the sign-off be recorded.
+**Status:** **APPROVED — 2026-08-07, by the owner.** This is the sign-off PRD §13.8 reserved for this mockup review, and the owner has ruled: the three-level disclosure model, the seven absent-score strings of §5 (including case 3's `We can't tell`), the provisional copy constraint of §6, the seven items in §9, and amendment **B1** (§5.3, R-C1…R-C6). The full record, including what is and is not covered, is in **§10**. This file is the canonical home for every copy string it contains, and tickets **#145–#149** may build against it within that scope; anything §10 lists as not covered is not covered.
 **Author:** Jessica (UI/UX)
 **Created:** 2026-08-06
 **Mockup:** [`docs/design/3b-score-explainability-mockup.html`](./3b-score-explainability-mockup.html) — open in a browser.
@@ -277,12 +277,27 @@ Flagged rather than designed around.
 
 ## 10. Sign-off record
 
-**Empty. This document is not approved.**
+**Approved by the owner on 2026-08-07.** Recorded here because PRD §13.8 and caveat C2 require the sign-off to be explicit — *"we assumed the designer had handled it"* is precisely how R6 ships. The approval covers this document **as it stands on `main` at `2c1c5db`**; it is the owner's ruling in the 2026-08-07 session, not any handoff line, that this record reflects.
 
-PRD §13.8 and caveat C2 require the sign-off to be explicit and recorded. When the owner rules, record here:
+**What is approved:**
 
-- [ ] **§13 explainability surfaces signed off**, including the three-level disclosure model.
-- [ ] **The absent-score copy set (§5) approved**, string by string, especially case 3 (`We can't tell`) which must survive later editing pressure.
-- [ ] **The cold-start copy set (§5.3) approved** — `2 of 5 carousels` / `builds as you analyse more`, and R-C1…R-C6. The same wording is already approved in the companion spec (its §5.3, sign-off 2026-08-07); **this document's copy set as a whole is still unapproved**, and that gap is deliberate, not an oversight.
-- [ ] **The provisional copy constraint (§6) approved** — no hour count in any user-facing string.
-- [ ] **Rulings on the seven items in §9.**
+- [x] **§13 explainability surfaces signed off**, including the three-level disclosure model (§1) and the completeness audit of §8.
+- [x] **The absent-score copy set (§5) approved**, string by string — all seven — **especially case 3 (`We can't tell`)**, which R-13.5.3b protects and which **must survive later editing pressure** (§5.1). Its tidier-sounding neighbour, string 1, asserts a cause; approving string 3 is approving the untidiness on purpose.
+- [x] **The cold-start copy set (§5.3) approved** — `2 of 5 carousels` / `builds as you analyse more`, and rules **R-C1…R-C6** (amendment **B1**). The same wording is approved in the companion spec's §5.3; the two documents now say one thing, and **this one is where the string changes.**
+- [x] **The provisional copy constraint (§6) approved** — the `Early` badge, and **no hour count in any user-facing string** (R-13.4.4, AC-29), including the banned phrasings recorded there.
+- [x] **The seven items in §9**, as the positions this document states them — including the bucket-aware `based on N {noun}` of §4.2, labelling the 1–5 as a judgement (§7), and keeping both the tier phrase and the confidence word at L1. **Three of the seven still require action by somebody other than the owner before they are true in code**, and are carried over below rather than closed by this signature.
+
+**Resolved, 2026-08-07.** The gap previously recorded here — that the companion spec's §5.3 was approved while this document's copy set as a whole was not, so tickets **#145–#149** would have been building against an unapproved canonical string home — **is closed by this sign-off.** It was a real gap and was deliberately left open in PR #163 rather than allowed to read as approval by proximity to amendment B1; it is recorded as resolved, not deleted, so the reason it existed stays legible.
+
+**Carried over — approved as positions, not yet actionable in code:**
+
+- **§9.1 / §4.2 — `based on N videos`.** AC-28 asserts the literal word `videos`. The bucket-aware noun is approved as the design, but **AC-28 still needs relaxing to the pattern `based on {N} {noun}`** by a PRD amendment. Until that lands, design and acceptance criteria disagree, and the AC wins in CI.
+- **§9.2 — the `week` in the staleness copy** is a TTL, not on the R-13.3.4 allow-list and not in the computed block. The `5` is resolved (R-14.2.7 / R-C2); the `week` is not, and it will fail AC-27 if nobody decides.
+- **§9.6 / §5.1 — the new stored reason for "cause not determinable"** (proposed `PERFORMANCE_DATA_ABSENT`) does not exist yet. **That a distinct value exists is a design requirement**; the name is the tech lead's call. Without it the app renders string 1 where string 3 is required, and AC-30's negative assertion fails.
+
+**What this sign-off does not cover**, recorded so that nobody reads it as broader than it is:
+
+- **The companion spec's §11 questions 2, 3 and 4 remain UNRULED**, exactly as its own §12 records them, and **nothing here rules them**: the Status-column cut (Q2), the Style column's default state (Q3), and **whether the 1–5 performance score belongs in the table at all (Q4)**. Q4 is a live product question, not a formality — it is implemented as proposed but has never been decided, and **§7 of this document is an argument that feeds it, not an answer to it.** Approving §7's treatment of the 1–5 as a judgement approves *how it reads if it ships*; it does not approve *that it ships in the table*. If Q4 is later ruled the other way, §7 and §5's row-level assumptions are the parts of this document that change.
+- **R-N1's data dependency is not waived** (companion spec §5.4). A backend change is in flight to carry the reach **value and its kind** through `ReachResult`. If it does not land, **`REACH_NOT_ON_FIRST_SLIDE` must not render** and the row falls back to `CAUSE_NOT_DETERMINABLE` with its existing copy. Approving the copy does not approve shipping the state without its figure — a bare "the count is on a later slide" is the R-13.5.3a failure this whole section exists to forbid.
+- **AC-33's ban-string search must be scoped to UI copy and code — not to design documents.** R-C1 bans the literal `5 posts`, and **both this document and its companion contain that literal inside the rule that states the ban.** An unscoped repository search will trip on the rule stating itself. That is a false positive, not a violation; scope the search to user-facing strings and the modules that render them.
+- **Nothing outside this file.** The PRD, the TDD and the acceptance criteria are unchanged by this record. Where this document and an AC disagree (see the carry-overs above), this signature does not settle the disagreement.
