@@ -88,8 +88,8 @@ function resolveNodeReach(
   return { value: null, kind: "UNKNOWN", state: "UNKNOWN" };
 }
 
-function noneResult(): ReachResult {
-  return { value: null, kind: null, state: "UNKNOWN", derivedFrom: "NONE" };
+function noneResult(someSlideHasReach = false): ReachResult {
+  return { value: null, kind: null, state: "UNKNOWN", derivedFrom: "NONE", someSlideHasReach };
 }
 
 function getCarouselChildren(raw: ScrapeCreatorsMedia): ScrapeCreatorsCarouselChildNode[] {
@@ -122,11 +122,16 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
     const children = getCarouselChildren(raw);
     const firstSlide = children[0];
     if (!firstSlide || !hasReachFields(firstSlide)) {
-      return noneResult();
+      // OR-26 / #155: distinguish "no slide in this carousel carries a
+      // reach field" from "slide 0 doesn't, but a later slide does" —
+      // the latter is a live reach fact D4's first-slide rule never
+      // consulted, not a permanent content-kind limitation.
+      const someSlideHasReach = children.some(hasReachFields);
+      return noneResult(someSlideHasReach);
     }
 
     const node = resolveNodeReach(firstSlide, "view");
-    return { ...node, derivedFrom: "CAROUSEL_FIRST_SLIDE" as ReachDerivedFrom };
+    return { ...node, derivedFrom: "CAROUSEL_FIRST_SLIDE" as ReachDerivedFrom, someSlideHasReach: false };
   }
 
   if (!hasReachFields(raw)) {
@@ -134,7 +139,7 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
   }
 
   const node = resolveNodeReach(raw, "play");
-  return { ...node, derivedFrom: "TOP_LEVEL" as ReachDerivedFrom };
+  return { ...node, derivedFrom: "TOP_LEVEL" as ReachDerivedFrom, someSlideHasReach: false };
 }
 
 /**
@@ -151,20 +156,20 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
  */
 export function resolveYoutubeReach(viewCountInt: unknown): ReachResult {
   if (viewCountInt === undefined) {
-    return { value: null, kind: "UNKNOWN", state: "UNKNOWN", derivedFrom: "NONE" };
+    return { value: null, kind: "UNKNOWN", state: "UNKNOWN", derivedFrom: "NONE", someSlideHasReach: false };
   }
 
   const value = num(viewCountInt);
 
   if (value === null) {
-    return { value: null, kind: "UNKNOWN", state: "UNKNOWN", derivedFrom: "TOP_LEVEL" };
+    return { value: null, kind: "UNKNOWN", state: "UNKNOWN", derivedFrom: "TOP_LEVEL", someSlideHasReach: false };
   }
   if (value < 0) {
-    return { value: null, kind: "UNKNOWN", state: "UNKNOWN", derivedFrom: "TOP_LEVEL" };
+    return { value: null, kind: "UNKNOWN", state: "UNKNOWN", derivedFrom: "TOP_LEVEL", someSlideHasReach: false };
   }
   if (value === 0) {
-    return { value: 0, kind: "VIEWS", state: "ZERO", derivedFrom: "TOP_LEVEL" };
+    return { value: 0, kind: "VIEWS", state: "ZERO", derivedFrom: "TOP_LEVEL", someSlideHasReach: false };
   }
 
-  return { value, kind: "VIEWS", state: "AVAILABLE", derivedFrom: "TOP_LEVEL" };
+  return { value, kind: "VIEWS", state: "AVAILABLE", derivedFrom: "TOP_LEVEL", someSlideHasReach: false };
 }
