@@ -1,6 +1,6 @@
 # Design Decision Record — Phase 3C, the Analyses Table
 
-**Status:** **APPROVED — 2026-08-07, by the owner.** This is the mockup-review checkpoint that caveat **C2** of the PRD reserved, and the owner has ruled: the 9-column table, **Direction A** for the engagement split (§4), Comfortable density, and pagination with newest-analysis-first as the default sort. The full record, including what is and is not covered, is in **§12**. Development may proceed against this file within that scope; anything §11 still lists as open is not covered by the sign-off.
+**Status:** **APPROVED — 2026-08-07, by the owner.** This is the mockup-review checkpoint that caveat **C2** of the PRD reserved, and the owner has ruled: the 9-column table, **Direction A** for the engagement split (§4), Comfortable density, and pagination with newest-analysis-first as the default sort. The full record, including what is and is not covered, is in **§12**. Development may proceed against this file within that scope; anything §11 still lists as open is not covered by the sign-off. **As of 2026-08-09, §11 lists nothing as open** — Q4 was ruled 2026-08-07 and **Q2 (Status column cut) and Q3 (Style column default-off) were ruled 2026-08-09**, each separately from and after the sign-off. The shipping column set is stated in full in **§2.2**.
 **Author:** Jessica (UI/UX)
 **Created:** 2026-08-06
 **Mockup:** [`docs/design/3c-analyses-table-mockup.html`](./3c-analyses-table-mockup.html) — open in a browser. It carries a Direction A / Direction B toggle at the top.
@@ -15,7 +15,11 @@
 | **A1** | 2026-08-07 | **Cold-start copy is bucket-scoped, never creator-scoped.** The bare `3 of 5` in §2.2 is withdrawn; the state is fully specified in the new **§5.3**. | **R-14.2.5 / R-8.4.9** (PRD §14.2, merged in PR #160) forbid any cold-start string that says "5 posts" or otherwise frames the threshold per creator. The bare figure told a creator with 8 analysed posts something false about what they were waiting for. |
 | **A2** | 2026-08-07 | **New absent-reason state `REACH_NOT_ON_FIRST_SLIDE`**, fully specified in the new **§5.4**, with a new rule **R-D4** in §4.1. | Raised by code review on PR #161, on top of **OR-26** (TDD §0, §3.1, §5.3). The sentence "the count is on a later slide" is a non-answer without the count beside it — and a non-answer is what **R-13.5.3a** exists to forbid. |
 
+| **A3** | 2026-08-09 | **Record-keeping pass, no design change. §11 Q2 and Q3 are ruled and recorded as ruled everywhere this document restated them as open** — §2.1, §2.2, §6.2, §6.3, §11 (preamble, Q2, Q3, Q4) and §12. **Q2: the Status column is CUT. Q3: the Style column ships DEFAULT-OFF** — built and available, hidden until the user opts in via the column picker. §2.2 now states the shipping column set in full. | Both rulings **confirm what this document already proposed**, so no column, width, order, string, colour or interaction changes; what changes is that §2.2 is a decision rather than a recommendation, and **#145 / #146 / #149 are scoped from it**. Also flags, for the tech lead, that `TDD` §0.2 (OR-4 / OR-5) and this document's §12 disagree about the *record* of when Q2/Q3 were decided — the substance agrees. |
+
 **Neither amendment reopens a settled decision.** The column set, density, sort behaviour and the Direction A engagement split are unchanged. Both are copy/state corrections consequent on rules ruled on *after* the mockup review, and §5.3 largely brings this document into line with what the mockup already drew.
+
+**That sentence was written of A1 and A2 and holds for all three.** **A3 reopens nothing and changes nothing** — it records two owner rulings that ratify proposals this document already made, so the column set, widths, order, density, sort behaviour, strings, colours and the Direction A engagement split are all untouched by it.
 
 **Resolved, 2026-08-07.** The flag previously carried here — that the status header read *PROPOSED — NOT APPROVED* and §12 was empty while `docs/HANDOFF-2026-08-06.md` §"Design / table (3C)" recorded the design as approved — has been cleared. The owner approved this document explicitly in the 2026-08-07 session, and that approval, not the handoff line, is what §12 records.
 
@@ -58,6 +62,13 @@ The PRD's own guidance (R5) is *"cut from the bottom of the default list, not fr
 
 Net: **12 → 9 default columns**, with one optional tenth.
 
+> **RULED 2026-08-09, by the owner — the two proposals in this table that were still only proposals are now decisions.** Both rows above were written as recommendations pending §11 Q2 and Q3. They are no longer conditional:
+>
+> - **#12 Status — Q2 RULED: the Status column is CUT.** It does not ship as a column, and it is not "the easiest thing to restore". Status surfaces in exactly two places, both already specified here: the **row-level failed treatment** (§3.3 — 3px rose left edge, `Analysis failed — {reason}` on line 2 of the Content cell, `—` in every metric cell, and `Not analysed` in the Performance cell) and the **Status filter chip** (§6.2). Nothing else moves; **no other column absorbs Status's content**, because Status never had per-row content worth a column — it said "Completed".
+> - **#11 `formatArchetype` + `hookType` — Q3 RULED: the Style column ships DEFAULT-OFF.** The sentence *"If the owner disagrees this is the easiest thing to restore"* is spent: the owner did not disagree. **The column is built and available**, and is hidden until the user opts in from the `Columns` menu (§6.3). Default-off is a **default**, not a cut — do not descope building it.
+>
+> Both rulings **confirm this section as written**. No width, order or total in §2.2 changes as a result; see the note there for the resulting column set stated in full.
+
 ### 2.2 The proposed default column set
 
 Left to right, at a 1440px viewport:
@@ -76,6 +87,16 @@ Left to right, at a 1440px viewport:
 | — | *Style* (optional) | 150px | no | `formatArchetype` + `hookType` badges. Off by default. |
 
 Total ≈ **1,288px** + 24px gutters ≈ **1,312px**. Fits 1360 with slack. With the optional Style column on it is ~1,462px and the table scrolls slightly — acceptable for an opt-in column.
+
+> **CONFIRMED 2026-08-09 — this is the shipping column set, not a proposal.** The heading above still reads *"The proposed default column set"*; it is preserved, and superseded. With **Q2 ruled (Status cut)** and **Q3 ruled (Style default-off)**, the table above is **exactly what ships**. Stated plainly, because **#145 / #146 / #149 are scoped from this section**:
+>
+> **Default columns, left to right — nine, and only these nine:** **1 Content · 2 Creator · 3 Posted · 4 Counts · 5 Content score · 6 Performance · 7 vs their usual · 8 Eng. / reach · 9 Eng. / followers.** Columns 5 and 6 sit under the shared **`Scores`** group header.
+>
+> **Plus one optional tenth: *Style*** (`formatArchetype` + `hookType`, 150px, not sortable). **Built, shipped, and hidden by default**; the user turns it on from the `Columns` menu (§6.3). A build that omits the Style column entirely does not satisfy Q3.
+>
+> **There is no Status column, and nothing replaces it in the grid.** Row affordances and hierarchy are **unchanged** by the cut: no column widens, no column moves, the group header spans the same two columns, and the sort set of §6.1 is unchanged. Status surfaces only as the **row-level failed treatment** (§3.3) and the **Status filter chip** (§6.2), both already specified.
+>
+> **Width is unchanged too.** Both rulings ratify what this section already drew, so the total stands at **≈1,312px** default (fits 1360 with slack) and **≈1,462px** with Style toggled on. **Neither ruling makes the table narrower than the figures above** — the 1,312px total never included Status and never included Style. If a later reader has been told the table "ships materially narrower than §2.2 describes", that is a misreading of the rulings: they **confirmed** this layout rather than trimming it.
 
 **Column-order rationale.** Identification (1–3) → raw evidence (4) → judgement (5–6) → the quotable comparison (7) → the two ratios (8–9). The two axes the PRD insists must never merge (D7) sit **adjacent under a shared "Scores" group header**, which is the clearest way to say "these are two different things about the same post" without implying either is a component of the other. The engagement ratios sit at the **far right, after** the multiplier, deliberately: §12.4 warns against burying Tier 2 beneath a weaker follower-denominated percentage, and reading order does the burying.
 
@@ -315,10 +336,13 @@ A single chip bar above the table, left-aligned, wrapping to a second line if ne
 - The **Tier** filter's options are the plain-language phrases, not the enums: `Compared to their usual` / `Measured against reach` / `Rough — vs audience size` / `No score`.
 - Below the chip bar, always: `Showing 24 of 118 analyses`. Always rendered, even unfiltered — it is the fastest way for a user to notice a filter they forgot about.
 - **Filters never hide the reason a row has no score.** Filtering to "No score" is a supported and useful view, not an error state.
+- **The `Status` chip is now load-bearing (Q2, ruled 2026-08-09).** With the Status *column* cut, this filter plus the failed-row treatment of §3.3 are the **only** two places status is expressed in the table. It is therefore **not optional and not a candidate for descoping**: removing it would leave a user with no way to ask "show me what failed" at all.
 
 ### 6.3 Column visibility
 
 A `Columns` menu at the right of the chip bar. Only the optional Style column is off by default. **Four columns cannot be hidden: Content, Performance, and both engagement columns** (or the single engagement column in Direction B) — hiding a denominator-bearing column is how R-12.3.1 gets violated by a user rather than by a developer. The menu shows them as locked with the tooltip `Always shown — this column carries information the numbers can't be read without.`
+
+**Style is default-off by ruling, not by proposal (Q3, ruled 2026-08-09).** The column is **built and shipped**, listed in this menu unchecked on first load, and toggled on by the user. Two consequences for whoever builds this: **the menu is not optional** — with exactly one toggleable column it is still the only way Style can ever be seen, so a build that ships the menu "later" ships Style unreachable; and **the user's choice persists** across navigations within the session, because a column that silently resets to off every time is functionally still cut. There is **no Status entry** in this menu — Status is not a column (§2.1, §2.2).
 
 ---
 
@@ -428,14 +452,28 @@ Checkable claim: **printed in greyscale, this table loses nothing.** Every disti
 
 These are the ones I could not answer alone. **Questions 1, 5 and 6 were ruled on by the owner on 2026-08-07 as part of the §12 sign-off. Question 4 was ruled by the owner on 2026-08-07 too, but *separately from* that sign-off, which did not cover it. All four are marked RULED below. Questions 2 and 3 are still open** and are not covered by the §12 sign-off.
 
+> **Superseded 2026-08-09 as to its last sentence.** *"Questions 2 and 3 are still open and are not covered by the §12 sign-off"* was true from the sign-off until 2026-08-09 and is kept on the record. **The owner ruled both on 2026-08-09, separately from and after the §12 sign-off: Q2 — the Status column is CUT; Q3 — the Style column ships DEFAULT-OFF (built and available, hidden until the user opts in via the column picker).** **Every question in this section is now ruled — 1, 5 and 6 at the sign-off; 4 on 2026-08-07; 2 and 3 on 2026-08-09.** Nothing in §11 is open. The rulings are recorded per question below and in §12.
+
 1. **RULED — Direction A** for the engagement split (§4), 2026-08-07. Two dedicated columns; there is no single engagement column to sort, so R-12.3.2 is structurally unviolable. This was the C2 sign-off the PRD reserved.
-2. **Do you accept cutting the Status column** in favour of a distinct failed-row treatment (§2.1)?
-3. **Style (`formatArchetype` + `hookType`) default-on or default-off?** I propose off.
+2. **RULED — the Status column is CUT**, 2026-08-09, by the owner. Ruled **separately from and after the §12 sign-off**, which did not cover it; see the note in §12. The question is kept below rather than replaced, on the same discipline as Q4.
+
+   > **The question as it stood:** *Do you accept cutting the Status column in favour of a distinct failed-row treatment (§2.1)?*
+
+   **Outcome: cut.** Status does not ship as a column. It surfaces in exactly two places, both already specified: the **row-level failed treatment** of §3.3, and the **Status filter chip** of §6.2 — which is consequently load-bearing rather than a convenience. **No other column absorbs anything**, no width changes, no order changes: §2.2's nine columns and its ≈1,312px total were already computed without Status. See §2.2 for the shipping column set stated in full.
+3. **RULED — the Style column ships DEFAULT-OFF**, 2026-08-09, by the owner. Ruled **separately from and after the §12 sign-off**, which did not cover it; see the note in §12. The question is kept below rather than replaced, on the same discipline as Q4.
+
+   > **The question as it stood:** *Style (`formatArchetype` + `hookType`) default-on or default-off? I propose off.*
+
+   **Outcome: default-off — and *default-off*, not cut.** The column is **built and available**; it is hidden on first load and the user opts in from the `Columns` menu (§6.3). The proposal is confirmed, so §2.1's *"if the owner disagrees this is the easiest thing to restore"* is spent, and the ~1,462px with-Style total in §2.2 stands as the opt-in width. **Descoping the build is not what this ruling says.**
 4. **RULED — the 1–5 performance score stays in the analyses table**, 2026-08-07, by the owner. Ruled **separately from the §12 sign-off**, which did not cover it; see the note in §12. The question is kept below rather than replaced, because it was genuinely open and was refused settlement by proximity three times (PRs #163, #165, #166) before it was decided explicitly.
 
    > **The question as it stood:** *Do you want the 1–5 performance score in the table at all? Provocative, and I mean it: `3.2× their usual` is a measured number and by your own PRD (§3.1, §3.5) the most quotable thing this product makes, while the 1–5 is a model judgement. Keeping both costs 156px and creates the "score says 2 but the multiplier says 3.2×, which do I believe?" question. Keeping only the multiplier would be narrower and more defensible — but it loses the read on posts with no Tier 2 yet. I lean toward keeping both, with the score explicitly labelled as a judgement (see the companion spec §7). Worth your ruling.*
 
    **Outcome: both stay** — the score and the multiplier. The lean is confirmed, not merely tolerated, so the companion spec's **§7 is now the governing treatment** of the 1–5 rather than a contingent argument, and **§5's Performance-cell specification stands** as written. This ruling covers Q4 and nothing else: **Q2 and Q3 remain open.**
+
+   > **Superseded 2026-08-09 as to its last clause only.** *"Q2 and Q3 remain open"* correctly describes the **scope of the Q4 ruling** and stays on the record for that reason — Q4 did not touch them. **They were ruled separately on 2026-08-09** (see Q2 and Q3 above). Everything else in this outcome is unchanged.
+   >
+   > **One operational consequence of Q4, carried here because it is scoped from this section.** With the 1–5 staying, the *"score says 2 but the multiplier says 3.2×"* problem has exactly one remaining mitigation: the companion spec **§7 point 4**, the deterministic *"these disagree because…"* line. The other fix was removing the column, and this ruling killed it. **Per OR-6 that line is REQUIRED, not optional, and cannot be dropped for time** — **#147** is built from it. The "cut the score" contingency has also **left ticket planning**; the PM recorded that in PRD **§15.1**. Do not re-open it.
 5. **RULED — Comfortable** is the default density (68px, ~9 rows visible), 2026-08-07. Compact stays as the opt-in of §3.2, bound by the rule that no density mode may drop a qualifier.
 6. **RULED — pagination**, 2026-08-07, with **newest analysis first as the default sort** and **performance explicitly not the default sort**. This confirms §6.1's `Posted, descending` default and settles the interaction with the sink group: a sink group at the bottom of an infinite scroll is a sink group nobody ever sees.
 
@@ -462,5 +500,11 @@ These are the ones I could not answer alone. **Questions 1, 5 and 6 were ruled o
 
 - The remaining items in **§11** on which no ruling is recorded here: the Status-column cut (Q2), the Style column's default state (Q3), and whether the 1–5 performance score belongs in the table at all (Q4). They are implemented as this document proposes, but they are not signed off.
 
+  > **Superseded in full 2026-08-09 — all three are now ruled.** This exclusion is preserved verbatim because it was accurate at signature and its two earlier partial supersessions (Q4, below) only make sense against it. **The 2026-08-07 sign-off still does not cover any of the three** — that fact does not change. What changed is that each was ruled **separately from and after** it, by the owner: **Q4 on 2026-08-07** (the 1–5 score stays), and **Q2 and Q3 on 2026-08-09** — **Q2: the Status column is CUT; Q3: the Style column ships DEFAULT-OFF**, built and available, hidden until the user opts in via the column picker. **No item in §11 is open, and no item in §11 is now "implemented but unsigned".** Recorded as superseded rather than rewritten, per the pattern of PRs #166 and #168.
+
   > **Superseded in part 2026-08-07, after this sign-off was recorded — for Q4 only.** As approved, this bullet excluded three questions, and the clause *"and whether the 1–5 performance score belongs in the table at all (Q4). They are implemented as this document proposes, but they are not signed off"* was accurate for Q4 at the moment of signature. **Q4 was outside the 2026-08-07 sign-off and was ruled separately by the owner on the same date**: the **1–5 performance score stays in the analyses table** (§11, Q4). Two distinct acts on one day — the sign-off did not cover Q4; a later ruling decided it. The approved text above is left standing rather than rewritten, so that a reader can see both facts. **Q2 and Q3 are untouched by this note: they remain unruled, remain excluded from this sign-off, and remain implemented as this document proposes without being signed off.**
+
+  > **Superseded 2026-08-09 as to its last sentence.** *"Q2 and Q3 are untouched by this note"* remains a true statement about the **Q4 note** and is kept for that reason; *"they remain unruled"* is no longer true of the world. **Q2 and Q3 were ruled by the owner on 2026-08-09 — Status column CUT, Style column DEFAULT-OFF** — again separately from, and after, this sign-off. Three distinct acts now sit on top of one signature: the sign-off (2026-08-07), the Q4 ruling (2026-08-07), and the Q2/Q3 rulings (2026-08-09). All three are recorded, none replaces the text of another. **The resulting shipping column set is stated in full in §2.2.**
+
+- **A record disagreement, flagged for the tech lead — not resolved here.** `TDD` §0.2 carries **Q2 and Q3 as already decided (OR-4 / OR-5)**, while this section recorded them as **outside the 2026-08-07 sign-off and unruled** until 2026-08-09. Both statements were written in good faith and the **substance is now settled either way** — the owner's 2026-08-09 rulings match what OR-4 / OR-5 say. What is *not* settled is the **record**: two governing documents disagree about when, and under which instrument, these questions were decided, and that matters the next time someone asks what a sign-off covered. **Reconciling the TDD is the tech lead's call, not the designer's**, and nothing in this pass edits the TDD.
 - **R-N1's data dependency** (§5.4's engineering consequence). If the resolver does not carry the reach value and kind, `REACH_NOT_ON_FIRST_SLIDE` must not render at all. Approving the design does not approve shipping the state without its figure.
