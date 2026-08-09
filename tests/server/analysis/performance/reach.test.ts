@@ -501,11 +501,11 @@ describe("LaterSlideReach — provenance & type guarantees (PR #164 review follo
   });
 
   it("PR #167 review B2 — `kind` structurally excludes \"UNKNOWN\" (R-N2): a bare `{ usable: true, ... kind: \"UNKNOWN\" }` does not type-check", () => {
-    // @ts-expect-error — `kind` on the `usable: true` variant is
-    // `Exclude<ReachKind, "UNKNOWN">`; "UNKNOWN" is not assignable.
     const unknownKind: LaterSlideReach = {
       usable: true,
       value: 5,
+      // @ts-expect-error — `kind` on the `usable: true` variant is
+      // `Exclude<ReachKind, "UNKNOWN">`; "UNKNOWN" is not assignable.
       kind: "UNKNOWN",
       slideIndex: 0,
       slideCount: 1,
