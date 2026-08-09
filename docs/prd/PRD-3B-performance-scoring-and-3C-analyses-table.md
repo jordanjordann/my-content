@@ -20,6 +20,13 @@
 > *(§14 here is a section of this PRD. It is unrelated to `TDD-3A-3B-3C-phase-3.md` §14, which is that
 > document's own amendment log.)*
 
+> **⚠️ AMENDED 2026-08-09 — §15 added: the product rulings on the design documents' open questions.**
+> **Q4 — "should the 1–5 performance score be in the table at all?" — is CLOSED: the score STAYS**
+> (OR-6, re-confirmed 2026-08-07). `DESIGN-3B` §7 is therefore the **governing treatment** of the 1–5,
+> not an argument feeding an open question, and the "cut the score" contingency leaves ticket planning
+> entirely — **#147 is clear to build the score pips.** **Q2 (cut the Status column) and Q3 (Style
+> columns default-off) remain genuinely OPEN** and §15.1 does **not** rule them.
+
 **Owner:** Oden (product owner)
 **Author:** Dan (PM)
 **Created:** 2026-08-05
@@ -1060,3 +1067,77 @@ text plus an assertion on the stored tier.
 *Then* **no string** frames the threshold in creator-level or format-agnostic terms — no `5 posts`, no
 `5 analyses`, no `5 videos` on a carousel bucket — and every string that names the threshold also names the
 format it applies to. Asserted by string search over the UI copy source (R-14.2.5).
+
+> **Scope of the search, stated so a false positive is not filed as a defect.** The search runs over
+> **user-facing copy and the modules that render it** — not over `docs/`. Both design documents contain
+> the literal `5 posts` **inside the rule that bans it** (`DESIGN-3B` §5.3 R-C1, `DESIGN-3C` §5.3 R-C1).
+> A rule quoting the string it forbids is **not a violation**, and an unscoped repository search will
+> trip on it. Scope the search, and do not open a bug when a design document matches.
+
+---
+
+## 15. Product rulings on the design documents' open questions
+
+**Why this section exists.** Both design documents end with a short list of questions their author
+declined to answer alone, and both records say those questions are the owner's or the PM's to close.
+One of them has been closed and the closure was never written anywhere a ticket could cite. Two have
+not been closed and must not be assumed. This section is the citable home for all three.
+
+### 15.1 Q4 — the 1–5 performance score stays in the analyses table. **CLOSED.**
+
+**The question, as the designer put it** (`DESIGN-3C` §11 Q4): *do you want the 1–5 performance score in
+the table at all?* — on the argument that `3.2× their usual` is a **measured** number while the 1–5 is a
+**model judgement**, that keeping both costs a column, and that it creates the *"the score says 2 but
+the multiplier says 3.2×, which do I believe?"* question.
+
+**The ruling: the 1–5 score STAYS.** This is the owner's call, recorded as **OR-6** (`TDD` §0.2) and
+re-confirmed on **2026-08-07**. The owner's reasoning, in the owner's terms: **the tooltip carries the
+explanation, and that is sufficient.**
+
+**What this changes, and it is the part that matters for ticketing:**
+
+- **`DESIGN-3B` §7 — "the 1–5 is a judgement, not a measurement" — is now the *governing treatment*,
+  not an argument feeding an open question.** Its four points are requirements: the score is labelled a
+  read rather than a measurement; the measured figures appear **above** the judgement in the popover;
+  `drivers[]` render as the reasoning for the verdict; and the **deterministic "these disagree because…"
+  line is required, not optional** (OR-6 makes that line the *whole* answer to the designer's concern,
+  so it is the one part of §7 that cannot be dropped for time).
+- **The "cut the score" contingency leaves ticket planning entirely.** No ticket, backlog item or
+  design revision may be written against it, and no ticket needs a branch for "if the score is cut".
+- **#147 is clear to build the score pips.** Nothing about the score column is pending a decision.
+
+**Do not reopen this.** The alternative (drop the 1–5, let the multiplier be the headline) was
+considered — it is `DESIGN-3C` §11 Q4 and `DESIGN-3B` §7's closing paragraph — and **declined**. It is
+now in the same class as the items in `docs/HANDOFF-2026-08-06.md` §11: settled, and not to be
+re-litigated as a fresh finding.
+
+> **Note for readers of the two design documents.** `DESIGN-3B` §10 and `DESIGN-3C` §12 both still list
+> Q4 as *"UNRULED"* / *"not signed off"*. **Those statements are stale as of this section** — they were
+> written to record what the owner's 2026-08-07 sign-off did **not** cover, which was accurate then. The
+> ruling itself is OR-6; this section is where product records it. Where a design document's sign-off
+> record and this section disagree **on Q4 only**, this section is current.
+
+### 15.2 Q2 and Q3 — **STILL OPEN. Do not assume either way.**
+
+- **Q2 — cut the Status column** (`DESIGN-3C` §11 Q2, §2.1). Failures would instead get the whole-row
+  treatment; the status *filter* survives either way.
+- **Q3 — Style columns (`formatArchetype`, `hookType`) default-on or default-off** (`DESIGN-3C` §11 Q3).
+  The designer proposes **off**.
+
+**Both are implemented as the design proposes and neither has been decided.** `TDD` §0.2 carries them as
+**OR-4** and **OR-5**, but the design documents' own sign-off records (`DESIGN-3C` §12, `DESIGN-3B` §10,
+both 2026-08-07) explicitly state that the owner's sign-off **does not** cover them — so the two records
+disagree, and product does not resolve that disagreement by picking the more convenient one.
+
+- **§15.1's ruling on Q4 does NOT rule Q2 or Q3.** They are separate questions about separate columns.
+- **Any ticket whose scope depends on Q2 or Q3 must mark the dependency explicitly** and leave the
+  question open, rather than building to the proposal and calling it decided.
+- **Owner ruling requested.** Until it lands, "implemented as proposed" is the status, not the answer.
+
+### 15.3 Standing tiebreak, restated because it decided §15.1's framing
+
+**Reliability over coverage.** Where a choice is ambiguous, prefer the option that **cannot produce a
+confident-looking wrong number**, even at the cost of scoring fewer posts. This is why the score
+**stays but is labelled a judgement** rather than either being cut or being presented as a measurement:
+cutting it loses the only read available on posts with no Tier 2 yet, and presenting it unlabelled
+would make a model judgement look like arithmetic.
