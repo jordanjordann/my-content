@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { resolveInstagramReach, resolveYoutubeReach } from "@/lib/server/analysis/performance/reach";
+import type { LaterSlideReach } from "@/lib/server/analysis/performance/types";
 import type { ScrapeCreatorsMedia } from "@/lib/server/scrapecreators";
 import {
   makeCarousel,
@@ -114,6 +115,7 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
       value: 163_868,
       kind: "VIEWS",
       slideIndex: 1,
+      slideCount: 10,
     });
   });
 
@@ -233,6 +235,7 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
       value: 999,
       kind: "VIEWS",
       slideIndex: 1,
+      slideCount: 2,
     });
   });
 
@@ -265,6 +268,7 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
       value: 0,
       kind: "VIEWS",
       slideIndex: 1,
+      slideCount: 2,
     });
   });
 
@@ -320,6 +324,7 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
       value: 100,
       kind: "VIEWS",
       slideIndex: 1,
+      slideCount: 3,
     });
   });
 
@@ -390,6 +395,132 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
     });
 
     expect(resolveInstagramReach(media)).toMatchObject({ value: 116_333, kind: "PLAYS" });
+  });
+});
+
+describe("LaterSlideReach — provenance & type guarantees (PR #164 review follow-up, items 1-3)", () => {
+  it("item 1 — a null edge.node BEFORE the usable slide does not shift slideIndex: the reported index still matches the user-visible slide position, not the filtered-array position", () => {
+    // Slide 0: image (unusable, no reach fields). Slide 1: a null
+    // `edge.node` — the exact shape `getCarouselChildren`'s
+    // `.filter((node) => !!node)` drops. Slide 2: the usable video.
+    //
+    // Indexing into the FILTERED children array (the pre-fix bug) would
+    // report this as slideIndex 1 — "slide 2" in one-based mockup copy —
+    // when the user actually sees it as the 3rd slide (index 2, "slide 3").
+    // Indexing into the pre-filter `edges` array (the fix) reports the
+    // correct index 2.
+    const media = makeCarousel([makeImageChild(), makeVideoChild({ video_view_count: 999 })]);
+    const edges = media.edge_sidecar_to_children!.edges! as Array<{
+      node?: ReturnType<typeof makeVideoChild> | null;
+    }>;
+    edges.splice(1, 0, { node: null });
+
+    const result = resolveInstagramReach(media);
+
+    expect(result.derivedFrom).toBe("NONE");
+    expect(result.laterSlideReach).toEqual({
+      usable: true,
+      value: 999,
+      kind: "VIEWS",
+      // NOT 1 (the filtered-array position) — 2, the user-visible position
+      // in the actual (pre-filter) carousel.
+      slideIndex: 2,
+      // Pre-filter edges.length (3), the SAME array slideIndex is drawn
+      // from — NOT 2 (the filtered children.length), which would produce
+      // "slide 3 of 2", a different confidently wrong number.
+      slideCount: 3,
+    });
+  });
+
+  it("PR #167 review B1 — a null edge.node AT slide 0 must not shift a later slide's value into the CAROUSEL_FIRST_SLIDE branch", () => {
+    // Slide 0: a null `edge.node`. Slide 1: the usable video. Resolving
+    // "first slide" from the FILTERED array (the pre-fix bug) would make
+    // the video appear at filtered index 0 and classify this post
+    // `CAROUSEL_FIRST_SLIDE` — attributing slide 2's view count to slide 1
+    // under a confidently wrong label. The fix must resolve slide 0 from
+    // the pre-filter `edges` array, see it is null, fail `hasReachFields`,
+    // and fall through to the later-slide scan instead.
+    const media = makeCarousel([makeVideoChild({ video_view_count: 999 })]);
+    const edges = media.edge_sidecar_to_children!.edges! as Array<{
+      node?: ReturnType<typeof makeVideoChild> | null;
+    }>;
+    edges.unshift({ node: null });
+
+    const result = resolveInstagramReach(media);
+
+    expect(result.derivedFrom).toBe("NONE");
+    expect(result.value).toBeNull();
+    expect(result.laterSlideReach).toEqual({
+      usable: true,
+      value: 999,
+      kind: "VIEWS",
+      slideIndex: 1,
+      slideCount: 2,
+    });
+  });
+
+  it("item 1 — a null edge.node AFTER the usable slide does not affect slideIndex or slideCount", () => {
+    const media = makeCarousel([makeImageChild(), makeVideoChild({ video_view_count: 999 })]);
+    const edges = media.edge_sidecar_to_children!.edges! as Array<{
+      node?: ReturnType<typeof makeVideoChild> | null;
+    }>;
+    edges.push({ node: null });
+
+    const result = resolveInstagramReach(media);
+
+    expect(result.laterSlideReach).toEqual({
+      usable: true,
+      value: 999,
+      kind: "VIEWS",
+      slideIndex: 1,
+      slideCount: 3,
+    });
+  });
+
+  it("item 3 — slideIndex and slideCount are REQUIRED on the usable:true variant: a construction omitting either does not compile", () => {
+    // Type-level assertion (pins the #164 review's item 3 fix). Before the
+    // fix, `slideIndex` was optional (`slideIndex?: number`), so this
+    // object was assignable to `LaterSlideReach` with no error. After the
+    // fix, both lines below are `tsc` errors; `@ts-expect-error` fails the
+    // build if either field is ever made optional again.
+    // @ts-expect-error — `slideIndex` is required on the `usable: true` variant.
+    const missingSlideIndex: LaterSlideReach = { usable: true, value: 5, kind: "VIEWS", slideCount: 3 };
+    // @ts-expect-error — `slideCount` is required on the `usable: true` variant.
+    const missingSlideCount: LaterSlideReach = { usable: true, value: 5, kind: "VIEWS", slideIndex: 0 };
+    expect(missingSlideIndex).toBeDefined();
+    expect(missingSlideCount).toBeDefined();
+  });
+
+  it("R-N2 still holds after items 1-3: `{ usable: true, value }` with no `kind` does not type-check, and `usable: false` has no path to a value", () => {
+    // @ts-expect-error — `kind` is required whenever `usable: true` (R-N2).
+    const noKind: LaterSlideReach = { usable: true, value: 5, slideIndex: 0, slideCount: 1 };
+    const unusable: LaterSlideReach = { usable: false };
+    // @ts-expect-error — `usable: false` has no `value` field at all.
+    expect(unusable.value).toBeUndefined();
+    expect(noKind).toBeDefined();
+  });
+
+  it("PR #167 review B2 — `kind` structurally excludes \"UNKNOWN\" (R-N2): a bare `{ usable: true, ... kind: \"UNKNOWN\" }` does not type-check", () => {
+    const unknownKind: LaterSlideReach = {
+      usable: true,
+      value: 5,
+      // @ts-expect-error — `kind` on the `usable: true` variant is
+      // `Exclude<ReachKind, "UNKNOWN">`; "UNKNOWN" is not assignable.
+      kind: "UNKNOWN",
+      slideIndex: 0,
+      slideCount: 1,
+    };
+    expect(unknownKind).toBeDefined();
+  });
+
+  it("PR #167 review B3 — `usable: false` has no read path to `slideIndex`, `slideCount` or `kind` either (only `value` was pinned before)", () => {
+    const unusable: LaterSlideReach = { usable: false };
+    // @ts-expect-error — `usable: false` has no `slideIndex` field at all.
+    expect(unusable.slideIndex).toBeUndefined();
+    // @ts-expect-error — `usable: false` has no `slideCount` field at all.
+    expect(unusable.slideCount).toBeUndefined();
+    // @ts-expect-error — `usable: false` has no `kind` field at all.
+    expect(unusable.kind).toBeUndefined();
   });
 });
 

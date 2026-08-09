@@ -88,40 +88,62 @@ function resolveNodeReach(
   return { value: null, kind: "UNKNOWN", state: "UNKNOWN" };
 }
 
+type CarouselEdge = { node?: ScrapeCreatorsCarouselChildNode };
+
 /**
  * OR-26 / #155 / DESIGN-3C §5.4 (R-N1/R-N2/R-N3). Scans a carousel's
- * children for the FIRST one that yields a genuinely usable reach number —
- * "usable" means the SAME thing it always has here (owner ruling on PR
- * #158's review): merely carrying the reach KEYS is not enough, a video
- * child whose `video_view_count` is `null`/unusable must not be reported.
- * Reuses `resolveNodeReach(node, "view")` — the SAME resolution path that
- * already rejects the false-zero pattern (`ig_reel_1_zero_view_count.json`)
- * and already applies the child authority reversal (divergence 13:
- * carousel children trust `video_view_count`, never `video_play_count`) —
- * rather than inventing a second, independent definition of "usable" that
- * would walk straight past cases the existing resolver already handles
- * correctly. `AVAILABLE` and `ZERO` both count as usable (a corroborated
- * zero is a real fact, R-4.3.1); only `UNKNOWN` does not.
+ * PRE-FILTER `edges` for the FIRST one whose node yields a genuinely usable
+ * reach number — "usable" means the SAME thing it always has here (owner
+ * ruling on PR #158's review): merely carrying the reach KEYS is not
+ * enough, a video child whose `video_view_count` is `null`/unusable must
+ * not be reported. Reuses `resolveNodeReach(node, "view")` — the SAME
+ * resolution path that already rejects the false-zero pattern
+ * (`ig_reel_1_zero_view_count.json`) and already applies the child
+ * authority reversal (divergence 13: carousel children trust
+ * `video_view_count`, never `video_play_count`) — rather than inventing a
+ * second, independent definition of "usable" that would walk straight past
+ * cases the existing resolver already handles correctly. `AVAILABLE` and
+ * `ZERO` both count as usable (a corroborated zero is a real fact,
+ * R-4.3.1); only `UNKNOWN` does not.
  *
  * R-N3 is binding: this returns the FIRST usable slide only, never a sum,
  * max or mean across slides — a per-post reach figure D4/R-D3 has
- * explicitly declined to compute. `slideIndex` is the 0-based index into
- * `children`, carried because it falls out of the scan for free (R-N4).
+ * explicitly declined to compute.
  *
- * Scans the WHOLE `children` array, not `children.slice(1)`: this is only
- * ever called from the branch where slide 0 has already failed
- * `hasReachFields`, so slide 0 is guaranteed to resolve `UNKNOWN` here too
- * — scanning it again is harmless and keeps the index arithmetic simple.
+ * `slideIndex` is deliberately the loop index into `edges` (PRE-filter),
+ * not into a compacted/filtered array — follow-up to PR #164's review,
+ * item 1. Filtering out falsy `edge.node`s before indexing (as a
+ * `.filter((node) => !!node)` step would) shifts every index after a null
+ * node down by one and prints a confidently
+ * wrong slide number to the user ("slide 6" for what is actually the 7th
+ * slide). Indexing into `edges` instead — skipping unusable/null nodes with
+ * `continue` rather than removing them from the array first — keeps
+ * `slideIndex` matching the position the user actually sees scrolling the
+ * carousel, null nodes included. `slideCount` is `edges.length`, the SAME
+ * array `slideIndex` is drawn from (never the filtered children array,
+ * which would pair a `slideIndex` from one array with a `slideCount` from
+ * another and produce a different wrong number, "slide 6 of 9").
+ *
+ * Scans the WHOLE `edges` array, not `edges.slice(1)`: this is only ever
+ * called from the branch where slide 0 has already failed
+ * `hasReachFields`, so slide 0 is guaranteed to resolve `UNKNOWN` (or be
+ * skipped as a null node) here too — scanning it again is harmless and
+ * keeps the index arithmetic simple.
  */
-function resolveLaterSlideReach(children: ScrapeCreatorsCarouselChildNode[]): LaterSlideReach {
-  for (let index = 0; index < children.length; index += 1) {
-    const resolved = resolveNodeReach(children[index]!, "view");
+function resolveLaterSlideReach(edges: CarouselEdge[]): LaterSlideReach {
+  const slideCount = edges.length;
+  for (let index = 0; index < edges.length; index += 1) {
+    const node = edges[index]!.node;
+    if (!node) {
+      continue;
+    }
+    const resolved = resolveNodeReach(node, "view");
     if (
       (resolved.state === "AVAILABLE" || resolved.state === "ZERO") &&
       resolved.value !== null &&
       resolved.kind !== "UNKNOWN"
     ) {
-      return { usable: true, value: resolved.value, kind: resolved.kind, slideIndex: index };
+      return { usable: true, value: resolved.value, kind: resolved.kind, slideIndex: index, slideCount };
     }
   }
   return { usable: false };
@@ -131,14 +153,9 @@ function noneResult(laterSlideReach: LaterSlideReach = { usable: false }): Reach
   return { value: null, kind: null, state: "UNKNOWN", derivedFrom: "NONE", laterSlideReach };
 }
 
-function getCarouselChildren(raw: ScrapeCreatorsMedia): ScrapeCreatorsCarouselChildNode[] {
+function getCarouselEdges(raw: ScrapeCreatorsMedia): CarouselEdge[] {
   const edges = raw.edge_sidecar_to_children?.edges;
-  if (!Array.isArray(edges)) {
-    return [];
-  }
-  return edges
-    .map((edge) => edge.node)
-    .filter((node): node is ScrapeCreatorsCarouselChildNode => !!node);
+  return Array.isArray(edges) ? edges : [];
 }
 
 /**
@@ -158,8 +175,15 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
   const isCarousel = "edge_sidecar_to_children" in raw;
 
   if (isCarousel) {
-    const children = getCarouselChildren(raw);
-    const firstSlide = children[0];
+    // Follow-up to PR #167's review, item B1: resolved from the PRE-filter
+    // `edges` array (via `getCarouselEdges`), never from the compacted
+    // `getCarouselChildren()` output. If `edges[0].node` is null/absent, the
+    // filtered array's index 0 is actually the SECOND slide — reading it as
+    // "first slide" would attribute a later slide's view count to a
+    // confidently-wrong `CAROUSEL_FIRST_SLIDE` label (worse than the
+    // slideIndex off-by-one item 1 already fixed) and would also skip the
+    // `REACH_NOT_ON_FIRST_SLIDE` path for a post that qualifies for it.
+    const firstSlide = getCarouselEdges(raw)[0]?.node;
     if (!firstSlide || !hasReachFields(firstSlide)) {
       // OR-26 / #155: distinguish "no slide in this carousel carries a
       // reach field" from "slide 0 doesn't, but a later slide does" —
@@ -172,7 +196,7 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
       // figure (that would make #143 fabricate a number for a slide that
       // has none). Only a slide `resolveNodeReach` actually resolves to
       // AVAILABLE/ZERO, and only its OWN value/kind, travel forward.
-      const laterSlideReach = resolveLaterSlideReach(children);
+      const laterSlideReach = resolveLaterSlideReach(getCarouselEdges(raw));
       return noneResult(laterSlideReach);
     }
 
