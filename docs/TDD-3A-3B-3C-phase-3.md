@@ -26,6 +26,17 @@ the original pass is deleted; superseded claims are marked as superseded in plac
 **Recorded so nobody re-litigates them.** All confirmed in conversation 2026-08-06. Each is binding;
 where a ruling contradicts the PRD, §14 amends the PRD rather than leaving two sources of truth.
 
+> **Provenance correction, 2026-08-09 (tech lead) — read this before citing any row in §0 as evidence of a
+> dated owner act.** The line above stamps **the whole of §0** with a single date. That stamp is reliable
+> for *what was decided*; it is **not** reliable as **per-row provenance** — the date on which, and the
+> instrument under which, each individual question was decided. The record proves this on its own terms:
+> **OR-6** states Q4's outcome, and `DESIGN-3C` §11/§12 date the owner's Q4 ruling to **2026-08-07**, a day
+> *after* this block was written. A blanket 2026-08-06 stamp therefore already covers at least one item
+> decided later. **§0 is the TDD's binding statement of the outcomes it builds on. It is not a log of owner
+> acts and must not be read as one.** Where §0 and a design document's dated sign-off record disagree about
+> *when* something was decided, **the design document's sign-off record governs the provenance**; §0
+> governs only the outcome. The worked case is **OR-4 / OR-5** — see the note under §0.2.
+
 ### 0.1 Design
 
 | # | Ruling |
@@ -38,11 +49,41 @@ where a ruling contradicts the PRD, §14 amends the PRD rather than leaving two 
 | # | Ruling |
 |---|---|
 | **OR-3** | **Engagement split — Direction A: two dedicated columns, never one.** This is the explicit **R-12.3.4 sign-off** the PRD reserved under caveat C2. Recorded as such. The mechanism was the designer's to choose and it is now chosen; the outcome (two denominators must never look comparable) was never negotiable. |
-| **OR-4** | **The Status column is cut.** Failures get the whole-row treatment: rose left-edge marker + the failure reason inline in the title cell (design §3.3). The status *filter* survives. |
-| **OR-5** | **Style columns (`formatArchetype`, `hookType`) are off by default**, available as an optional column from the `Columns` menu. |
+| **OR-4** | **The Status column is cut.** Failures get the whole-row treatment: rose left-edge marker + the failure reason inline in the title cell (design §3.3). The status *filter* survives. **Ruled by the owner 2026-08-09** — see the provenance note below; the outcome stated here is unchanged. |
+| **OR-5** | **Style columns (`formatArchetype`, `hookType`) are off by default**, available as an optional column from the `Columns` menu. **Ruled by the owner 2026-08-09** — see the provenance note below; the outcome stated here is unchanged. **The opt-in does NOT persist** (ruled 2026-08-09, separately): it resets to hidden on every load, with no per-user and no per-session storage. |
 | **OR-6** | **The 1–5 performance score STAYS in the table.** Owner's reasoning: the tooltip carries the explanation and that is sufficient. Jessica's "score says 2 but multiplier says 3.2×" concern is therefore resolved **in the tooltip, not by removing the column** — her deterministic *"these disagree because…"* line (design-3B §7.4) is **required, not optional**. See §9.4. |
 | **OR-7** | **Default density is Comfortable (68px).** |
 | **OR-8** | **Pagination, not infinite scroll** (50 rows/page). **Default sort stays newest-analysis-first (`Posted`, descending).** Performance is *not* the default sort. This resolves Jessica's "sink group nobody ever sees" concern **by construction**: the sink group only exists under a user-selected sort, and pagination gives it a reachable page. If a residual hidden-rows concern remains for user-selected performance sorts, it is settled with Jessica directly and is **not** escalated. |
+
+> **OR-4 / OR-5 — the record reconciled, 2026-08-09 (tech lead). Substance unchanged; do not re-litigate
+> it.** This document carried Q2 (Status column) and Q3 (Style default state) as **already decided**, while
+> `DESIGN-3C` §11/§12 recorded them as **outside the 2026-08-07 owner sign-off and unruled** until
+> 2026-08-09. Both were written in good faith. Dan and Jessica each flagged the clash and each correctly
+> declined to close it by preferring the more convenient record. The reconciliation is mine, and it goes
+> **against this document**:
+>
+> - **The design record is right about the instrument.** `DESIGN-3C` §12 is a **dated sign-off with an
+>   explicit scope statement** — a record of a specific owner act, listing what it does and does not cover.
+>   §0 here is a **derived decision list with one blanket date**, and that date is demonstrably not
+>   per-row accurate (see the provenance note at the head of §0, and OR-6 / Q4).
+> - **What OR-4 and OR-5 actually were, when written on 2026-08-06:** the TDD's adoption of
+>   `DESIGN-3C`'s own §2.1 / §2.2 **proposals** into the build plan, so tickets could be cut without
+>   waiting. They were binding **as plan**, and this document was entitled to build on them. They were
+>   **not** a separate owner act, and citing them as evidence that the owner had ruled Q2/Q3 before
+>   2026-08-09 is **incorrect**. The 2026-08-07 sign-off did not cover them, and that fact does not change.
+> - **The governing instrument for both is the owner's ruling of 2026-08-09** — Q2: the Status column is
+>   **CUT**; Q3: the Style column ships **DEFAULT-OFF** (built and available, hidden until opted into via
+>   the `Columns` menu). Recorded at `DESIGN-3C` §2.2, §6.2, §6.3, §11 and §12.
+> - **Nothing built changes.** The owner ratified what this document and the design already described,
+>   which is exactly why the clash was harmless in substance and dangerous only in the record — the next
+>   person to ask "what did that sign-off cover?" would have got two answers.
+> - **Standing rule this establishes:** a §0 row is **never** a citation for *when* or *by what instrument*
+>   something was decided. Cite the dated sign-off or ruling record for that.
+>
+> Related and **not** reconciled here because it is a live correction, not a record question: `DESIGN-3C`
+> §6.3 still states the Style opt-in *"persists … within the session"*. That is **superseded** by the
+> 2026-08-09 no-persistence ruling now recorded on **OR-5**. Flagged for the designer; **it must be
+> corrected before #149 starts.** This document must not be read as authorising session persistence.
 
 ### 0.3 Explainability (3B §13)
 
@@ -83,6 +124,14 @@ Everything in §0.1–§0.5 was ruled **before** these captures existed. These s
 | **OR-24** | **`performance_score` as a real column — CONFIRMED.** §5.2 stands as written. |
 | **OR-25** | **The prose guard fails loudly with no repair retry — CONFIRMED.** §8.2 stands as written; the owner understands and accepts that a violation burns a billed Gemini call and fails the analysis. |
 | **OR-26** | **`derivedFrom: "NONE"` is overloaded — SPLIT, but in `unavailableReason`, not in `derivedFrom`. Migration `013`; 3A's job table renumbers to `014`.** Raised by code review on PR #152. `NONE` currently means both *"no node in this post carries reach fields at all"* (all-image carousel, single image post — permanent and expected) and *"slide 0 carries none, but a later slide does"* (a mixed carousel whose cover is an image — the post **has** real play counts that D4's first-slide rule never consulted). Ticket **#143** turns this into a user-facing sentence, so the second case would ship as "this post type doesn't report counts" — **false, and a fabricated diagnosis of exactly the class R-13.5.3a exists to forbid.** ⚠️ **Deriving the split from `analysis_mode` was proposed and is FALSIFIED — see §3.1.** The fix adds **one value to `perf_unavailable_reason`** (`REACH_NOT_ON_FIRST_SLIDE`, §5.3), **not** a fourth `perf_reach_derived_from` value: `derivedFrom` answers *where the number came from*, and with no number `NONE` is the complete and correct answer to that question; the split is a *why*, and `unavailableReason` is the why-column. Cost stated plainly: one new migration and a **full `analyses` table rebuild** (SQLite cannot alter a `CHECK` in place, and 012 is merged) — but **zero data cost**, because 012 already `DELETE`d every row. |
+
+### 0.7 Tech-lead architecture rulings (2026-08-09)
+
+| # | Ruling |
+|---|---|
+| **TR-1** | **The carousel slide total has ONE canonical derivation — Option A on #176.** `carouselItemCount` and `LaterSlideReach.slideCount` must not answer "how many slides does this post have" independently. **The canonical source is the pre-filter `edge_sidecar_to_children.edges` array, reached through one exported helper**, `getCarouselEdges()`, promoted out of `lib/server/analysis/performance/reach.ts` into a neutral module (`lib/server/analysis/carousel/`) that depends only on the schema types. Every slide **count** is `getCarouselEdges(raw).length` and every slide **index** is an index into that array. Two fields may still *carry* the number — they are at different layers and collapsing them would couple the fetcher to the performance layer for no gain — but there is **exactly one expression in the codebase that computes it**, so they cannot drift. Rationale: the standing owner preference (`PRD` §14, *reliability over coverage*) forbids a confident-looking wrong number, and Option B's guard is a test, which is a description of the constraint rather than a structural bar on violating it. |
+| **TR-2** | **Consolidation is ACCEPTED on #175; the duplicate `getCarouselChildren()` helpers are DELETED, not patched.** Both file-local, non-exported copies (`fetcher/adapter.ts`, `media/resolveMediaParts.ts`) are removed; the third was already removed from `reach.ts` by PR #167 and broke no callers. Patching three call sites in place is rejected: the duplication **is** the defect's transmission mechanism, and leaving a named "already-compacted array" in scope leaves the illegal operation (index/count a filtered array) available to the next author. **Making illegal states unrepresentable beats documenting the constraint.** Where a *filtered* list is genuinely wanted and no position is taken from it — `adapter.ts:118`'s `.find()`, which is **out of scope and correct as written** — it filters inline at the call site off `getCarouselEdges()`. |
+| **TR-3** | **The #175 cross-assertion survives TR-1 and stays mandatory** — one test asserting `carouselItemCount === LaterSlideReach.slideCount` on a null-`node` fixture. Under TR-1 it is no longer the guard; it is the **regression detector for TR-1 itself** (i.e. for someone re-introducing a second derivation). Keep it, and keep the "nothing changed for the no-null-node case" test beside it. |
 
 ---
 
