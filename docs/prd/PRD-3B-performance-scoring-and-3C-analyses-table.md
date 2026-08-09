@@ -25,7 +25,10 @@
 > (OR-6, re-confirmed 2026-08-07). `DESIGN-3B` §7 is therefore the **governing treatment** of the 1–5,
 > not an argument feeding an open question, and the "cut the score" contingency leaves ticket planning
 > entirely — **#147 is clear to build the score pips.** **Q2 (cut the Status column) and Q3 (Style
-> columns default-off) remain genuinely OPEN** and §15.1 does **not** rule them.
+> columns default-off) are now CLOSED too — both owner-ruled later the same day, 2026-08-09: Q2 is
+> CUT, Q3 ships DEFAULT-OFF (built, hidden behind the column picker). See §15.2, which supersedes its
+> own earlier "STILL OPEN" text.** All four design-document open questions are now settled. The table
+> is **materially narrower** than `DESIGN-3C` §5 describes — **R-15.2.1 binds #145 and #149.**
 
 **Owner:** Oden (product owner)
 **Author:** Dan (PM)
@@ -1117,22 +1120,41 @@ re-litigated as a fresh finding.
 > ruling itself is OR-6; this section is where product records it. Where a design document's sign-off
 > record and this section disagree **on Q4 only**, this section is current.
 
-### 15.2 Q2 and Q3 — **STILL OPEN. Do not assume either way.**
+### 15.2 Q2 and Q3 — **BOTH CLOSED, owner-ruled 2026-08-09.**
 
-- **Q2 — cut the Status column** (`DESIGN-3C` §11 Q2, §2.1). Failures would instead get the whole-row
-  treatment; the status *filter* survives either way.
+> **⚠️ This section previously read "STILL OPEN. Do not assume either way." That is superseded.** The
+> owner ruled both questions on **2026-08-09**. The text is replaced rather than annotated, but the
+> reason the section existed is kept at the end so the record stays legible.
+
+- **Q2 — cut the Status column** (`DESIGN-3C` §11 Q2, §2.1). **RULED 2026-08-09: cut it.** The Status
+  *column* does not ship. Failures get the whole-row treatment instead. **The status *filter* survives** —
+  it was never contingent on the column and is unaffected.
 - **Q3 — Style columns (`formatArchetype`, `hookType`) default-on or default-off** (`DESIGN-3C` §11 Q3).
-  The designer proposes **off**.
+  **RULED 2026-08-09: default-OFF.** The columns are **built**, and **hidden until a user opts in via the
+  column picker.** "Default-off" is not "cut" — the build work stays in scope; only the initial
+  visibility changes.
 
-**Both are implemented as the design proposes and neither has been decided.** `TDD` §0.2 carries them as
-**OR-4** and **OR-5**, but the design documents' own sign-off records (`DESIGN-3C` §12, `DESIGN-3B` §10,
-both 2026-08-07) explicitly state that the owner's sign-off **does not** cover them — so the two records
-disagree, and product does not resolve that disagreement by picking the more convenient one.
+- **R-15.2.1 (binding on #145 and #149)** The analyses table is **materially narrower** than
+  `DESIGN-3C` §5 describes: one column removed outright (Status) and two more absent on first paint
+  (Style). Any ticket, layout or column-count assertion scoped from `DESIGN-3C` §5 **as it currently
+  reads** is scoped from a **superseded** figure. Check the count against this section before asserting
+  it.
+- **R-15.2.2** The column **picker** is now load-bearing, not a convenience. It is the **only** route to
+  the Style columns. Shipping the Style columns without a working picker entry for them ships dead code.
+- **R-15.2.3** These rulings **do not** re-open Q4. The 1–5 score **stays** (§15.1, OR-6).
 
-- **§15.1's ruling on Q4 does NOT rule Q2 or Q3.** They are separate questions about separate columns.
-- **Any ticket whose scope depends on Q2 or Q3 must mark the dependency explicitly** and leave the
-  question open, rather than building to the proposal and calling it decided.
-- **Owner ruling requested.** Until it lands, "implemented as proposed" is the status, not the answer.
+**Design-document status, and what not to do about it.** Both design documents still describe the
+pre-ruling table. **A `uiux-designer` pass is in flight updating them**
+(`DESIGN-3B-score-explainability.md`, `DESIGN-3C-analyses-table.md`). **Do not edit either document to
+chase these rulings** — you will collide with open work. **This section is the citable home until that
+pass lands.**
+
+**One record disagreement remains open, and it is not product's to close.** `TDD` §0.2 carries Q2/Q3 as
+**OR-4** and **OR-5**, while the design documents' own sign-off records (`DESIGN-3C` §12, `DESIGN-3B`
+§10, both 2026-08-07) state that the owner's sign-off **does not** cover them. The two records disagree
+about **whether these questions were ever decided before today.** Today's ruling settles *the answers*;
+it does not settle *that historical discrepancy*, which is the **tech lead's to reconcile.** Product does
+not resolve it by picking the more convenient record.
 
 ### 15.3 Standing tiebreak, restated because it decided §15.1's framing
 
