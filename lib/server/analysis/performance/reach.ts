@@ -112,9 +112,9 @@ type CarouselEdge = { node?: ScrapeCreatorsCarouselChildNode };
  *
  * `slideIndex` is deliberately the loop index into `edges` (PRE-filter),
  * not into a compacted/filtered array — follow-up to PR #164's review,
- * item 1. `getCarouselChildren()` drops falsy `edge.node`s
- * (`.filter((node) => !!node)`); indexing into that compacted array would
- * shift every index after a null node down by one and print a confidently
+ * item 1. Filtering out falsy `edge.node`s before indexing (as a
+ * `.filter((node) => !!node)` step would) shifts every index after a null
+ * node down by one and prints a confidently
  * wrong slide number to the user ("slide 6" for what is actually the 7th
  * slide). Indexing into `edges` instead — skipping unusable/null nodes with
  * `continue` rather than removing them from the array first — keeps
@@ -158,12 +158,6 @@ function getCarouselEdges(raw: ScrapeCreatorsMedia): CarouselEdge[] {
   return Array.isArray(edges) ? edges : [];
 }
 
-function getCarouselChildren(raw: ScrapeCreatorsMedia): ScrapeCreatorsCarouselChildNode[] {
-  return getCarouselEdges(raw).filter(
-    (edge): edge is { node: ScrapeCreatorsCarouselChildNode } => !!edge.node,
-  ).map((edge) => edge.node);
-}
-
 /**
  * `resolveInstagramReach()` — the branch table (TDD §3):
  *
@@ -181,8 +175,15 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
   const isCarousel = "edge_sidecar_to_children" in raw;
 
   if (isCarousel) {
-    const children = getCarouselChildren(raw);
-    const firstSlide = children[0];
+    // Follow-up to PR #167's review, item B1: resolved from the PRE-filter
+    // `edges` array (via `getCarouselEdges`), never from the compacted
+    // `getCarouselChildren()` output. If `edges[0].node` is null/absent, the
+    // filtered array's index 0 is actually the SECOND slide — reading it as
+    // "first slide" would attribute a later slide's view count to a
+    // confidently-wrong `CAROUSEL_FIRST_SLIDE` label (worse than the
+    // slideIndex off-by-one item 1 already fixed) and would also skip the
+    // `REACH_NOT_ON_FIRST_SLIDE` path for a post that qualifies for it.
+    const firstSlide = getCarouselEdges(raw)[0]?.node;
     if (!firstSlide || !hasReachFields(firstSlide)) {
       // OR-26 / #155: distinguish "no slide in this carousel carries a
       // reach field" from "slide 0 doesn't, but a later slide does" —

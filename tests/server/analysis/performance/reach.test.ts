@@ -432,6 +432,33 @@ describe("LaterSlideReach — provenance & type guarantees (PR #164 review follo
     });
   });
 
+  it("PR #167 review B1 — a null edge.node AT slide 0 must not shift a later slide's value into the CAROUSEL_FIRST_SLIDE branch", () => {
+    // Slide 0: a null `edge.node`. Slide 1: the usable video. Resolving
+    // "first slide" from the FILTERED array (the pre-fix bug) would make
+    // the video appear at filtered index 0 and classify this post
+    // `CAROUSEL_FIRST_SLIDE` — attributing slide 2's view count to slide 1
+    // under a confidently wrong label. The fix must resolve slide 0 from
+    // the pre-filter `edges` array, see it is null, fail `hasReachFields`,
+    // and fall through to the later-slide scan instead.
+    const media = makeCarousel([makeVideoChild({ video_view_count: 999 })]);
+    const edges = media.edge_sidecar_to_children!.edges! as Array<{
+      node?: ReturnType<typeof makeVideoChild> | null;
+    }>;
+    edges.unshift({ node: null });
+
+    const result = resolveInstagramReach(media);
+
+    expect(result.derivedFrom).toBe("NONE");
+    expect(result.value).toBeNull();
+    expect(result.laterSlideReach).toEqual({
+      usable: true,
+      value: 999,
+      kind: "VIEWS",
+      slideIndex: 1,
+      slideCount: 2,
+    });
+  });
+
   it("item 1 — a null edge.node AFTER the usable slide does not affect slideIndex or slideCount", () => {
     const media = makeCarousel([makeImageChild(), makeVideoChild({ video_view_count: 999 })]);
     const edges = media.edge_sidecar_to_children!.edges! as Array<{
@@ -471,6 +498,29 @@ describe("LaterSlideReach — provenance & type guarantees (PR #164 review follo
     // @ts-expect-error — `usable: false` has no `value` field at all.
     expect(unusable.value).toBeUndefined();
     expect(noKind).toBeDefined();
+  });
+
+  it("PR #167 review B2 — `kind` structurally excludes \"UNKNOWN\" (R-N2): a bare `{ usable: true, ... kind: \"UNKNOWN\" }` does not type-check", () => {
+    // @ts-expect-error — `kind` on the `usable: true` variant is
+    // `Exclude<ReachKind, "UNKNOWN">`; "UNKNOWN" is not assignable.
+    const unknownKind: LaterSlideReach = {
+      usable: true,
+      value: 5,
+      kind: "UNKNOWN",
+      slideIndex: 0,
+      slideCount: 1,
+    };
+    expect(unknownKind).toBeDefined();
+  });
+
+  it("PR #167 review B3 — `usable: false` has no read path to `slideIndex`, `slideCount` or `kind` either (only `value` was pinned before)", () => {
+    const unusable: LaterSlideReach = { usable: false };
+    // @ts-expect-error — `usable: false` has no `slideIndex` field at all.
+    expect(unusable.slideIndex).toBeUndefined();
+    // @ts-expect-error — `usable: false` has no `slideCount` field at all.
+    expect(unusable.slideCount).toBeUndefined();
+    // @ts-expect-error — `usable: false` has no `kind` field at all.
+    expect(unusable.kind).toBeUndefined();
   });
 });
 
