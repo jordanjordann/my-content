@@ -1,4 +1,5 @@
 import type { ScrapeCreatorsCarouselChildNode, ScrapeCreatorsMedia } from "@/lib/server/scrapecreators";
+import { getCarouselEdges } from "@/lib/server/analysis/carousel";
 import { MAX_MEDIA_PARTS } from "./constants";
 import type { MediaPart, ResolvedMediaParts } from "./types";
 
@@ -104,16 +105,6 @@ function toPart(
   };
 }
 
-function getCarouselChildren(raw: ScrapeCreatorsMedia): ScrapeCreatorsCarouselChildNode[] {
-  const edges = raw.edge_sidecar_to_children?.edges;
-  if (!Array.isArray(edges)) {
-    return [];
-  }
-  return edges
-    .map((edge) => edge.node)
-    .filter((node): node is ScrapeCreatorsCarouselChildNode => !!node);
-}
-
 /**
  * Enumerates every media part for a post, in document order, and applies the
  * `MAX_MEDIA_PARTS` cap. Ticket #71: `resolveMediaParts()` replaces the old
@@ -123,19 +114,33 @@ function getCarouselChildren(raw: ScrapeCreatorsMedia): ScrapeCreatorsCarouselCh
  * This convergence applies to part ENUMERATION only — view-count resolution
  * deliberately stays branched by node (C4), never a single shared "resolve
  * the view count of this post" helper.
+ *
+ * F2 (#175) — the highest-value fix in this ticket: `MediaPart.index` is the
+ * REAL slide position (the loop index into `getCarouselEdges(raw)`, the
+ * PRE-filter array), never the position in a filtered/compacted children
+ * array. `part.index` is surfaced to Gemini in `prompts/user.ts` as
+ * `` `${part.index + 1}. ${label}` `` — a filtered index there would
+ * silently misattribute per-slide model commentary to the wrong slide, and
+ * nothing downstream can detect it. Deliberately a `for` loop with
+ * `continue` on a null `node`, NOT `.filter().forEach()` — a filter step
+ * would reconstruct the exact compacted array this fix removes.
  */
 export function resolveMediaParts(raw: ScrapeCreatorsMedia): ResolvedMediaParts {
   const isCarousel = raw.__typename === "XDTGraphSidecar";
 
   const candidates: MediaPart[] = [];
   if (isCarousel) {
-    const children = getCarouselChildren(raw);
-    children.forEach((child, i) => {
+    const edges = getCarouselEdges(raw);
+    for (let i = 0; i < edges.length; i += 1) {
+      const child = edges[i]!.node;
+      if (!child) {
+        continue;
+      }
       const part = toPart(child, i, true);
       if (part) {
         candidates.push(part);
       }
-    });
+    }
   } else {
     // A non-carousel post produces a single-element array (its own video)
     // or an EMPTY array for an image post (Step 2) — a lone image post is

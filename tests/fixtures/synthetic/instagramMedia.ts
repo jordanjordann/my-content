@@ -148,3 +148,37 @@ export function makeCarousel(
     ...overrides,
   };
 }
+
+/**
+ * ⚠️ SYNTHETIC MUTANT — labelled per #175/#176 (following the case-2
+ * precedent set for #143). No committed capture has EVER shown a null
+ * `node` inside `edge_sidecar_to_children.edges` — this is a defensive
+ * construction against an unobserved payload shape (reviewer's N1 caveat on
+ * PR #167's review), not a claimed observation. Do not cite this as
+ * evidence of what ScrapeCreators returns; that belongs in
+ * `.claude/context/verified-facts.md` and must come from a real capture.
+ *
+ * Unlike `makeCarousel()`, this builds `edge_sidecar_to_children.edges`
+ * directly from the given array, `null` entries included, so tests can pin
+ * the PRE-FILTER shape the F1/F2/F3 bug class (#175) requires — a `null` in
+ * `edges` must be skipped with `continue`, never filtered out before
+ * indexing or counting.
+ */
+export function makeCarouselWithEdges(
+  edges: (ScrapeCreatorsCarouselChildNode | null)[],
+  overrides: Partial<ScrapeCreatorsMedia> = {},
+): ScrapeCreatorsMedia {
+  return {
+    __typename: "XDTGraphSidecar",
+    id: "media-3",
+    shortcode: "XYZ789ghi",
+    taken_at_timestamp: 1_700_000_000,
+    display_url: undefined,
+    dimensions: { width: 1080, height: 1080 },
+    edge_media_preview_like: { count: 5 },
+    edge_media_to_parent_comment: { count: 0 },
+    edge_sidecar_to_children: { edges: edges.map((node) => ({ node: node ?? undefined })) },
+    owner: { id: "owner-1", username: "somecreator" },
+    ...overrides,
+  };
+}

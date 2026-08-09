@@ -1,4 +1,6 @@
 import type { ScrapeCreatorsCarouselChildNode, ScrapeCreatorsMedia } from "@/lib/server/scrapecreators";
+import { getCarouselEdges } from "@/lib/server/analysis/carousel";
+import type { CarouselEdge } from "@/lib/server/analysis/carousel";
 import type { LaterSlideReach, ReachDerivedFrom, ReachKind, ReachResult } from "./types";
 
 /**
@@ -88,8 +90,6 @@ function resolveNodeReach(
   return { value: null, kind: "UNKNOWN", state: "UNKNOWN" };
 }
 
-type CarouselEdge = { node?: ScrapeCreatorsCarouselChildNode };
-
 /**
  * OR-26 / #155 / DESIGN-3C §5.4 (R-N1/R-N2/R-N3). Scans a carousel's
  * PRE-FILTER `edges` for the FIRST one whose node yields a genuinely usable
@@ -153,11 +153,6 @@ function noneResult(laterSlideReach: LaterSlideReach = { usable: false }): Reach
   return { value: null, kind: null, state: "UNKNOWN", derivedFrom: "NONE", laterSlideReach };
 }
 
-function getCarouselEdges(raw: ScrapeCreatorsMedia): CarouselEdge[] {
-  const edges = raw.edge_sidecar_to_children?.edges;
-  return Array.isArray(edges) ? edges : [];
-}
-
 /**
  * `resolveInstagramReach()` — the branch table (TDD §3):
  *
@@ -183,7 +178,8 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
     // confidently-wrong `CAROUSEL_FIRST_SLIDE` label (worse than the
     // slideIndex off-by-one item 1 already fixed) and would also skip the
     // `REACH_NOT_ON_FIRST_SLIDE` path for a post that qualifies for it.
-    const firstSlide = getCarouselEdges(raw)[0]?.node;
+    const edges = getCarouselEdges(raw);
+    const firstSlide = edges[0]?.node;
     if (!firstSlide || !hasReachFields(firstSlide)) {
       // OR-26 / #155: distinguish "no slide in this carousel carries a
       // reach field" from "slide 0 doesn't, but a later slide does" —
@@ -196,7 +192,11 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
       // figure (that would make #143 fabricate a number for a slide that
       // has none). Only a slide `resolveNodeReach` actually resolves to
       // AVAILABLE/ZERO, and only its OWN value/kind, travel forward.
-      const laterSlideReach = resolveLaterSlideReach(getCarouselEdges(raw));
+      //
+      // Review N3 (#175 consolidation): `edges` is computed once above and
+      // reused here, rather than calling `getCarouselEdges(raw)` a second
+      // time — same behaviour, one fewer redundant derivation.
+      const laterSlideReach = resolveLaterSlideReach(edges);
       return noneResult(laterSlideReach);
     }
 

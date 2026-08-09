@@ -1,5 +1,6 @@
 import type { MediaMetadata, OwnerProfileHint } from "@/lib/server/analysis/types";
 import { resolveMediaParts } from "@/lib/server/analysis/media";
+import { getCarouselEdges } from "@/lib/server/analysis/carousel";
 import type {
   ScrapeCreatorsCarouselChildNode,
   ScrapeCreatorsMedia,
@@ -55,16 +56,6 @@ function toIso(value: unknown): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-function getCarouselChildren(raw: ScrapeCreatorsMedia): ScrapeCreatorsCarouselChildNode[] {
-  const edges = raw.edge_sidecar_to_children?.edges;
-  if (!Array.isArray(edges)) {
-    return [];
-  }
-  return edges
-    .map((edge) => edge.node)
-    .filter((node): node is ScrapeCreatorsCarouselChildNode => !!node);
-}
-
 function extractShortcodeFromUrl(url: string): string {
   const match = url.match(/\/(reel|p)\/([\w-]+)/);
   return match?.[2] ?? "";
@@ -84,11 +75,18 @@ interface ResolvedMediaType {
  * 1. carousel if `__typename === "XDTGraphSidecar"`.
  * 2. else reel if `product_type === "clips"` or the URL path is `/reel/`.
  * 3. else post.
+ *
+ * F1 (#175): `carouselItemCount` is `getCarouselEdges(raw).length` — the
+ * PRE-filter `edges` array, the tech lead's one canonical derivation
+ * (TDD §0.7 TR-1). NEVER the filtered/compacted children array — a null
+ * `edge.node` anywhere would silently shrink this count, and it would then
+ * structurally disagree with `LaterSlideReach.slideCount` (`performance/
+ * reach.ts`), which is drawn from the SAME `getCarouselEdges()` call. Two
+ * fields, one derivation (TR-2) — see the mandatory cross-assertion test.
  */
 function resolveMediaType(raw: ScrapeCreatorsMedia, url: string): ResolvedMediaType {
   if (raw.__typename === "XDTGraphSidecar") {
-    const children = getCarouselChildren(raw);
-    return { mediaType: "carousel", carouselItemCount: children.length };
+    return { mediaType: "carousel", carouselItemCount: getCarouselEdges(raw).length };
   }
 
   const isReel = raw.product_type === "clips" || /\/reel\//i.test(url);
@@ -114,15 +112,23 @@ function resolveFirstVideoChild(
   if (resolved.mediaType !== "carousel") {
     return null;
   }
+  // adapter.ts:118 (out of scope, #175) — this takes no index, only a
+  // node, so it is unaffected by the F1/F2/F3 bug class either way.
+  // Filters `getCarouselEdges()` inline at the call site rather than
+  // reaching for the deleted `getCarouselChildren()` compacted-array
+  // helper (TR-2 consolidation).
   return (
-    getCarouselChildren(raw).find(
-      (child) => child.__typename === "XDTGraphVideo" || child.is_video === true,
-    ) ?? null
+    getCarouselEdges(raw)
+      .map((edge) => edge.node)
+      .find((node): node is ScrapeCreatorsCarouselChildNode =>
+        !!node && (node.__typename === "XDTGraphVideo" || node.is_video === true),
+      ) ?? null
   );
 }
 
 /**
- * thumbnail_src -> display_url -> first carousel child's display_url.
+ * thumbnail_src -> display_url -> first AVAILABLE carousel child's
+ * display_url.
  *
  * Fix-round note (review item 10): this used to also try
  * `firstChild.thumbnail_src` before `firstChild.display_url` — C1 confirmed
@@ -130,6 +136,16 @@ function resolveFirstVideoChild(
  * the top-level media object), so that read was dead: it resolved through
  * `ScrapeCreatorsCarouselChildNode`'s index signature as `unknown` and was
  * never populated. Removed rather than left in as a no-op fallback.
+ *
+ * F3 (#175) — named, deliberate rule (tech-lead ruling on #175/#176): the
+ * thumbnail is the FIRST edge in `getCarouselEdges(raw)` that HAS a node
+ * (i.e. the first *available* slide image), not "slide 1 or nothing". If
+ * `edges[0].node` is null, this deliberately falls through to
+ * `edges[1].node`'s image rather than returning null — a missing thumbnail
+ * is a worse user outcome than a correct-looking image of a later slide,
+ * and unlike a count, a thumbnail is not a number presented under a label,
+ * so it does not engage the reliability-over-coverage rule the same way
+ * F1/F2 do.
  */
 function resolveThumbnailUrl(raw: ScrapeCreatorsMedia): string | null {
   const direct = str(raw.thumbnail_src) ?? str(raw.display_url);
@@ -137,11 +153,11 @@ function resolveThumbnailUrl(raw: ScrapeCreatorsMedia): string | null {
     return direct;
   }
 
-  const firstChild = getCarouselChildren(raw)[0];
-  if (!firstChild) {
+  const firstAvailable = getCarouselEdges(raw).find((edge) => !!edge.node)?.node;
+  if (!firstAvailable) {
     return null;
   }
-  return str(firstChild.display_url);
+  return str(firstAvailable.display_url);
 }
 
 interface ResolvedAudio {
