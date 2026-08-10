@@ -619,12 +619,36 @@ content kind + bucket — **and, per OR-13**, `tierUsed`, `confidence`, `basedOn
 The five relocated fields are mechanically determined and were never judgement calls: which tier was used
 follows from which inputs exist; `provisional` is `post_age_hours < MATURITY_FLOOR_HOURS`; `basedOnVideos`
 is a `COUNT`; confidence is a fixed ladder with three enumerated demotion reasons (R-13.4.2);
-`unavailableReason` is decided by the availability resolver. Letting the model restate them reintroduced
-exactly the non-determinism D2 exists to eliminate, and S3's byte-diff would have been testing the model's
-obedience rather than our arithmetic.
+`unavailableReason` is resolved from the availability states and the reach result (**two paths — see
+below**). Letting the model restate them reintroduced exactly the non-determinism D2 exists to eliminate,
+and S3's byte-diff would have been testing the model's obedience rather than our arithmetic.
 
 They are passed to Gemini as **inputs it must not contradict**. `responseSchema` is narrowed to three fields
 in ticket **3B-4**.
+
+#### `unavailableReason` has TWO origins, not one — binding on #143
+
+⚠️ An earlier revision of this section said `unavailableReason` *"is decided by the availability resolver"*.
+That was true of the enum as it stood before **OR-26**, and it is **no longer true of all seven values**. An
+implementer who reads it as written will look for the whole enum in one place, fail to find
+`REACH_NOT_ON_FIRST_SLIDE`, and either re-derive it or conclude it is missing. The accurate statement:
+
+| Path | Values | Where the deciding fact is computed | Where it becomes `unavailableReason` |
+|---|---|---|---|
+| **A — resolved inside `judgement.ts`** | `REACH_HIDDEN`, `CAUSE_NOT_DETERMINABLE`, `REACH_UNKNOWN`, `CONTENT_KIND_UNSUPPORTED`, `NO_AUDIENCE_DATA`, `INSUFFICIENT_HISTORY` | `judgement.ts`, from the §5.4 availability states, the `like_and_view_counts_disabled` tri-state (§1.6) and the tier inputs | `judgement.ts` |
+| **B — decided upstream in `reach.ts`, only *mapped* in `judgement.ts`** | `REACH_NOT_ON_FIRST_SLIDE` | `reach.ts` — `resolveLaterSlideReach()` produces `ReachResult.laterSlideReach` (`LaterSlideReach`, §3.1). The fact *"slide 0 carries no usable count but a later slide does"* is established there and nowhere else | `judgement.ts` maps `laterSlideReach.usable === true` onto the enum value |
+
+Two consequences, both binding on **#143**:
+
+1. **#143 reads `laterSlideReach.usable`. It must never re-derive path B**, and must never write a presence
+   check of its own over the carousel edges (§3.1, R-N1). When `usable === false` the row is
+   `CAUSE_NOT_DETERMINABLE`, not `REACH_NOT_ON_FIRST_SLIDE`.
+2. **The mapping is one-directional.** `reach.ts` does not know the enum and must not import it —
+   `LaterSlideReach` stays a reach-shaped fact; `judgement.ts` owns every write of `unavailableReason`.
+
+Path A's first two values (`REACH_HIDDEN` / `CAUSE_NOT_DETERMINABLE`) already ship, in
+`resolveHiddenCountsUnavailableReason()` (#169). #143 **imports** that function for those two rows rather
+than re-deriving them — it is the module §2 names for this logic, not a second home.
 
 **V4 turns this from a well-argued preference into a measured necessity (OR-22).** OR-13 was argued on
 principle — mechanically-determined fields do not belong to a language model. V4 then measured what happens
@@ -972,6 +996,47 @@ sentence is a fabrication by omission. The violating substring is logged.
 **No automatic repair retry.** A retry is a second billed call and, given §8.1's pre-formatted strings, a
 violation is a signal that the prompt has drifted — which is information we want, not noise we want papered
 over. Recorded as a deliberate choice, not an oversight.
+
+#### STATED LIMITATION — the 40-character window qualifies by proximity, not per figure
+
+**This is the guard's known ceiling, not a defect. Do not file it as a bug and do not "fix" it on sight.**
+
+`assertQualifiedPercentages` asks one question per percentage token: *is an approved denominator keyword
+anywhere within 40 characters?* It does **not** attribute a denominator to a *particular* figure. So a **bare**
+percentage riding inside the window of an **unrelated qualified** one inherits its neighbour's qualifier and
+passes:
+
+```
+"Engagement 4,1% dari 482,1RB penayangan dan CTR 12% rendah"
+                     ^^^^^^^^^^^^^^^^^^^^          ^^^
+                     qualifies 4,1% …              … and 12% inherits it — accepted
+```
+
+`12%` carries no denominator of its own, and the guard accepts it because `penayangan` falls inside its
+window.
+
+**Cause, named so it is recognised rather than re-discovered: window-based qualification, not per-figure
+attribution.** Fixing it properly means binding each percentage to *its own* denominator phrase (parsing
+sentence structure), which is a different mechanism from the one specified here — not a tuning of this one.
+Widening or narrowing the 40 characters does not address it; it only moves which sentences are affected.
+
+**The 40-character window is what this section prescribes, so this behaviour is spec-conformant.** The
+residual risk is bounded by §8.1: the model is given `ANGKA_ENGAGEMENT` pre-formatted and told to quote it
+verbatim, and `assertNumeralsAreReal` independently rejects any numeral it was never handed — so a *second*
+percentage has to be a real supplied figure before this window case can arise at all. Accepted at that level.
+Revisit only if a real generation is observed exploiting it.
+
+#### Two verification notes from the #142 review, both PASS — recorded so §8.2's record is complete
+
+- **The R-4.3.1 label mapping was verified against this section's own allow-list, not assumed:**
+  `"dari … penayangan"` / `"dari … tayangan"` → reach/views, `"dari … yang menonton"` → reach/plays. §8.1's
+  worked example reproduces it byte-for-byte.
+- **`assertNumeralsAreReal` throwing on `"12 detik pertama"` is CORRECT and INTENDED.** The `12` is a numeral
+  the model was never handed, so **AC-7** and §8.1's S2 instruction require it to throw. It is an intended
+  false positive against *natural-sounding prose*, not a defect against the spec, and the fix — if the copy is
+  ever wanted — is on the **prompt** side (supply the figure), never by loosening the guard. Widening the
+  allow-list to admit such numerals **was tried and REJECTED**: it did not fix the class of problem, and it let
+  invented round numbers through, because the guard matches **values, never labels**.
 
 ### 8.3 Why a guard and not just a test — and the precedent
 
