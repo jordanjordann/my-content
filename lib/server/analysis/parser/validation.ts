@@ -15,7 +15,14 @@ import {
   type Pacing,
   type TopicNiche,
 } from "@/lib/analysis/taxonomy";
-import { SCORECARD_KEYS, type ContentAnalysis, type Scorecard, type StructureBeat, type StyleAttributes } from "@/lib/server/analysis/types/analysis";
+import {
+  SCORECARD_KEYS,
+  type ContentAnalysis,
+  type PerformanceAssessment,
+  type Scorecard,
+  type StructureBeat,
+  type StyleAttributes,
+} from "@/lib/server/analysis/types/analysis";
 
 /**
  * Loud, not inventive (TDD §4.5, ticket #68).
@@ -172,6 +179,34 @@ function assertCtaTypeArray(raw: unknown, path: string): CtaType[] {
   return values;
 }
 
+/**
+ * Nullable integer in [1,5] (TDD §8.1 step 6/7). `null` is an EXPECTED
+ * state — no computed input left a basis for a score — and is not a parse
+ * failure. Any other malformed value (wrong type, out of range, non-
+ * integer) still fails loudly: PRD §5.4 is explicit that "absent input" and
+ * "malformed field" must not be conflated.
+ */
+function assertNullableInteger1to5(raw: unknown, path: string): number | null {
+  if (raw === null) return null;
+  return assertInteger1to5(raw, path);
+}
+
+/**
+ * TDD §4/§8.1 step 6/7: the model's ONLY judgement-layer output. A missing
+ * `performance` object, or a malformed field within it, fails loudly —
+ * never conflated with `performanceScore: null`, which is the one expected
+ * absence this object may carry.
+ */
+function assertPerformance(raw: unknown, path: string): PerformanceAssessment {
+  const obj = assertRecord(raw, path);
+
+  return {
+    performanceScore: assertNullableInteger1to5(obj.performanceScore, `${path}.performanceScore`),
+    verdict: assertString(obj.verdict, `${path}.verdict`),
+    drivers: assertStringArray(obj.drivers, `${path}.drivers`),
+  };
+}
+
 function assertScorecard(raw: unknown, path: string): Scorecard {
   const obj = assertRecord(raw, path);
   const result = {} as Scorecard;
@@ -251,6 +286,7 @@ export function assertContentAnalysis(raw: unknown): Omit<ContentAnalysis, "sche
   const keyMoments = assertStringArray(obj.keyMoments, "keyMoments");
   const redFlags = assertStringArray(obj.redFlags, "redFlags");
   const suggestions = assertStringArray(obj.suggestions, "suggestions");
+  const performance = assertPerformance(obj.performance, "performance");
 
   return {
     style,
@@ -262,5 +298,6 @@ export function assertContentAnalysis(raw: unknown): Omit<ContentAnalysis, "sche
     keyMoments,
     redFlags,
     suggestions,
+    performance,
   };
 }

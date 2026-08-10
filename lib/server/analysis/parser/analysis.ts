@@ -1,5 +1,7 @@
+import { computePerformanceAssessmentBlock } from "@/lib/server/analysis/prompts";
+import { assertPerformanceProseIsSafe } from "@/lib/server/analysis/prose";
 import { ANALYSIS_SCHEMA_VERSION } from "@/lib/server/analysis/schema/constants";
-import type { ContentAnalysis } from "@/lib/server/analysis/types";
+import type { ContentAnalysis, MediaMetadata } from "@/lib/server/analysis/types";
 import { assertContentAnalysis } from "./validation";
 
 /**
@@ -11,10 +13,21 @@ import { assertContentAnalysis } from "./validation";
  * here), but if a truncated/malformed body ever does reach this function, the
  * resulting `SyntaxError` must propagate unchanged. No repair path is added
  * here as a safety net.
+ *
+ * TDD §8.2 (Half B): the prose guard runs here, in the parser stage, BEFORE
+ * persistence — `assertPerformanceProseIsSafe` throws loudly
+ * (`ProseQualifierError`/`NumeralFabricationError`) on a bare unqualified
+ * percentage or a fabricated numeral in `performance.verdict`/`drivers[]`.
+ * No stripping, no rewriting, no automatic repair retry (§8.2/§8.3). The
+ * computed block it checks against is derived from the SAME `metadata` the
+ * prompt was built from (`computePerformanceAssessmentBlock`,
+ * `prompts/user.ts`), never a second, independently-derived figure.
  */
-export function parseContentAnalysis(text: string): ContentAnalysis {
+export function parseContentAnalysis(text: string, metadata: MediaMetadata): ContentAnalysis {
   const parsed: unknown = JSON.parse(text);
   const validated = assertContentAnalysis(parsed);
+
+  assertPerformanceProseIsSafe(validated.performance, computePerformanceAssessmentBlock(metadata));
 
   // [TAXONOMY] instrumentation (TDD §4.6, PRD §4.3.5/§4.3.6): one structured
   // log line per completed analysis carrying the classified values, so the

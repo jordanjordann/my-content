@@ -78,6 +78,22 @@ export const SCORECARD_KEYS = [
   "emotionalResonance",
 ] as const satisfies readonly (keyof Scorecard)[];
 
+/**
+ * TDD §4 (division of labour, OR-13) / §8.1 step 6. The model's ONLY
+ * judgement-layer output — `tierUsed`, `confidence`, `basedOnVideos`,
+ * `provisional` and `unavailableReason` are mechanically determined and
+ * computed in code (`performance/judgement.ts`, #143/#144), never
+ * requested from Gemini (V4/OR-22: letting the model own a
+ * mechanically-determined field reintroduced non-determinism on
+ * byte-identical requests).
+ */
+export interface PerformanceAssessment {
+  /** 1-5, nullable — `null` when no computed input left a basis for a score (an expected state, not a parse failure). */
+  performanceScore: number | null;
+  verdict: string; // Indonesian
+  drivers: string[]; // Indonesian
+}
+
 export interface ContentAnalysis {
   schemaVersion: number; // PRD §4.4, stamped server-side by the parser
   style: StyleAttributes;
@@ -89,6 +105,7 @@ export interface ContentAnalysis {
   keyMoments: string[];
   redFlags: string[]; // renamed from patterns.recurringRedFlags
   suggestions: string[];
+  performance: PerformanceAssessment;
 }
 
 export interface AnalyzeResult {

@@ -3,6 +3,24 @@ import { describe, expect, it } from "vitest";
 import { parseContentAnalysis } from "@/lib/server/analysis/parser/analysis";
 import { AnalysisValidationError, assertContentAnalysis } from "@/lib/server/analysis/parser/validation";
 import { ANALYSIS_SCHEMA_VERSION } from "@/lib/server/analysis/schema/constants";
+import type { MediaMetadata } from "@/lib/server/analysis/types";
+
+/** Minimal `MediaMetadata` — the prose guard's computed block resolves off this. */
+function baseMetadata(overrides: Partial<MediaMetadata> = {}): MediaMetadata {
+  return {
+    url: "https://www.instagram.com/reel/abc/",
+    shortcode: "abc",
+    mediaType: "reel",
+    username: "creator",
+    caption: null,
+    viewCount: null,
+    postDate: null,
+    durationSec: null,
+    thumbnailUrl: null,
+    videoUrl: null,
+    ...overrides,
+  };
+}
 
 /**
  * Golden-file tests for the parser/validation rewrite (ticket #68, TDD
@@ -54,6 +72,11 @@ function validRawPayload(): Record<string, unknown> {
     keyMoments: ["Reveal bumbu rahasia"],
     redFlags: [],
     suggestions: ["Perlambat transisi tengah"],
+    performance: {
+      performanceScore: 4,
+      verdict: "Performa solid dengan hook yang kuat.",
+      drivers: ["Hook langsung menjawab rasa penasaran penonton."],
+    },
   };
 }
 
@@ -83,18 +106,42 @@ describe("assertContentAnalysis — valid payload", () => {
 
 describe("parseContentAnalysis — end to end", () => {
   it("stamps schemaVersion server-side and normalises hookTypeSecondary", () => {
-    const result = parseContentAnalysis(JSON.stringify(validRawPayload()));
+    const result = parseContentAnalysis(JSON.stringify(validRawPayload()), baseMetadata());
     expect(result.schemaVersion).toBe(ANALYSIS_SCHEMA_VERSION);
     expect(result.style.hookTypeSecondary).toBeNull();
+    expect(result.performance.performanceScore).toBe(4);
   });
 
   it("propagates JSON.parse's SyntaxError on malformed JSON, never repairs it", () => {
-    expect(() => parseContentAnalysis("{not valid json")).toThrow(SyntaxError);
+    expect(() => parseContentAnalysis("{not valid json", baseMetadata())).toThrow(SyntaxError);
   });
 
   it("propagates SyntaxError on a MAX_TOKENS-truncated body (mid-string cutoff)", () => {
     const truncated = JSON.stringify(validRawPayload()).slice(0, 40);
-    expect(() => parseContentAnalysis(truncated)).toThrow(SyntaxError);
+    expect(() => parseContentAnalysis(truncated, baseMetadata())).toThrow(SyntaxError);
+  });
+
+  it("TDD §8.2 — the prose guard runs here and throws loudly on a bare unqualified percentage in verdict", () => {
+    const raw = validRawPayload();
+    (raw.performance as Record<string, unknown>).verdict = "Engagement-nya cukup tinggi, sekitar 4,1%.";
+
+    expect(() => parseContentAnalysis(JSON.stringify(raw), baseMetadata())).toThrow(/Unqualified percentage/);
+  });
+
+  it("TDD §8.2 — the prose guard throws loudly on a fabricated numeral (non-percentage) in drivers[] absent from the computed block — non-vacuity proof", () => {
+    const raw = validRawPayload();
+    (raw.performance as Record<string, unknown>).drivers = ["Hook-nya menarik perhatian dalam 12 detik pertama."];
+
+    expect(() => parseContentAnalysis(JSON.stringify(raw), baseMetadata())).toThrow(/Fabricated numeral/);
+  });
+
+  it("a performance figure the prompt actually supplied (quoted verbatim) passes the guard end to end", () => {
+    const metadata = baseMetadata({ viewCount: 482_100, likeCount: 15_000, commentCount: 5_000 });
+    const raw = validRawPayload();
+    (raw.performance as Record<string, unknown>).verdict = 'Performa solid, engagement "4,1% dari 482,1RB penayangan".';
+    (raw.performance as Record<string, unknown>).drivers = ["Reach yang kuat mendukung skor ini."];
+
+    expect(() => parseContentAnalysis(JSON.stringify(raw), metadata)).not.toThrow();
   });
 });
 
@@ -210,5 +257,45 @@ describe("assertContentAnalysis — invalid fixtures (each must throw)", () => {
 
     expect(() => assertContentAnalysis(raw)).toThrow(AnalysisValidationError);
     expect(() => assertContentAnalysis(raw)).toThrow(/style/);
+  });
+
+  it("throws when the whole performance object is missing — a missing performance field fails loudly (TDD §8.1 step 7)", () => {
+    const raw = validRawPayload();
+    delete raw.performance;
+
+    expect(() => assertContentAnalysis(raw)).toThrow(AnalysisValidationError);
+    expect(() => assertContentAnalysis(raw)).toThrow(/performance/);
+  });
+
+  it("throws when performance.verdict is missing", () => {
+    const raw = validRawPayload();
+    delete (raw.performance as Record<string, unknown>).verdict;
+
+    expect(() => assertContentAnalysis(raw)).toThrow(AnalysisValidationError);
+    expect(() => assertContentAnalysis(raw)).toThrow(/performance\.verdict/);
+  });
+
+  it("throws when performance.drivers is missing", () => {
+    const raw = validRawPayload();
+    delete (raw.performance as Record<string, unknown>).drivers;
+
+    expect(() => assertContentAnalysis(raw)).toThrow(AnalysisValidationError);
+    expect(() => assertContentAnalysis(raw)).toThrow(/performance\.drivers/);
+  });
+
+  it("throws when performanceScore is out of range (6) — never clamps", () => {
+    const raw = validRawPayload();
+    (raw.performance as Record<string, unknown>).performanceScore = 6;
+
+    expect(() => assertContentAnalysis(raw)).toThrow(AnalysisValidationError);
+    expect(() => assertContentAnalysis(raw)).toThrow(/performance\.performanceScore/);
+  });
+
+  it("performanceScore: null is an EXPECTED absence state, not a parse failure", () => {
+    const raw = validRawPayload();
+    (raw.performance as Record<string, unknown>).performanceScore = null;
+
+    const result = assertContentAnalysis(raw);
+    expect(result.performance.performanceScore).toBeNull();
   });
 });
