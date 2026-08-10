@@ -25,7 +25,13 @@
 > (OR-6, re-confirmed 2026-08-07). `DESIGN-3B` §7 is therefore the **governing treatment** of the 1–5,
 > not an argument feeding an open question, and the "cut the score" contingency leaves ticket planning
 > entirely — **#147 is clear to build the score pips.** **Q2 (cut the Status column) and Q3 (Style
-> columns default-off) remain genuinely OPEN** and §15.1 does **not** rule them.
+> columns default-off) are now CLOSED too — both owner-ruled later the same day, 2026-08-09: Q2 is
+> CUT, Q3 ships DEFAULT-OFF (built, hidden behind the column picker). See §15.2, which supersedes its
+> own earlier "STILL OPEN" text.** All four design-document open questions are now settled. **Neither
+> ruling changes any column width or the default column count** — `DESIGN-3C` **§2.2** (the layout
+> section, and the single layout authority) already excluded Status and already costed Style
+> separately, so the rulings ratify what was drawn: **nine default columns plus a hidden optional
+> Style tenth.** **R-15.2.1 binds #145 and #149.**
 
 **Owner:** Oden (product owner)
 **Author:** Dan (PM)
@@ -1117,22 +1123,48 @@ re-litigated as a fresh finding.
 > ruling itself is OR-6; this section is where product records it. Where a design document's sign-off
 > record and this section disagree **on Q4 only**, this section is current.
 
-### 15.2 Q2 and Q3 — **STILL OPEN. Do not assume either way.**
+### 15.2 Q2 and Q3 — **BOTH CLOSED, owner-ruled 2026-08-09.**
 
-- **Q2 — cut the Status column** (`DESIGN-3C` §11 Q2, §2.1). Failures would instead get the whole-row
-  treatment; the status *filter* survives either way.
+> **⚠️ This section previously read "STILL OPEN. Do not assume either way." That is superseded.** The
+> owner ruled both questions on **2026-08-09**. The text is replaced rather than annotated.
+>
+> **Both design documents are current and correct** as of `DESIGN-3C`/`DESIGN-3B` merges #174 and
+> #181 — read them directly. The earlier "a designer pass is in flight, do not edit either document"
+> note has been removed because that pass has landed, and the Q2/Q3 **record** discrepancy this
+> section used to flag was reconciled by the tech lead in #178 and by #181 in `DESIGN-3C` §12.
+
+- **Q2 — cut the Status column** (`DESIGN-3C` §11 Q2, §2.1). **RULED 2026-08-09: cut it.** The Status
+  *column* does not ship. Failures get the whole-row treatment instead. **The status *filter* survives** —
+  it was never contingent on the column and is unaffected.
 - **Q3 — Style columns (`formatArchetype`, `hookType`) default-on or default-off** (`DESIGN-3C` §11 Q3).
-  The designer proposes **off**.
+  **RULED 2026-08-09: default-OFF.** The columns are **built**, and **hidden until a user opts in via the
+  column picker.** "Default-off" is not "cut" — the build work stays in scope; only the initial
+  visibility changes.
 
-**Both are implemented as the design proposes and neither has been decided.** `TDD` §0.2 carries them as
-**OR-4** and **OR-5**, but the design documents' own sign-off records (`DESIGN-3C` §12, `DESIGN-3B` §10,
-both 2026-08-07) explicitly state that the owner's sign-off **does not** cover them — so the two records
-disagree, and product does not resolve that disagreement by picking the more convenient one.
-
-- **§15.1's ruling on Q4 does NOT rule Q2 or Q3.** They are separate questions about separate columns.
-- **Any ticket whose scope depends on Q2 or Q3 must mark the dependency explicitly** and leave the
-  question open, rather than building to the proposal and calling it decided.
-- **Owner ruling requested.** Until it lands, "implemented as proposed" is the status, not the answer.
+- **R-15.2.1 (binding on #145 and #149)** **Q2 and Q3 change no column width and no default column
+  count.** `DESIGN-3C` **§2.2** — the layout section — had **already** excluded Status (§2.1 proposed
+  cutting it) and had **already** costed Style **separately** as an optional extra. The owner's rulings
+  **ratify what was already drawn**; they narrow nothing. Concretely:
+  - **The default set is nine columns:** `Content · Creator · Posted · Counts · Content score ·
+    Performance · vs their usual · Eng./reach · Eng./followers` — items 5 and 6 sitting under a shared
+    `Scores` group header — **plus `Style` as a hidden optional tenth.**
+  - **`DESIGN-3C` §2.2 is the single layout authority.** Its ≈1,288px of columns + 24px of gutters
+    ≈ **1,312px** is the nine-column total and **never contained Status**; the ~**1,462px** figure is
+    that same total **with the optional Style column switched on**.
+  - **Do not re-derive a table width or a column count from these rulings, and do not cite `DESIGN-3C`
+    §5 for layout.** §5 is *"Rendering a 1–5 score inside a small cell without misleading"* — the
+    score-cell spec. It states **no column set and no width budget.**
+  - **No figure is superseded, so nothing needs rescoping.** #145 and #149 were both scoped from §2.2
+    already and already implement OR-4/OR-5. #145's "9 columns" is **correct**.
+- **R-15.2.2** The column **picker** is now load-bearing, not a convenience. It is the **only** route to
+  the Style columns. Shipping the Style columns without a working picker entry for them ships dead code.
+- **R-15.2.3** These rulings **do not** re-open Q4. The 1–5 score **stays** (§15.1, OR-6).
+- **R-15.2.4 (binding on #149)** **The Style opt-in does not persist.** No `localStorage`, no
+  `sessionStorage`, no URL parameter, no cookie, no per-user storage — the Style column **resets to
+  hidden on every load.** This **sharpens R-15.2.2** rather than qualifying it: the picker is not merely
+  the only route to Style, it is the only route **on every single load**. A missing or broken picker
+  entry therefore does not degrade the feature, it makes Style **permanently unreachable** — which is
+  the dead-code outcome R-15.2.2 forbids.
 
 ### 15.3 Standing tiebreak, restated because it decided §15.1's framing
 
