@@ -22,7 +22,7 @@
 
 **That sentence was written of A1 and A2 and holds for all three.** **A3 reopens nothing and changes nothing** — it records two owner rulings that ratify proposals this document already made, so the column set, widths, order, density, sort behaviour, strings, colours and the Direction A engagement split are all untouched by it.
 
-**Resolved, 2026-08-07.** The flag previously carried here — that the status header read *PROPOSED — NOT APPROVED* and §12 was empty while `docs/HANDOFF-2026-08-06.md` §"Design / table (3C)" recorded the design as approved — has been cleared. The owner approved this document explicitly in the 2026-08-07 session, and that approval, not the handoff line, is what §12 records.
+**Resolved, 2026-08-07.** The flag previously carried here — that the status header read *PROPOSED — NOT APPROVED* and §12 was empty while `docs/archive/handoffs/HANDOFF-2026-08-06.md` §"Design / table (3C)" recorded the design as approved — has been cleared. The owner approved this document explicitly in the 2026-08-07 session, and that approval, not the handoff line, is what §12 records.
 
 ---
 
