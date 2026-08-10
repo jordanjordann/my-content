@@ -1,5 +1,6 @@
 import type { MediaMetadata, OwnerProfileHint } from "@/lib/server/analysis/types";
 import type { ClassifiedUrl } from "@/lib/server/analysis/classifier";
+import type { ReachResult } from "@/lib/server/analysis/performance/types";
 import { fetchInstagramMetadata } from "./instagram";
 import { fetchShortMetadata, extractVideoUrl } from "./youtube";
 
@@ -16,6 +17,8 @@ export interface FetchedMetadata {
    * miss. That is expected — see #57.
    */
   ownerHint: OwnerProfileHint | null;
+  /** Ticket #143 — resolved from the raw platform payload at fetch time, before `MediaMetadata` drops the fields reach resolution needs (R-12.7.1). */
+  reachResult: ReachResult;
 }
 
 /**
@@ -36,7 +39,7 @@ export async function fetchMetadata(classified: ClassifiedUrl): Promise<FetchedM
  * legitimate metadata-only analysis.
  */
 async function fetchYoutubeMetadata(url: string): Promise<FetchedMetadata> {
-  const { metadata, ownerHint } = await fetchShortMetadata(url);
+  const { metadata, ownerHint, reachResult } = await fetchShortMetadata(url);
   const videoUrl = await extractVideoUrl(url);
-  return { metadata: { ...metadata, videoUrl }, ownerHint };
+  return { metadata: { ...metadata, videoUrl }, ownerHint, reachResult };
 }

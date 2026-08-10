@@ -1,10 +1,9 @@
 /**
  * Types for the performance module (TDD §2 module placement, §6 type
- * unions). This ticket (#140) only needs the subset that `reach.ts`,
- * `availability.ts` and `ratios.ts` produce/consume — `Tier`, `Confidence`,
- * `UnavailableReason` and the full `ComputedPerformanceBlock` belong to
- * `judgement.ts`/`computeBlock.ts` (3B-5, out of scope here) and are not
- * declared prematurely.
+ * unions). `Tier`, `Confidence`, `ConfidenceReason`, `UnavailableReason` and
+ * `ComputedPerformanceBlock` are ticket #143's (3B-5) — declared here per
+ * TDD §2's module map (`types.ts` is the single source of truth for the
+ * whole module, not `judgement.ts`/`computeBlock.ts` individually).
  */
 
 /**
@@ -256,4 +255,82 @@ export type BaselineResult =
  */
 export function assertNever(value: never): never {
   throw new Error(`assertNever: unreachable case reached with value ${JSON.stringify(value)}`);
+}
+
+/**
+ * OR-13 (PRD §5.2 / TDD §4). Which of the three graceful-degradation tiers
+ * (PRD §3.3) actually produced `performanceScore`. `REACH_ONLY` covers BOTH
+ * a reach-denominated Tier 1 ratio AND a follower-denominated one (all-image
+ * content, §12.2) — DESIGN-3B §3.1 is explicit that the enum does not carry
+ * that distinction; the L1 phrase does, keyed off `Tier1Ratio.denominator`,
+ * not off `tierUsed`. `AUDIENCE_FALLBACK` is Tier 3 (`reach ÷ followers`) —
+ * never applicable to content with no reach at all (§12.5's table).
+ */
+export type Tier = "CREATOR_BASELINE" | "REACH_ONLY" | "AUDIENCE_FALLBACK" | "UNAVAILABLE";
+
+/** OR-13 (PRD §5.2 / TDD §4). `NONE` iff `tierUsed === "UNAVAILABLE"`. */
+export type Confidence = "HIGH" | "MEDIUM" | "LOW" | "NONE";
+
+/**
+ * TDD §4's confidence ladder — the three demotion causes, matching
+ * `perf_confidence_reason`'s `CHECK` (migration 012) exactly. `null` when
+ * confidence is `HIGH` (nothing demoted it) or `NONE` (no score at all).
+ */
+export type ConfidenceReason = "CACHED_FOLLOWER_DENOMINATOR" | "CAROUSEL_FIRST_SLIDE" | "THIN_SAMPLE";
+
+/**
+ * TDD §5.3 (seven members, OR-26). `unavailableReason` has TWO origins
+ * (TDD §4's "two origins, not one" subsection, binding on #143):
+ *
+ *   - Path A — resolved inside `judgement.ts`: `REACH_HIDDEN`,
+ *     `CAUSE_NOT_DETERMINABLE`, `REACH_UNKNOWN`, `CONTENT_KIND_UNSUPPORTED`,
+ *     `NO_AUDIENCE_DATA`, `INSUFFICIENT_HISTORY`.
+ *   - Path B — decided upstream in `reach.ts` (`resolveLaterSlideReach()`,
+ *     `ReachResult.laterSlideReach`) and only MAPPED here:
+ *     `REACH_NOT_ON_FIRST_SLIDE`. `judgement.ts` reads
+ *     `laterSlideReach.usable` — it must never re-derive Path B, and
+ *     `reach.ts` must never import this type (the mapping is
+ *     one-directional).
+ *
+ * `null` iff a score was produced (`tierUsed !== "UNAVAILABLE"`).
+ */
+export type UnavailableReason =
+  | "REACH_HIDDEN"
+  | "REACH_UNKNOWN"
+  | "CONTENT_KIND_UNSUPPORTED"
+  | "REACH_NOT_ON_FIRST_SLIDE"
+  | "NO_AUDIENCE_DATA"
+  | "INSUFFICIENT_HISTORY"
+  | "CAUSE_NOT_DETERMINABLE";
+
+/**
+ * TDD §2 module map / §5.1-§5.2 (OR-13). The full frozen computed block —
+ * written by code, never by Gemini (D2) — that `computeBlock.ts` produces
+ * and `pipeline/index.ts` persists verbatim to the `perf_*` columns
+ * (migration 012/013). This is deliberately a DIFFERENT type from
+ * `lib/server/analysis/prose`'s `ComputedPerformanceBlock` (that one is
+ * narrowly the prose guard's numeral allow-list, #142's scope) — same name,
+ * different module, never imported together without an alias.
+ */
+export interface ComputedPerformanceBlock {
+  reach: ReachResult;
+  likeState: AvailabilityState;
+  commentState: AvailabilityState;
+  /** Null whenever no denominator-bearing ratio could be computed (R-12.2.2/R-12.2.4). */
+  tier1Ratio: Tier1Ratio | null;
+  /** Null on every content kind with no reach at all (Tier 3 never applies there, §12.5). */
+  tier3Ratio: Tier3Ratio | null;
+  bucketKey: string;
+  baseline: BaselineResult;
+  /** Hours between `postDate` and analysis time. `null` when `postDate` is unresolvable. */
+  postAgeHours: number | null;
+  /** Copy of `profiles.last_fetched_at` at write time (§1.3) — `null` when no profile resolved. */
+  audienceSourceFetchedAt: string | null;
+  tierUsed: Tier;
+  confidence: Confidence;
+  confidenceReason: ConfidenceReason | null;
+  /** `basedOnVideos` — always `baseline.sampleSize`, never null (R-8.4.4/R-13.3.4). */
+  basedOnVideos: number;
+  provisional: boolean;
+  unavailableReason: UnavailableReason | null;
 }

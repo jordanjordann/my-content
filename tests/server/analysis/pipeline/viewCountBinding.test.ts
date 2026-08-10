@@ -43,6 +43,7 @@ vi.mock("@/lib/server/analysis/fetcher", () => ({
       mediaPartsTruncated: false,
     },
     ownerHint: null,
+    reachResult: { value: null, kind: null, state: "UNKNOWN", derivedFrom: "NONE", laterSlideReach: { usable: false } },
   }),
 }));
 
@@ -71,7 +72,7 @@ vi.mock("@/lib/server/analysis/prompts", () => ({
 }));
 
 vi.mock("@/lib/server/analysis/parser", () => ({
-  parseContentAnalysis: () => ({ schemaVersion: 1 }),
+  parseContentAnalysis: () => ({ schemaVersion: 1, performance: { performanceScore: null, verdict: "", drivers: [] } }),
 }));
 
 vi.mock("@/lib/server/ollama", () => ({
@@ -135,9 +136,17 @@ describe("runAnalysis — analyses.view_count binding regression (review item 6)
     expect(metadataUpdateCall).toBeDefined();
     const query = metadataUpdateCall![0] as { sql: string; args: unknown[] };
 
-    // Positional binding, per pipeline/index.ts's args array: [..., analysisMode,
-    // coauthorProducersJson, toDbBool(likeAndViewCountsDisabled), analysisId].
-    const [coauthorProducersJson, likeAndViewCountsDisabled] = query.args.slice(-3, -1);
+    // Positional binding: derive each column's arg index by counting `?`
+    // placeholders ahead of its own `column = ?` text in the SQL, rather
+    // than a fixed offset from the end — ticket #143 added several more
+    // `perf_*` columns after `like_and_view_counts_disabled` in the same
+    // UPDATE, which would have silently broken a fixed `slice(-3, -1)`.
+    const placeholderIndexBefore = (marker: string): number => {
+      const before = query.sql.split(marker)[0] ?? "";
+      return (before.match(/\?/g) ?? []).length;
+    };
+    const coauthorProducersJson = query.args[placeholderIndexBefore("coauthor_producers = ?")];
+    const likeAndViewCountsDisabled = query.args[placeholderIndexBefore("like_and_view_counts_disabled = ?")];
     expect(coauthorProducersJson).toBe("[]");
     // undefined on the mocked metadata -> must persist as NULL, never
     // coerced to 0/false (toDbBool contract, same as has_audio above it).

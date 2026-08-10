@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildUserPrompt } from "@/lib/server/analysis/prompts";
 import type { MediaMetadata } from "@/lib/server/analysis/types";
+import { buildTestComputedPerformanceBlock } from "./testHelpers";
 
 function baseMetadata(overrides: Partial<MediaMetadata>): MediaMetadata {
   return {
@@ -40,7 +41,7 @@ describe("buildUserPrompt — slide manifest header (TR-4, #182)", () => {
       carouselItemCount: 2,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
 
     expect(prompt).toContain("## Slides (in order)");
     expect(prompt).not.toMatch(/## Slides \(\d/);
@@ -60,7 +61,7 @@ describe("buildUserPrompt — slide manifest header (TR-4, #182)", () => {
       carouselItemCount: 10,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
 
     expect(prompt).toContain("## Slides (in order)");
     expect(prompt).not.toMatch(/## Slides \([^)]*\d[^)]*\)/);
@@ -77,7 +78,7 @@ describe("buildUserPrompt — slide manifest header (TR-4, #182)", () => {
       carouselItemCount: 34,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
 
     expect(prompt).toContain("## Slides (in order)");
     expect(prompt).not.toMatch(/## Slides \([^)]*\d[^)]*\)/);
@@ -93,7 +94,7 @@ describe("buildUserPrompt — slide manifest header (TR-4, #182)", () => {
       carouselItemCount: 10,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
     const matches = prompt.match(/\d+ slides?/g) ?? [];
 
     expect(matches).toHaveLength(1);

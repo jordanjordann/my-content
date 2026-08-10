@@ -3,6 +3,8 @@ import { promisify } from "node:util";
 import type { MediaMetadata, OwnerProfileHint } from "@/lib/server/analysis/types";
 import { getYoutubeVideo } from "@/lib/server/scrapecreators";
 import type { ScrapeCreatorsYoutubeVideo } from "@/lib/server/scrapecreators";
+import { resolveYoutubeReach } from "@/lib/server/analysis/performance/reach";
+import type { ReachResult } from "@/lib/server/analysis/performance/types";
 
 /**
  * Two data sources in one file, deliberately (ticket #54):
@@ -161,6 +163,8 @@ export function extractYoutubeOwnerHint(raw: ScrapeCreatorsYoutubeVideo): OwnerP
 export interface FetchedYoutubeMetadata {
   metadata: MediaMetadata;
   ownerHint: OwnerProfileHint | null;
+  /** Ticket #143 — see `FetchedInstagramMetadata.reachResult`'s doc comment for why this is computed here, not from `MediaMetadata`. */
+  reachResult: ReachResult;
 }
 
 /**
@@ -175,6 +179,7 @@ export async function fetchShortMetadata(url: string): Promise<FetchedYoutubeMet
   return {
     metadata: adaptYoutubeVideo(raw, url),
     ownerHint: extractYoutubeOwnerHint(raw),
+    reachResult: resolveYoutubeReach(raw.viewCountInt),
   };
 }
 
