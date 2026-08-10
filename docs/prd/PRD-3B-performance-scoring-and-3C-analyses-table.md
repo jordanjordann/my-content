@@ -545,7 +545,7 @@ A creator's median is computed within `(platform, content kind)` and never acros
 *Rejected:* (a) platform-only bucketing — mixes reels and carousels, which do not perform comparably. (c) minimum 3 at `LOW` confidence — too thin to quote to a client.
 *Sub-question, also confirmed:* for **video-bearing** carousels, post-level reach is the **first slide's** count, labelled as such, at one confidence level lower. Summing slides is invalid (it double-counts the same viewer).
 *Consequence now made explicit:* see §12.4 — an **all-image-carousel bucket needs its own 5**, which is a slow cold start for creators who post carousels rarely.
-**⚠️ READ THIS AS "5 PER BUCKET", NOT "5 PER CREATOR" (2026-08-07).** Every bucket needs its own 5 independently — this is not a carousel-only footnote. **A creator with 4 reels and 4 carousels has 8 analysed posts and receives no Tier 2 comparison at all.** **§14.2 states the rule, the worked example and the rationale, and is binding on the 3C cold-start copy.** *Also re-confirmed 2026-08-07:* a **lower threshold for the carousel bucket was considered and declined** (`docs/HANDOFF-2026-08-06.md` §11). `BASELINE_MIN_SAMPLE` is **5 for every bucket**. Do not re-open it.
+**⚠️ READ THIS AS "5 PER BUCKET", NOT "5 PER CREATOR" (2026-08-07).** Every bucket needs its own 5 independently — this is not a carousel-only footnote. **A creator with 4 reels and 4 carousels has 8 analysed posts and receives no Tier 2 comparison at all.** **§14.2 states the rule, the worked example and the rationale, and is binding on the 3C cold-start copy.** *Also re-confirmed 2026-08-07:* a **lower threshold for the carousel bucket was considered and declined** (`docs/archive/handoffs/HANDOFF-2026-08-06.md` §11). `BASELINE_MIN_SAMPLE` is **5 for every bucket**. Do not re-open it.
 
 **D5 — Recency. [CONFIRMED → age in prompt + maturity floor + age-bounded baselines]**
 All three parts: post age in days is passed to Gemini and weighed in the verdict; posts under the maturity floor are marked `provisional`; posts under the floor are excluded from other analyses' baseline medians.
@@ -942,7 +942,8 @@ one will file it as a defect and lose a day proving it is not.
 
 **This section is product behaviour, in product language.** It is not a footnote, an engineering caveat or a
 known-issues list. Each behaviour has a requirement ID so tickets can cite it. **Neither is an open question:
-alternatives were considered and declined, and both are listed in `docs/HANDOFF-2026-08-06.md` §11 as
+alternatives were considered and declined, and both are listed in
+`docs/archive/handoffs/HANDOFF-2026-08-06.md` §11 as
 deferred/accepted — "do NOT re-litigate as new findings".**
 
 **The through-line, and the owner's standing preference in both cases: reliability over coverage.** Where the
@@ -1114,7 +1115,7 @@ explanation, and that is sufficient.**
 
 **Do not reopen this.** The alternative (drop the 1–5, let the multiplier be the headline) was
 considered — it is `DESIGN-3C` §11 Q4 and `DESIGN-3B` §7's closing paragraph — and **declined**. It is
-now in the same class as the items in `docs/HANDOFF-2026-08-06.md` §11: settled, and not to be
+now in the same class as the items in `docs/archive/handoffs/HANDOFF-2026-08-06.md` §11: settled, and not to be
 re-litigated as a fresh finding.
 
 > **Note for readers of the two design documents.** `DESIGN-3B` §10 and `DESIGN-3C` §12 both still list
