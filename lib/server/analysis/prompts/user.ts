@@ -1,5 +1,6 @@
 import type { MediaMetadata } from "@/lib/server/analysis/types";
 import { extractNumerals, type ComputedPerformanceBlock } from "@/lib/server/analysis/prose";
+import { computeEngagementRate, computeReachEngagementRatio } from "@/lib/server/analysis/performance/ratios";
 import { formatAspectRatio, formatAudioLine, formatCount, formatCountID, formatPercent, formatPercentID } from "./helpers";
 
 const CONTEXT_FRAMING_NOTE = `CATATAN: Angka-angka di atas adalah KONTEKS pendukung, bukan bukti kualitas.
@@ -37,6 +38,25 @@ function resolveDisplayedViewCount(metadata: MediaMetadata): { value: number | n
     return { value: metadata.playCount, isPlayCount: true };
   }
   return { value: metadata.viewCount, isPlayCount: false };
+}
+
+/**
+ * The reel-only view/play rate shown in `buildContextBlock()` — factored
+ * out so the SAME division also feeds `resolvePerformanceAssessment()`'s
+ * `realNumerals` allow-list (blocker 3, PR #184 review) without a second,
+ * independently-computed expression for the same quantity (TR-1's
+ * discipline). Returns a fraction (e.g. `0.0432`), never a percentage.
+ */
+function computeViewOrPlayRate(metadata: MediaMetadata, displayedViewCount: number | null): number | null {
+  if (
+    metadata.mediaType !== "reel" ||
+    displayedViewCount == null ||
+    metadata.followerCount == null ||
+    metadata.followerCount <= 0
+  ) {
+    return null;
+  }
+  return displayedViewCount / metadata.followerCount;
 }
 
 function formatMediaType(metadata: MediaMetadata): string {
@@ -124,18 +144,12 @@ function buildContextBlock(metadata: MediaMetadata): string | null {
     lines.push(`- Creator followers: ${formatCount(metadata.followerCount)}`);
   }
 
-  if (
-    metadata.mediaType === "reel" &&
-    displayedViewCount != null &&
-    metadata.followerCount != null &&
-    metadata.followerCount > 0
-  ) {
+  const viewOrPlayRate = computeViewOrPlayRate(metadata, displayedViewCount);
+  if (viewOrPlayRate != null) {
     // D1: labelled by what the numerator actually is (plays vs. views),
     // same isPlayCount condition as the count line above — the value never
     // changes, only the label.
-    lines.push(
-      `- ${isPlayCount ? "Play rate" : "View rate"}: ${formatPercent(displayedViewCount / metadata.followerCount)}`,
-    );
+    lines.push(`- ${isPlayCount ? "Play rate" : "View rate"}: ${formatPercent(viewOrPlayRate)}`);
   }
 
   const audioLine = formatAudioLine(metadata);
@@ -173,19 +187,67 @@ function buildContextBlock(metadata: MediaMetadata): string | null {
  *    differently-denominated ratio (R-12.5.3).
  * 6. Forbids computing or restating any number it was not given (S2).
  *
- * `realNumerals` is derived from the SAME `angka` string the model is shown
- * (via `extractNumerals`, `lib/server/analysis/prose`), never a second,
- * independently-rounded arithmetic path — so the prompt text and the prose
- * guard's allow-list cannot drift apart (TR-1's discipline, applied here).
+ * PR #184 review, blocker 1: the ratio arithmetic itself (the negative-
+ * sentinel guard, the reach-positivity/kind gating, the follower-zero
+ * guard) is NOT hand-derived here — it is delegated to
+ * `performance/ratios.ts`'s `computeReachEngagementRatio()`/
+ * `computeEngagementRate()`, the SAME primitives TDD §2 already assigns
+ * this arithmetic to. A second, independently-written expression for the
+ * same quantity is exactly the failure class TR-1 abolished (and TR-4
+ * abolished for slide totals) — importing a pure primitive widens nothing
+ * ("Files Affected" was a scope note about this file's own logic, not
+ * license to re-derive arithmetic another module already owns). Concretely,
+ * this closes a real drift: the prior inline `(likeCount ?? 0) + (commentCount
+ * ?? 0)` had no negative-sentinel guard, so a `-1` availability sentinel
+ * (OR-20) could render a negative engagement percentage into
+ * `ANGKA_ENGAGEMENT`, verbatim-quoted by the model — unshippable under
+ * "reliability over coverage". `ratios.ts`'s `usableCount()` rejects a
+ * negative count (returns `null`, propagated as the whole ratio's `null`)
+ * instead of arithmetic-ing over it, so that shape of drift cannot recur.
  *
- * Denominator preference: REACH (the displayed view/play count) when a
- * positive reach figure exists, falling back to FOLLOWERS — mirroring
- * `performance/ratios.ts`'s `computeReachEngagementRatio`/
- * `computeEngagementRate` precedence. Not wired to those primitives
- * directly: they resolve from the raw `ScrapeCreatorsMedia` payload and
- * this ticket's Files Affected list is `prompts/user.ts` only — the same
- * `MediaMetadata` fields `buildContextBlock()` above already reads.
+ * Denominator preference: REACH (the displayed view/play count, using the
+ * SAME `isPlayCount`-derived kind `buildContextBlock()` labels with) when a
+ * positive reach figure exists, falling back to FOLLOWERS — this mirrors
+ * `computeReachEngagementRatio()`/`computeEngagementRate()`'s own
+ * precedence, now literally, since both are called below.
+ *
+ * `realNumerals` (blocker 3, PR #184 review): widened beyond `angka`'s own
+ * numerals to also allow-list every raw figure the CONTEXT block above
+ * `ANGKA_ENGAGEMENT` already handed the model (likes, comments, followers,
+ * the displayed view/play count, and the view/play rate) — see
+ * `collectContextNumerals()` below and its doc comment for why.
  */
+function collectContextNumerals(
+  metadata: MediaMetadata,
+  displayedViewCount: number | null,
+  viewOrPlayRate: number | null,
+): number[] {
+  const values: number[] = [];
+  if (displayedViewCount != null) {
+    values.push(displayedViewCount);
+  }
+  // Guarded against a negative availability sentinel, same discipline as
+  // the ratio arithmetic below — a `-1` sentinel is never a "real" numeral
+  // the model was given permission to echo.
+  if (metadata.likeCount != null && metadata.likeCount >= 0) {
+    values.push(metadata.likeCount);
+  }
+  if (metadata.commentCount != null && metadata.commentCount >= 0) {
+    values.push(metadata.commentCount);
+  }
+  if (metadata.followerCount != null && metadata.followerCount >= 0) {
+    values.push(metadata.followerCount);
+  }
+  if (viewOrPlayRate != null) {
+    // The context block renders this as a percentage (`formatPercent`,
+    // `rate * 100`) — store it in the same units so the guard's numeral
+    // parser (which reads whatever digits actually appear in the prose)
+    // can match it.
+    values.push(viewOrPlayRate * 100);
+  }
+  return values;
+}
+
 function resolvePerformanceAssessment(metadata: MediaMetadata): {
   block: string;
   computedBlock: ComputedPerformanceBlock;
@@ -194,7 +256,18 @@ function resolvePerformanceAssessment(metadata: MediaMetadata): {
   const likeCount = metadata.likeCount ?? null;
   const commentCount = metadata.commentCount ?? null;
   const hasEngagementCount = likeCount != null || commentCount != null;
-  const engagementCount = (likeCount ?? 0) + (commentCount ?? 0);
+
+  const reachRatio = computeReachEngagementRatio({
+    likeCount,
+    commentCount,
+    reachValue: displayedViewCount,
+    reachKind: isPlayCount ? "PLAYS" : "VIEWS",
+  });
+  const followerRatio = computeEngagementRate({
+    likeCount,
+    commentCount,
+    followerCount: metadata.followerCount,
+  });
 
   const unavailable: string[] = [];
   if (!hasEngagementCount) {
@@ -203,22 +276,32 @@ function resolvePerformanceAssessment(metadata: MediaMetadata): {
 
   let angka: string | null = null;
 
-  if (hasEngagementCount && displayedViewCount != null && displayedViewCount > 0) {
-    const ratio = engagementCount / displayedViewCount;
-    const denomWord = isPlayCount ? "yang menonton" : "penayangan";
-    angka = `${formatPercentID(ratio)} dari ${formatCountID(displayedViewCount)} ${denomWord}`;
-  } else if (hasEngagementCount && metadata.followerCount != null && metadata.followerCount > 0) {
-    const ratio = engagementCount / metadata.followerCount;
-    angka = `${formatPercentID(ratio)} dari jumlah pengikut (${formatCountID(metadata.followerCount)} pengikut)`;
+  if (hasEngagementCount && reachRatio != null) {
+    const denomWord = reachRatio.reachKind === "PLAYS" ? "yang menonton" : "penayangan";
+    angka = `${formatPercentID(reachRatio.ratio)} dari ${formatCountID(displayedViewCount ?? 0)} ${denomWord}`;
+  } else if (hasEngagementCount && followerRatio != null) {
+    angka = `${formatPercentID(followerRatio.ratio)} dari jumlah pengikut (${formatCountID(metadata.followerCount ?? 0)} pengikut)`;
   } else {
     unavailable.push("rasio engagement (data yang dibutuhkan untuk menghitungnya tidak lengkap)");
   }
 
-  // AC-22: image-only content — no view/play figure exists anywhere on
-  // this post. No reach/views/plays token may appear near the engagement
-  // figure (there isn't one to appear near, since `angka` above only ever
-  // resolves REACH-denominated when a positive view/play count exists).
-  const isImageOnly = displayedViewCount == null && metadata.playCount == null;
+  // AC-22, PR #184 review blocker 2: scoped to all-image content only — a
+  // single image post (`mediaType: "post"`), or a carousel every one of
+  // whose listed `mediaParts` is `kind: "image"`. `mediaType` must be
+  // consulted directly: `displayedViewCount`/`playCount` being null is NOT
+  // by itself evidence of "no video" — it is also true of a reel with
+  // `likeAndViewCountsDisabled` (`resolveDisplayedViewCount()` nulls the
+  // value on that branch regardless of media type) and, per
+  // `.claude/context/verified-facts.md` divergence 12, of a video-bearing
+  // carousel (carousel video children carry `video_play_count: null`, and
+  // this ticket does not wire a carousel reach figure — that is #143). Both
+  // are video content; neither may be told "Konten ini berupa gambar".
+  const isAllImageCarousel =
+    metadata.mediaType === "carousel" && (metadata.mediaParts ?? []).every((part) => part.kind !== "video");
+  const isImageOnly =
+    displayedViewCount == null &&
+    metadata.playCount == null &&
+    (metadata.mediaType === "post" || isAllImageCarousel);
 
   const lines: string[] = ["## Performance Assessment Data", ""];
 
@@ -252,9 +335,15 @@ function resolvePerformanceAssessment(metadata: MediaMetadata): {
     );
   }
 
+  const viewOrPlayRate = computeViewOrPlayRate(metadata, displayedViewCount);
+  const realNumerals = [
+    ...(angka != null ? extractNumerals(angka) : []),
+    ...collectContextNumerals(metadata, displayedViewCount, viewOrPlayRate),
+  ];
+
   return {
     block: lines.join("\n"),
-    computedBlock: { realNumerals: angka != null ? extractNumerals(angka) : [] },
+    computedBlock: { realNumerals },
   };
 }
 

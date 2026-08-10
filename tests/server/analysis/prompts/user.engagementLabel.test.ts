@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildUserPrompt } from "@/lib/server/analysis/prompts";
+import { buildUserPrompt, computePerformanceAssessmentBlock } from "@/lib/server/analysis/prompts";
+import { assertNumeralsAreReal, assertPerformanceProseIsSafe } from "@/lib/server/analysis/prose";
 import type { MediaMetadata } from "@/lib/server/analysis/types";
 
 /**
@@ -254,5 +255,232 @@ describe("buildUserPrompt — performance assessment block (TDD §8.1, ticket #1
     const prompt = buildUserPrompt(metadata, "focus");
 
     expect(prompt).toContain("Never compute, derive, or restate any number you were not explicitly given above.");
+  });
+});
+
+/**
+ * PR #184 review, blocker 1: `resolvePerformanceAssessment()` must derive the
+ * Tier 1 ratio through `performance/ratios.ts`'s canonical primitives (which
+ * apply the OR-20 negative-sentinel guard), never a hand-rolled
+ * `(likeCount ?? 0) + (commentCount ?? 0)` with no such guard.
+ */
+describe("buildUserPrompt — performance assessment block never renders a negative/sentinel count as a percentage (PR #184 review, blocker 1)", () => {
+  it("a -1 likeCount availability sentinel does not reach ANGKA_ENGAGEMENT as a negative percentage — reach-denominated branch", () => {
+    const metadata = baseMetadata({
+      viewCount: 482_100,
+      likeCount: -1,
+      commentCount: 5_000,
+    });
+
+    const prompt = buildUserPrompt(metadata, "focus");
+    const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
+
+    expect(performanceBlock).not.toMatch(/-\d/);
+    expect(performanceBlock).not.toContain("ANGKA_ENGAGEMENT =");
+    expect(performanceBlock).toContain("UNAVAILABLE");
+  });
+
+  it("a -1 commentCount availability sentinel does not reach ANGKA_ENGAGEMENT as a negative percentage — follower-denominated branch", () => {
+    const metadata = baseMetadata({
+      mediaType: "post",
+      viewCount: null,
+      playCount: null,
+      likeCount: 500,
+      commentCount: -1,
+      followerCount: 10_000,
+    });
+
+    const prompt = buildUserPrompt(metadata, "focus");
+    const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
+
+    expect(performanceBlock).not.toMatch(/-\d/);
+    expect(performanceBlock).not.toContain("ANGKA_ENGAGEMENT =");
+  });
+
+  it("computePerformanceAssessmentBlock's realNumerals never carries a negative sentinel either", () => {
+    const metadata = baseMetadata({
+      viewCount: 482_100,
+      likeCount: -1,
+      commentCount: 5_000,
+    });
+
+    const block = computePerformanceAssessmentBlock(metadata);
+
+    expect(block.realNumerals.some((n) => n < 0)).toBe(false);
+  });
+});
+
+/**
+ * PR #184 review, blocker 2 (AC-22 scope): `isImageOnly` must consult
+ * `mediaType`, not infer "no video" purely from a null displayed view/play
+ * count — both a hidden-counts reel and a video-bearing carousel produce a
+ * null displayed view/play count while genuinely being video content.
+ */
+describe("buildUserPrompt — isImageOnly consults mediaType, not just a null view/play count (PR #184 review, blocker 2)", () => {
+  it("a reel with hidden counts (likeAndViewCountsDisabled) is NOT told the image-only copy", () => {
+    const metadata = baseMetadata({
+      mediaType: "reel",
+      viewCount: 0,
+      playCount: 116_333,
+      displayedCountIsPlayCount: true,
+      likeAndViewCountsDisabled: true,
+      likeCount: null,
+      commentCount: null,
+      followerCount: 10_000,
+    });
+
+    const prompt = buildUserPrompt(metadata, "focus");
+    const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
+
+    expect(performanceBlock).not.toContain("Konten ini berupa gambar");
+    expect(performanceBlock).not.toContain("image-only content");
+  });
+
+  it("a video-bearing carousel (divergence 12 — video children carry video_play_count: null) is NOT told the image-only copy", () => {
+    const metadata = baseMetadata({
+      mediaType: "carousel",
+      viewCount: null,
+      playCount: null,
+      likeCount: 500,
+      commentCount: 20,
+      followerCount: 10_000,
+      carouselItemCount: 3,
+      mediaParts: [
+        {
+          index: 0,
+          kind: "video",
+          url: "slide-0",
+          durationSec: null,
+          width: null,
+          height: null,
+          playCount: null,
+          viewCount: 234_050,
+          displayedCountIsPlayCount: false,
+        },
+        {
+          index: 1,
+          kind: "image",
+          url: "slide-1",
+          durationSec: null,
+          width: null,
+          height: null,
+          playCount: null,
+          viewCount: null,
+          displayedCountIsPlayCount: false,
+        },
+        {
+          index: 2,
+          kind: "image",
+          url: "slide-2",
+          durationSec: null,
+          width: null,
+          height: null,
+          playCount: null,
+          viewCount: null,
+          displayedCountIsPlayCount: false,
+        },
+      ],
+    });
+
+    const prompt = buildUserPrompt(metadata, "focus");
+    const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
+
+    expect(performanceBlock).not.toContain("Konten ini berupa gambar");
+    expect(performanceBlock).not.toContain("image-only content");
+  });
+
+  it("an all-image carousel still gets the image-only copy (AC-22, unchanged)", () => {
+    const metadata = baseMetadata({
+      mediaType: "carousel",
+      viewCount: null,
+      playCount: null,
+      likeCount: null,
+      commentCount: null,
+      followerCount: null,
+      carouselItemCount: 2,
+      mediaParts: [
+        {
+          index: 0,
+          kind: "image",
+          url: "slide-0",
+          durationSec: null,
+          width: null,
+          height: null,
+          playCount: null,
+          viewCount: null,
+          displayedCountIsPlayCount: false,
+        },
+        {
+          index: 1,
+          kind: "image",
+          url: "slide-1",
+          durationSec: null,
+          width: null,
+          height: null,
+          playCount: null,
+          viewCount: null,
+          displayedCountIsPlayCount: false,
+        },
+      ],
+    });
+
+    const prompt = buildUserPrompt(metadata, "focus");
+    const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
+
+    expect(performanceBlock).toContain("Konten ini berupa gambar");
+  });
+});
+
+/**
+ * PR #184 review, blocker 3: Half A's "never restate any number you were not
+ * explicitly given above" already permits a driver to quote the context
+ * block's raw figures (likes, comments, followers, views/plays) — Half B's
+ * `realNumerals` allow-list must include them too, or compliant prose throws
+ * `NumeralFabricationError` after the (already-billed) Gemini call.
+ */
+describe("Half A / Half B reconciliation — compliant prose quoting context-block figures does not throw (PR #184 review, blocker 3)", () => {
+  it("quoting the raw likes/comments count given in context does not throw, even though it is absent from ANGKA_ENGAGEMENT", () => {
+    const metadata = baseMetadata({
+      viewCount: 482_100,
+      likeCount: 15_000,
+      commentCount: 5_000,
+    });
+    const block = computePerformanceAssessmentBlock(metadata);
+
+    expect(() =>
+      assertPerformanceProseIsSafe(
+        {
+          verdict: "Konten ini mendapat 15.000 suka dan 5.000 komentar, dengan engagement 4,1% dari 482,1RB penayangan.",
+          drivers: ["Jumlah suka 15.000 menunjukkan performa solid."],
+        },
+        block,
+      ),
+    ).not.toThrow();
+  });
+
+  it("quoting the raw view count (482.100), not just the abbreviated 482,1RB form, does not throw", () => {
+    const metadata = baseMetadata({
+      viewCount: 482_100,
+      likeCount: 15_000,
+      commentCount: 5_000,
+    });
+    const block = computePerformanceAssessmentBlock(metadata);
+
+    expect(() =>
+      assertNumeralsAreReal("Video ini ditonton 482.100 kali, cukup tinggi.", block),
+    ).not.toThrow();
+  });
+
+  it("a genuinely fabricated numeral absent from both ANGKA_ENGAGEMENT and the context block still throws — non-vacuity proof", () => {
+    const metadata = baseMetadata({
+      viewCount: 482_100,
+      likeCount: 15_000,
+      commentCount: 5_000,
+    });
+    const block = computePerformanceAssessmentBlock(metadata);
+
+    expect(() => assertNumeralsAreReal("Performanya naik 9.999.999 dibanding biasanya.", block)).toThrow(
+      "Fabricated numeral",
+    );
   });
 });

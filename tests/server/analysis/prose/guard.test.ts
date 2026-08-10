@@ -40,6 +40,14 @@ describe("assertQualifiedPercentages (TDD §8.2, Half B)", () => {
 });
 
 describe("assertNumeralsAreReal (S2/AC-7, Half B)", () => {
+  // PR #184 review, blocker 3: this shape is no longer a fixture production
+  // cannot emit — `4.1` is `ANGKA_ENGAGEMENT`'s own qualified ratio and
+  // `482100` is the raw displayed view count `resolvePerformanceAssessment()`
+  // now also allow-lists (`prompts/user.ts`'s `collectContextNumerals()`),
+  // for a post shaped like `viewCount: 482_100, likeCount: 15_000,
+  // commentCount: 5_000` — see `user.engagementLabel.test.ts`'s "Half A /
+  // Half B reconciliation" suite for the integration-level proof against the
+  // real `computePerformanceAssessmentBlock()`.
   const block: ComputedPerformanceBlock = { realNumerals: [4.1, 482100] };
 
   it("passes when every numeral in the text matches the computed block", () => {
