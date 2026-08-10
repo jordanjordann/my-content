@@ -283,7 +283,10 @@ block have been moved **out of it and into the computed block (§5.1), computed 
 `confidence`, `basedOnVideos`, `provisional` and `unavailableReason`. **All five are mechanically determined
 by the computed block** — which tier was used follows from which inputs exist; `provisional` is
 `post_age_hours < MATURITY_FLOOR_HOURS`; `basedOnVideos` is a `COUNT`; confidence is a fixed ladder with
-three enumerated demotion reasons (R-13.4.2); `unavailableReason` is decided by the availability resolver.
+three enumerated demotion reasons (R-13.4.2); `unavailableReason` is decided in code too, but — since
+**OR-26** — from **two origins, not one**: `REACH_NOT_ON_FIRST_SLIDE` is decided upstream in `reach.ts`
+and only *mapped* onto the enum in `judgement.ts`; the rest are resolved in `judgement.ts`. **TDD §4,
+*"`unavailableReason` has TWO origins, not one"*, is the authority on which value sits on which path.**
 Letting the model restate them reintroduced exactly the non-determinism **D2** exists to eliminate, and
 **S3's byte-diff would have been testing the model's obedience rather than our arithmetic.** They are passed
 to Gemini as **inputs it must not contradict**. No acceptance criterion changes observable outcome; what
