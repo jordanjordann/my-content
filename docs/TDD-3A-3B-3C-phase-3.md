@@ -133,6 +133,68 @@ Everything in §0.1–§0.5 was ruled **before** these captures existed. These s
 | **TR-2** | **Consolidation is ACCEPTED on #175; the duplicate `getCarouselChildren()` helpers are DELETED, not patched.** Both file-local, non-exported copies (`fetcher/adapter.ts`, `media/resolveMediaParts.ts`) are removed; the third was already removed from `reach.ts` by PR #167 and broke no callers. Patching three call sites in place is rejected: the duplication **is** the defect's transmission mechanism, and leaving a named "already-compacted array" in scope leaves the illegal operation (index/count a filtered array) available to the next author. **Making illegal states unrepresentable beats documenting the constraint.** Where a *filtered* list is genuinely wanted and no position is taken from it — `adapter.ts:118`'s `.find()`, which is **out of scope and correct as written** — it filters inline at the call site off `getCarouselEdges()`. |
 | **TR-3** | **The #175 cross-assertion survives TR-1 and stays mandatory** — one test asserting `carouselItemCount === LaterSlideReach.slideCount` on a null-`node` fixture. Under TR-1 it is no longer the guard; it is the **regression detector for TR-1 itself** (i.e. for someone re-introducing a second derivation). Keep it, and keep the "nothing changed for the no-null-node case" test beside it. |
 
+### 0.7a Tech-lead ruling on #182 — the slide-manifest header (2026-08-10)
+
+| # | Ruling |
+|---|---|
+| **TR-4** | **The slide-manifest header states NO total, and `totalPartsBeforeCap` / `mediaPartsTotalBeforeCap` are DELETED — not renamed, not re-derived.** Implemented inside **#142**; see §8.1 item 7 for the full specification. |
+
+**The diagnosis, which is not the one the ticket states.** #182 reads as a copy bug ("9 total" over a list ending
+"10."). It is not. `buildUserPrompt()` **already emits a canonical slide total** one block higher —
+`formatMediaType()` renders `carousel (${carouselItemCount} slides)`, and after #175/PR #180 `carouselItemCount`
+**is** `getCarouselEdges(raw).length`, the one canonical derivation under TR-1. The manifest header is therefore a
+**second expression rendering the same quantity into the same prompt**, computed off a different population
+(`candidates.length`, post-filter, post-`toPart`-rejection). That is precisely the failure class TR-1 abolished for
+slide counts and indices; it survived in the manifest header only because it was reached through a field whose
+*name* claimed it was about the cap rather than about slides.
+
+**Why #182's Option A is rejected.** Pointing the header at `getCarouselEdges(raw).length` makes the two numbers
+agree *today*, but leaves two expressions rendering one quantity in one prompt — agreement maintained by care
+rather than by construction, which TR-1 exists to forbid. It also requires new gap-explaining prompt copy, landing
+in the exact block #142 rewrites, describing a payload shape we have **never observed**.
+
+**Why "drop the total" is right, and it is not merely because redundancy is a second chance to be wrong.** Ask what
+a manifest total could buy the model, and every answer is already paid for elsewhere:
+
+- **Ordering** — carried by the numbered list itself.
+- **How many slides the post has (coverage reasoning)** — carried by the `Type:` line, canonically, for every
+  carousel that can produce a manifest.
+- **That not everything is listed (truncation)** — carried by the manifest's note, which is boolean-gated and
+  quotes no figure.
+
+The header total contributes **zero information and one failure mode**. Delete it. The prompt keeps exactly one
+slide total, from exactly one expression.
+
+**How the model learns about capping — explicitly.** It is told twice, and neither telling is a second derivation:
+the `Type:` line states the true slide count (e.g. `carousel (34 slides)`) while the manifest visibly lists fewer,
+and the manifest's closing note says so in words. **The note's gate is widened by this ruling** from
+`mediaPartsTruncated` to *"the listed slides are not all the slides"* —
+`mediaPartsTruncated === true || (carouselItemCount != null && parts.length < carouselItemCount)`. One predicate now
+covers the `MAX_MEDIA_PARTS` cap, the byte cap (`truncatedForBytes`), **and** the null-node gap, without naming a
+number and without any prompt copy about an unobserved payload shape. `mediaPartsTruncated` is retained as the
+defensive fallback for the (unreachable) `carouselItemCount == null` case.
+
+**On the gaps themselves — deliberately not explained, and this is not a reliability-over-coverage violation.** With
+real pre-filter indices, a null-node carousel renders a list with a number missing (`1,2,3,5…10`). Every number
+rendered is a **true slide position**; nothing in the manifest is a confident-looking wrong figure. That is
+*incompleteness*, and the note above already tells the model the list is incomplete. The owner preference bars
+confident wrong numbers, not silence about an unobserved payload. If the shape is ever **observed** (it is
+`⚠️ SYNTHETIC MUTANT` today), the remedy is one added sentence, not a redesign.
+
+**Naming/derivation — the field is deleted, not renamed.** `ResolvedMediaParts.totalPartsBeforeCap` and
+`MediaMetadata.mediaPartsTotalBeforeCap` are **removed**. Renaming (#182 Option B) leaves a live count in scope
+whose only consumer this ruling deletes — an unused number that reads like a slide total is a loaded gun for the
+next author, and per TR-2 **doc comments are not guards**. The boolean `truncated` / `mediaPartsTruncated` stays: a
+boolean **cannot be rendered as a count**, so the illegal state becomes unrepresentable rather than merely
+discouraged. `truncated = candidates.length > MAX_MEDIA_PARTS` is unchanged and remains correct — it asks a
+question about the *parts* population, which is the right population for a cap. If a pre-cap parts count is ever
+needed again, it is re-derived from `getCarouselEdges()` **at the point of use** (TR-1), never re-carried.
+
+**Scope bar.** This ruling touches the manifest header, the note's gate, and the deletion of the two fields. It
+reopens **nothing** in #175/#176: `getCarouselEdges()` stays the one derivation, `MediaPart.index` stays the real
+pre-filter position, and TR-3's cross-assertion is untouched. The manifest strings are **model-facing prompt text,
+not user-facing copy** — `DESIGN-3B` §7's canonical-string rule is not engaged and no designer sign-off is required.
+
 ---
 
 ## 1. Codebase findings that change the PRD's assumptions
@@ -753,6 +815,37 @@ prompt that taught the violation. Both ship in **3B-4**.
 5. **Forbids comparison** against the model's own priors or against any other post's differently-denominated
    ratio (R-12.5.3).
 6. **Forbids computing or restating any number it was not given** (S2).
+7. **Fixes the slide manifest in the same pass — TR-4 / #182.** `#142` rewrites this file's prompt blocks, so the
+   manifest fix lands here rather than as a separate PR that `#142` would immediately rewrite. Exactly four
+   changes, and **no other manifest behaviour moves**:
+   - **`prompts/user.ts` — `buildSlideManifest()` header carries no count.** `## Slides (${countLabel}, in order)`
+     becomes `## Slides (in order)`. The `countLabel` / `totalBeforeCap` block (and its PR #95 item-7 comment) is
+     deleted outright. The list lines, the `part.index + 1` numbering and the "ONE post — single holistic verdict"
+     sentence are **unchanged**.
+   - **`prompts/user.ts` — the incomplete-list note is re-gated**, from `metadata.mediaPartsTruncated` to
+     `metadata.mediaPartsTruncated === true || (metadata.carouselItemCount != null && parts.length < metadata.carouselItemCount)`.
+     The note's wording stays qualitative and **must not quote a figure**; adjust it from "truncated" to cover both
+     causes (e.g. *"NOTE: not every slide of this carousel is listed above — some were not sent to you. Base your
+     analysis only on the slides shown."*). The `Type:` line remains the prompt's only slide total.
+   - **`media/resolveMediaParts.ts` + `media/types.ts` — delete `totalPartsBeforeCap`** from the return value and
+     from `ResolvedMediaParts`. Keep `truncated` and its `candidates.length > MAX_MEDIA_PARTS` derivation.
+   - **`types/metadata.ts` + `fetcher/adapter.ts` — delete `mediaPartsTotalBeforeCap`** (the field, its doc comment,
+     and both adapter sites). **Before deleting, confirm no persistence path reads it** — at time of ruling `grep`
+     shows the only consumers are `adapter.ts:229/283`, `prompts/user.ts:77` and their tests; `pipeline/index.ts`
+     writes explicit columns and does not blob the metadata. If a persistence consumer is found, **stop and raise
+     it** rather than working around it.
+
+   **Tests (extend, do not duplicate) — `tests/server/analysis/prompts/user.slideManifest.test.ts`,
+   `tests/server/analysis/media/resolveMediaParts.test.ts`, `tests/server/analysis/fetcher/adapter.test.ts`
+   (`review item 7` case is deleted with the field):**
+   - Null-node carousel (`makeCarouselWithEdges()`): the prompt contains **no** `N total` and no `N of M` in the
+     manifest header; the list's last line is `10. …`; the `Type:` line reads `carousel (10 slides)`; the
+     incomplete-list note **is present** even though `mediaPartsTruncated` is `false`.
+   - Over-cap carousel: the note is present, the header still carries no count, and the `Type:` line carries the
+     true total.
+   - Ordinary 2-slide carousel: note **absent**, header reads `## Slides (in order)`.
+   - **One structural assertion:** the rendered prompt contains **exactly one** `\d+ slides?` slide-total token
+     (the `Type:` line). This is the regression detector for TR-4 — a second total re-entering the prompt fails it.
 
 ### 8.2 Half B — the enforcement mechanism: a deterministic post-generation prose guard
 
@@ -1339,6 +1432,12 @@ The PRD is **wrong on `main`**. These edits are applied in the same PR as this T
   ├► 3C-3 [FE] score cells + explain popover (incl. the OR-6 disagreement line)
   └► 3C-4 [FE] filters, column menu, dead-code deletion, contrast record
 ```
+
+**#182 (slide-manifest header) is folded into 3B-4 (#142), not sequenced beside it.** TR-4 / §0.7a is the ruling;
+§8.1 item 7 is the specification. It is **not** an independently dispatchable ticket — #142 rewrites the same
+prompt blocks, so landing it first is churn plus a near-certain conflict, and picking up #142 without it bakes the
+inconsistency into the new block. It lands **after #180 merges** (it edits `media/resolveMediaParts.ts`, which
+#180 owns), which the existing #175 → #142 order already guarantees. No conflict with #179 (`performance/judgement.ts`).
 
 **Migration numbers, fixed here and repeated in the tickets:** **3B = `012_performance_block.sql`** (merged,
 PR #151), **3B = `013_reach_unavailable_reason.sql`** (OR-26 / §5.3 — adds `REACH_NOT_ON_FIRST_SLIDE`; full
