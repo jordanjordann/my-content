@@ -11,6 +11,33 @@ export function formatPercent(rate: number): string {
 }
 
 /**
+ * TDD §8.1 step 2: Indonesian decimal-separator convention (`,` not `.`),
+ * one decimal place — the exact format the prose guard's numeral parser
+ * expects to be able to round-trip (`lib/server/analysis/prose/guard.ts`).
+ * e.g. 0.041 -> "4,1%".
+ */
+export function formatPercentID(rate: number): string {
+  return `${(rate * 100).toFixed(1).replace(".", ",")}%`;
+}
+
+/**
+ * TDD §8.1 step 2's exact worked example (`482.1RB` from 482,100) —
+ * Indonesian abbreviation (`RB` = ribu/thousand, `JT` = juta/million) with
+ * the Indonesian decimal-separator convention. Below 1,000, renders as a
+ * plain Indonesian-locale integer (`.` thousands, no decimal).
+ */
+export function formatCountID(n: number): string {
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) {
+    return `${(n / 1_000_000).toFixed(1).replace(".", ",")}JT`;
+  }
+  if (abs >= 1_000) {
+    return `${(n / 1_000).toFixed(1).replace(".", ",")}RB`;
+  }
+  return Math.round(n).toLocaleString("id-ID");
+}
+
+/**
  * Pixel dimensions -> "1080x1920 (9:16 vertical)" with a label for common
  * aspect ratios; anything else is labelled "custom". Ratios are matched
  * with a small tolerance since real dimensions are rarely an exact ratio.

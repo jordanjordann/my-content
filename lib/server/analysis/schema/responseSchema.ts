@@ -156,6 +156,32 @@ const scorecardSchema: Schema = {
 };
 
 /**
+ * Tier 3/judgement — TDD §4 (division of labour, OR-13) / §8.1 step 6.
+ * `responseSchema` is narrowed to exactly these THREE fields: everything
+ * else a full performance contract would need —`tierUsed`, `confidence`,
+ * `basedOnVideos`, `provisional`, `unavailableReason` — is mechanically
+ * determined and computed in code (`performance/judgement.ts`, #143/#144),
+ * never restated by the model. V4 (TDD §4/§8.4, OR-22) measured what
+ * happens when the model DOES own fields of that kind on this exact
+ * schema — enums and numbers drifted on two byte-identical requests at
+ * `temperature: 0` — so this is not merely a style preference: letting
+ * Gemini own a mechanically-determined field reintroduces non-determinism
+ * D2 exists to eliminate. `performanceScore` is nullable — `null` when the
+ * code-computed inputs left no basis for a score (an expected state, not a
+ * parse failure — `lib/server/analysis/parser/validation.ts`).
+ */
+const performanceSchema: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    performanceScore: { type: Type.INTEGER, description: "1-5", nullable: true },
+    verdict: { type: Type.STRING, description: "Indonesian" },
+    drivers: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Indonesian" },
+  },
+  required: ["performanceScore", "verdict", "drivers"],
+  propertyOrdering: ["performanceScore", "verdict", "drivers"],
+};
+
+/**
  * Full request/response contract (TDD §3.2 `ContentAnalysis`, minus
  * `schemaVersion` — see the module doc comment).
  */
@@ -171,6 +197,7 @@ export const ANALYSIS_RESPONSE_SCHEMA: Schema = {
     keyMoments: { type: Type.ARRAY, items: { type: Type.STRING } },
     redFlags: { type: Type.ARRAY, items: { type: Type.STRING } },
     suggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
+    performance: performanceSchema,
   },
   required: [
     "style",
@@ -182,6 +209,7 @@ export const ANALYSIS_RESPONSE_SCHEMA: Schema = {
     "keyMoments",
     "redFlags",
     "suggestions",
+    "performance",
   ],
   propertyOrdering: [
     "style",
@@ -193,5 +221,8 @@ export const ANALYSIS_RESPONSE_SCHEMA: Schema = {
     "keyMoments",
     "redFlags",
     "suggestions",
+    "performance",
   ],
 };
+
+export { performanceSchema };

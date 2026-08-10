@@ -119,3 +119,140 @@ describe("buildUserPrompt — engagement count label (D1, ticket #110)", () => {
     expect(prompt).not.toContain("- Play rate:");
   });
 });
+
+/**
+ * TDD §8.1 Half A (ticket #142/3B-4, R-13.6.4): the "Performance Assessment
+ * Data" block replaces the old bare `Engagement rate: <percent>` line
+ * (already removed by #139) with a single pre-formatted, denominator- and
+ * kind-qualified Indonesian string the model is instructed to quote
+ * verbatim, never re-derive.
+ */
+describe("buildUserPrompt — performance assessment block (TDD §8.1, ticket #142)", () => {
+  it("labels a reach-denominated figure with the VIEWS denominator in Indonesian, and instructs verbatim quoting", () => {
+    const metadata = baseMetadata({
+      viewCount: 482_100,
+      playCount: null,
+      displayedCountIsPlayCount: false,
+      likeCount: 15_000,
+      commentCount: 5_000,
+    });
+
+    const prompt = buildUserPrompt(metadata, "focus");
+
+    expect(prompt).toContain("## Performance Assessment Data");
+    expect(prompt).toContain('ANGKA_ENGAGEMENT = "4,1% dari 482,1RB penayangan"');
+    expect(prompt).toContain("quote ANGKA_ENGAGEMENT VERBATIM");
+    expect(prompt).not.toContain("yang menonton");
+  });
+
+  it("labels a plays-denominated figure with the PLAYS wording ('yang menonton'), never 'penayangan' (R-4.3.1)", () => {
+    const metadata = baseMetadata({
+      viewCount: 0,
+      playCount: 200_000,
+      displayedCountIsPlayCount: true,
+      likeCount: 10_000,
+      commentCount: 0,
+    });
+
+    const prompt = buildUserPrompt(metadata, "focus");
+    const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
+
+    expect(performanceBlock).toContain("yang menonton");
+    expect(performanceBlock).not.toContain("penayangan");
+  });
+
+  it("falls back to a FOLLOWERS-denominated figure when no reach/play count exists", () => {
+    const metadata = baseMetadata({
+      mediaType: "post",
+      viewCount: null,
+      playCount: null,
+      likeCount: 500,
+      commentCount: 20,
+      followerCount: 10_000,
+    });
+
+    const prompt = buildUserPrompt(metadata, "focus");
+    const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
+
+    expect(performanceBlock).toContain("dari jumlah pengikut");
+    expect(performanceBlock).not.toMatch(/penayangan|yang menonton/);
+  });
+
+  it("AC-22 — image-only content states no reach data exists, with no reach/views/plays token near the engagement figure", () => {
+    const metadata = baseMetadata({
+      mediaType: "post",
+      viewCount: null,
+      playCount: null,
+      likeCount: 500,
+      commentCount: 20,
+      followerCount: 10_000,
+    });
+    // followerCount present -> follower-denominated figure is available;
+    // this pins that no reach/views/plays token appears in the quoted
+    // figure itself — the sentence the model is told to echo verbatim.
+    const prompt = buildUserPrompt(metadata, "focus");
+    const angkaLine = prompt.split("\n").find((line) => line.startsWith("ANGKA_ENGAGEMENT")) ?? "";
+
+    expect(angkaLine).not.toMatch(/\breach\b/i);
+    expect(angkaLine).not.toMatch(/\bviews\b/i);
+    expect(angkaLine).not.toMatch(/\bplays\b/i);
+    expect(angkaLine).not.toContain("penayangan");
+    expect(angkaLine).not.toContain("yang menonton");
+  });
+
+  it("AC-22 — image-only content with NO engagement counts at all states plainly that no reach data exists", () => {
+    const metadata = baseMetadata({
+      mediaType: "post",
+      viewCount: null,
+      playCount: null,
+      likeCount: null,
+      commentCount: null,
+      followerCount: null,
+    });
+
+    const prompt = buildUserPrompt(metadata, "focus");
+    const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
+
+    expect(performanceBlock).toContain("TIDAK ADA data reach/views/plays");
+    expect(performanceBlock).not.toContain("ANGKA_ENGAGEMENT =");
+  });
+
+  it("states which inputs are unavailable and forbids estimating them", () => {
+    const metadata = baseMetadata({
+      viewCount: null,
+      playCount: null,
+      likeCount: null,
+      commentCount: null,
+      followerCount: null,
+    });
+
+    const prompt = buildUserPrompt(metadata, "focus");
+
+    expect(prompt).toContain("UNAVAILABLE");
+    expect(prompt).toContain("Do NOT estimate, guess, or invent");
+  });
+
+  it("forbids comparison against the model's own priors or another post's differently-denominated ratio (R-12.5.3)", () => {
+    const metadata = baseMetadata({
+      viewCount: 482_100,
+      likeCount: 15_000,
+      commentCount: 5_000,
+    });
+
+    const prompt = buildUserPrompt(metadata, "focus");
+
+    expect(prompt).toContain("Never compare this post's figure");
+  });
+
+  it("forbids computing or restating any number it was not given (S2)", () => {
+    const metadata = baseMetadata({
+      viewCount: 482_100,
+      likeCount: 15_000,
+      commentCount: 5_000,
+    });
+
+    const prompt = buildUserPrompt(metadata, "focus");
+
+    expect(prompt).toContain("Never compute, derive, or restate any number you were not explicitly given above.");
+  });
+});

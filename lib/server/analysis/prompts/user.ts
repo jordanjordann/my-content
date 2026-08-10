@@ -1,5 +1,6 @@
 import type { MediaMetadata } from "@/lib/server/analysis/types";
-import { formatAspectRatio, formatAudioLine, formatCount, formatPercent } from "./helpers";
+import { extractNumerals, type ComputedPerformanceBlock } from "@/lib/server/analysis/prose";
+import { formatAspectRatio, formatAudioLine, formatCount, formatCountID, formatPercent, formatPercentID } from "./helpers";
 
 const CONTEXT_FRAMING_NOTE = `CATATAN: Angka-angka di atas adalah KONTEKS pendukung, bukan bukti kualitas.
 Dasarkan penilaian Anda terutama pada isi video yang Anda tonton.
@@ -153,9 +154,125 @@ function buildContextBlock(metadata: MediaMetadata): string | null {
   return `## Engagement & Technical Context\n\n${lines.join("\n")}\n\n${CONTEXT_FRAMING_NOTE}`;
 }
 
+/**
+ * TDD §8.1 Half A — "the highest-risk surface" (R-13.6.4): a bare,
+ * unqualified percentage in Gemini's Indonesian prose escapes every UI
+ * safeguard when pasted into a client deck. This block:
+ *
+ * 1. Labels the figure with its denominator IN WORDS (R-12.5.1) and its
+ *    reach kind IN WORDS (R-4.3.1) — in Indonesian, because the label is
+ *    what the model echoes.
+ * 2. Supplies the figure as a single pre-formatted, already-qualified
+ *    Indonesian string (`ANGKA_ENGAGEMENT`) and instructs the model to
+ *    quote it VERBATIM rather than re-derive or re-format it.
+ * 3. States explicitly which inputs are unavailable and forbids estimating
+ *    them.
+ * 4. For image-only content, states that no reach data exists and keeps
+ *    every reach/views/plays token away from the engagement figure (AC-22).
+ * 5. Forbids comparison against the model's own priors or another post's
+ *    differently-denominated ratio (R-12.5.3).
+ * 6. Forbids computing or restating any number it was not given (S2).
+ *
+ * `realNumerals` is derived from the SAME `angka` string the model is shown
+ * (via `extractNumerals`, `lib/server/analysis/prose`), never a second,
+ * independently-rounded arithmetic path — so the prompt text and the prose
+ * guard's allow-list cannot drift apart (TR-1's discipline, applied here).
+ *
+ * Denominator preference: REACH (the displayed view/play count) when a
+ * positive reach figure exists, falling back to FOLLOWERS — mirroring
+ * `performance/ratios.ts`'s `computeReachEngagementRatio`/
+ * `computeEngagementRate` precedence. Not wired to those primitives
+ * directly: they resolve from the raw `ScrapeCreatorsMedia` payload and
+ * this ticket's Files Affected list is `prompts/user.ts` only — the same
+ * `MediaMetadata` fields `buildContextBlock()` above already reads.
+ */
+function resolvePerformanceAssessment(metadata: MediaMetadata): {
+  block: string;
+  computedBlock: ComputedPerformanceBlock;
+} {
+  const { value: displayedViewCount, isPlayCount } = resolveDisplayedViewCount(metadata);
+  const likeCount = metadata.likeCount ?? null;
+  const commentCount = metadata.commentCount ?? null;
+  const hasEngagementCount = likeCount != null || commentCount != null;
+  const engagementCount = (likeCount ?? 0) + (commentCount ?? 0);
+
+  const unavailable: string[] = [];
+  if (!hasEngagementCount) {
+    unavailable.push("jumlah suka dan komentar (likes & comments)");
+  }
+
+  let angka: string | null = null;
+
+  if (hasEngagementCount && displayedViewCount != null && displayedViewCount > 0) {
+    const ratio = engagementCount / displayedViewCount;
+    const denomWord = isPlayCount ? "yang menonton" : "penayangan";
+    angka = `${formatPercentID(ratio)} dari ${formatCountID(displayedViewCount)} ${denomWord}`;
+  } else if (hasEngagementCount && metadata.followerCount != null && metadata.followerCount > 0) {
+    const ratio = engagementCount / metadata.followerCount;
+    angka = `${formatPercentID(ratio)} dari jumlah pengikut (${formatCountID(metadata.followerCount)} pengikut)`;
+  } else {
+    unavailable.push("rasio engagement (data yang dibutuhkan untuk menghitungnya tidak lengkap)");
+  }
+
+  // AC-22: image-only content — no view/play figure exists anywhere on
+  // this post. No reach/views/plays token may appear near the engagement
+  // figure (there isn't one to appear near, since `angka` above only ever
+  // resolves REACH-denominated when a positive view/play count exists).
+  const isImageOnly = displayedViewCount == null && metadata.playCount == null;
+
+  const lines: string[] = ["## Performance Assessment Data", ""];
+
+  if (angka != null) {
+    lines.push(`ANGKA_ENGAGEMENT = "${angka}"`);
+  } else if (isImageOnly) {
+    lines.push("Konten ini berupa gambar — TIDAK ADA data reach/views/plays untuk post ini.");
+  } else {
+    lines.push("ANGKA_ENGAGEMENT tidak tersedia untuk post ini.");
+  }
+
+  lines.push("");
+  lines.push("INSTRUCTIONS (binding on your Indonesian output above):");
+  if (angka != null) {
+    lines.push(
+      `- If you reference this post's engagement/performance figure in "verdict" or "drivers", quote ANGKA_ENGAGEMENT VERBATIM, exactly as given above. Never recompute it, reformat it, round it differently, or restate it with a different denominator.`,
+    );
+  }
+  if (unavailable.length > 0) {
+    lines.push(
+      `- The following inputs are UNAVAILABLE for this post: ${unavailable.join("; ")}. Do NOT estimate, guess, or invent a number for any of them.`,
+    );
+  }
+  lines.push(`- Never compute, derive, or restate any number you were not explicitly given above.`);
+  lines.push(
+    `- Never compare this post's figure against your own general knowledge/priors of "typical engagement rates", or against another post's differently-denominated ratio.`,
+  );
+  if (isImageOnly) {
+    lines.push(
+      `- This is image-only content: do not use the words "reach", "views" or "plays" anywhere near the engagement figure — no reach data exists for this post.`,
+    );
+  }
+
+  return {
+    block: lines.join("\n"),
+    computedBlock: { realNumerals: angka != null ? extractNumerals(angka) : [] },
+  };
+}
+
+/**
+ * TDD §8.2's `ComputedPerformanceBlock` for THIS analysis — exported so the
+ * parser stage (`lib/server/analysis/parser`) can run the prose guard
+ * against exactly the figures this prompt actually supplied, derived from
+ * the SAME `resolvePerformanceAssessment()` call `buildUserPrompt()` uses
+ * (never a second, independent recomputation).
+ */
+export function computePerformanceAssessmentBlock(metadata: MediaMetadata): ComputedPerformanceBlock {
+  return resolvePerformanceAssessment(metadata).computedBlock;
+}
+
 export function buildUserPrompt(metadata: MediaMetadata, userPrompt: string): string {
   const contextBlock = buildContextBlock(metadata);
   const slideManifest = buildSlideManifest(metadata);
+  const performanceAssessment = resolvePerformanceAssessment(metadata).block;
   const { value: displayedViewCount, isPlayCount } = resolveDisplayedViewCount(metadata);
 
   return `Analyze the following content:
@@ -168,6 +285,8 @@ export function buildUserPrompt(metadata: MediaMetadata, userPrompt: string): st
 - Post Date: ${metadata.postDate ?? "N/A"}
 - Caption: ${metadata.caption ?? "N/A"}
 ${contextBlock ? `\n${contextBlock}\n` : ""}${slideManifest ? `\n${slideManifest}\n` : ""}
+${performanceAssessment}
+
 ---
 
 User's specific focus: ${userPrompt}
