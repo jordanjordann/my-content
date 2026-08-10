@@ -681,7 +681,7 @@ describe("adaptPostResponse — real fixtures (ticket #71)", () => {
     expect(resultAbsent.coauthorUsernames).toEqual([]);
   });
 
-  it("review item 7 — mediaPartsTotalBeforeCap threads the pre-cap total through to metadata", () => {
+  it("TR-4 — mediaPartsTotalBeforeCap is deleted, not renamed or re-derived; truncated still flags the cap", () => {
     const children = Array.from({ length: 34 }, (_, i) =>
       makeImageChild({ id: `slide-${i}`, display_url: `https://cdn.example/slide-${i}.jpg` }),
     );
@@ -691,7 +691,7 @@ describe("adaptPostResponse — real fixtures (ticket #71)", () => {
 
     expect(result.mediaParts).toHaveLength(20);
     expect(result.mediaPartsTruncated).toBe(true);
-    expect(result.mediaPartsTotalBeforeCap).toBe(34);
+    expect(result).not.toHaveProperty("mediaPartsTotalBeforeCap");
   });
 
   it("D1/#110 — the hidden-wins-first guard survives the widened plays fallback: like_and_view_counts_disabled=true with an ABSENT view count and a real play count still yields displayedCountIsPlayCount=false and viewCount=null", () => {

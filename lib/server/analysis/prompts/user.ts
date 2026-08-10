@@ -66,21 +66,36 @@ function buildSlideManifest(metadata: MediaMetadata): string | null {
     return `${part.index + 1}. ${label}`;
   });
 
-  const truncationNote = metadata.mediaPartsTruncated
-    ? "\n\n(NOTE: this carousel has MORE slides than are listed above — it was truncated before being sent to you. Base your analysis only on the slides shown.)"
+  // TR-4 (docs/TDD-3A-3B-3C-phase-3.md §0.7a, #182): the header states NO
+  // total. `formatMediaType()` already renders the prompt's ONE canonical
+  // slide total (`carousel (${carouselItemCount} slides)`, itself
+  // `getCarouselEdges(raw).length` under TR-1) one block higher in
+  // `buildUserPrompt()`. A second total here, computed off a different
+  // population (`parts.length`, post-filter/post-cap), was a second
+  // expression rendering the same quantity into the same prompt — the
+  // exact failure class TR-1 abolished for indices and counts. Ordering is
+  // already carried by the numbered list; coverage is already carried by
+  // the `Type:` line. Deleted, not renamed, not re-derived.
+  //
+  // The incomplete-list note's gate is widened from `mediaPartsTruncated`
+  // alone to "the listed slides are not all the slides" — one predicate
+  // covering the `MAX_MEDIA_PARTS` cap, the byte cap (`truncatedForBytes`,
+  // reconciled back onto `mediaPartsTruncated` upstream) AND the null-node
+  // gap (a carousel with a null `edge.node` produces fewer real parts than
+  // `carouselItemCount` without `mediaPartsTruncated` ever being set).
+  // `mediaPartsTruncated === true` is kept as the defensive fallback for
+  // the (unreachable in practice) `carouselItemCount == null` case. The
+  // wording names no figure — every rendered slide number is a true slide
+  // position; the gap itself is deliberately not explained (TR-4).
+  const listIsIncomplete =
+    metadata.mediaPartsTruncated === true ||
+    (metadata.carouselItemCount != null && parts.length < metadata.carouselItemCount);
+
+  const incompleteListNote = listIsIncomplete
+    ? "\n\n(NOTE: not every slide of this carousel is listed above — some were not sent to you. Base your analysis only on the slides shown.)"
     : "";
 
-  // PR #95 review item 7: report "20 of 34" rather than just "20 total" when
-  // truncated — `mediaPartsTotalBeforeCap` carries the pre-truncation count
-  // through from resolveMediaParts()/prepareParts(), which used to be
-  // discarded before reaching the manifest.
-  const totalBeforeCap = metadata.mediaPartsTotalBeforeCap;
-  const countLabel =
-    totalBeforeCap != null && totalBeforeCap > parts.length
-      ? `${parts.length} of ${totalBeforeCap}`
-      : `${parts.length} total`;
-
-  return `## Slides (${countLabel}, in order)\n\n${lines.join("\n")}${truncationNote}\n\nThis is ONE post — give a single holistic verdict over all slides, not a per-slide verdict.`;
+  return `## Slides (in order)\n\n${lines.join("\n")}${incompleteListNote}\n\nThis is ONE post — give a single holistic verdict over all slides, not a per-slide verdict.`;
 }
 
 /**
