@@ -1,5 +1,5 @@
 // Barrel — only re-exports, no implementation (AGENTS.md module conventions).
-// Grows further as baseline.ts, judgement.ts, computeBlock.ts land (TDD §2).
+// Grows further as the rest of judgement.ts and computeBlock.ts land (TDD §2).
 
 export { MATURITY_FLOOR_HOURS, BASELINE_MIN_SAMPLE } from "./constants";
 
@@ -20,6 +20,12 @@ export {
 
 export { computeBaseline, computeBucketKey, bucketNoun } from "./baseline";
 export type { AnalysisMode, ComputeBaselineInput, MediaType } from "./baseline";
+
+export {
+  renderHiddenCountsReasonShortForm,
+  resolveHiddenCountsUnavailableReason,
+} from "./judgement";
+export type { HiddenCountsUnavailableReason } from "./judgement";
 
 export { assertNever } from "./types";
 export type {
