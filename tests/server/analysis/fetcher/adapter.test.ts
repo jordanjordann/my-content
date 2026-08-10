@@ -3,11 +3,13 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { adaptPostResponse, extractOwnerProfile } from "@/lib/server/analysis/fetcher/adapter";
+import { resolveInstagramReach } from "@/lib/server/analysis/performance";
 import type { ScrapeCreatorsMedia } from "@/lib/server/scrapecreators";
 import {
   IG_POST_URL,
   IG_REEL_URL,
   makeCarousel,
+  makeCarouselWithEdges,
   makeImageChild,
   makeImagePost,
   makeReel,
@@ -69,6 +71,90 @@ describe("adaptPostResponse — media-type resolution", () => {
     const media = makeCarousel([]);
 
     expect(adaptPostResponse(media, IG_POST_URL).carouselItemCount).toBe(0);
+  });
+});
+
+/**
+ * F1 (#175) — `carouselItemCount` must count the PRE-filter `edges` array
+ * (`getCarouselEdges(raw).length`), never the filtered/compacted children
+ * array. A null `edge.node` must still count toward the total.
+ */
+describe("adaptPostResponse — carouselItemCount (F1, #175)", () => {
+  it("SYNTHETIC MUTANT — a carousel of 10 edges with one null node still reports carouselItemCount 10, not 9", () => {
+    const edges = Array.from({ length: 10 }, (_, i) =>
+      i === 4 ? null : makeImageChild({ id: `slide-${i}`, display_url: `https://cdn.example/slide-${i}.jpg` }),
+    );
+    const media = makeCarouselWithEdges(edges);
+
+    const result = adaptPostResponse(media, IG_POST_URL);
+
+    expect(result.carouselItemCount).toBe(10);
+  });
+
+  it("MANDATORY cross-assertion (TR-3) — carouselItemCount and LaterSlideReach.slideCount are the regression detector for the one-derivation ruling: they must agree even on a carousel with a null node", () => {
+    // Slide 0 carries no reach fields (image, `hasReachFields` false) so
+    // `resolveInstagramReach` falls into the later-slide scan. Slide 6
+    // (real position, post-null) carries a usable video reach figure. Slide
+    // 4 is null. 10 edges total.
+    const edges = Array.from({ length: 10 }, (_, i) => {
+      if (i === 4) {
+        return null;
+      }
+      if (i === 6) {
+        return makeVideoChild({ id: "later-video", video_view_count: 5_000 });
+      }
+      return makeImageChild({ id: `slide-${i}` });
+    });
+    const media = makeCarouselWithEdges(edges);
+
+    const adapted = adaptPostResponse(media, IG_POST_URL);
+    const reach = resolveInstagramReach(media);
+
+    const laterSlideReach = reach.laterSlideReach;
+    expect(laterSlideReach.usable).toBe(true);
+    const slideCount = laterSlideReach.usable ? laterSlideReach.slideCount : null;
+    expect(adapted.carouselItemCount).toBe(slideCount);
+  });
+
+  it("no-null-node parity — unaffected on a carousel with no null nodes (nothing changed for the normal case)", () => {
+    const media = makeCarousel([makeImageChild(), makeImageChild(), makeVideoChild()]);
+
+    const adapted = adaptPostResponse(media, IG_POST_URL);
+    const reach = resolveInstagramReach(media);
+
+    expect(adapted.carouselItemCount).toBe(3);
+    // makeVideoChild's default video_view_count (50000) makes slide 2 a
+    // usable later-slide reach figure — the point of this test is that
+    // carouselItemCount and slideCount still agree (3), not that reach is
+    // unusable.
+    const laterSlideReach = reach.laterSlideReach;
+    expect(laterSlideReach.usable).toBe(true);
+    const slideCount = laterSlideReach.usable ? laterSlideReach.slideCount : null;
+    expect(adapted.carouselItemCount).toBe(slideCount);
+  });
+});
+
+/**
+ * F3 (#175) — the thumbnail fallback rule, named explicitly: the FIRST edge
+ * that HAS a node (the first *available* slide image), not "slide 1 or
+ * nothing".
+ */
+describe("adaptPostResponse — resolveThumbnailUrl (F3, #175) — rule: first edge that has a node", () => {
+  it("SYNTHETIC MUTANT — when the first edge's node is null, the thumbnail resolves to the SECOND edge's (first available) display_url, not null and not a wrong slide silently mislabeled as slide 1", () => {
+    const media = makeCarouselWithEdges([
+      null,
+      makeImageChild({ display_url: "https://cdn.example/second-slide.jpg" }),
+    ]);
+
+    expect(adaptPostResponse(media, IG_POST_URL).thumbnailUrl).toBe(
+      "https://cdn.example/second-slide.jpg",
+    );
+  });
+
+  it("SYNTHETIC MUTANT — when every edge's node is null, the thumbnail is null rather than fabricated", () => {
+    const media = makeCarouselWithEdges([null, null]);
+
+    expect(adaptPostResponse(media, IG_POST_URL).thumbnailUrl).toBeNull();
   });
 });
 
