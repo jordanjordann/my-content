@@ -239,11 +239,7 @@ export function adaptPostResponse(raw: ScrapeCreatorsMedia, url: string): MediaM
   const resolvedMediaType = resolveMediaType(raw, url);
   const videoChild = resolveFirstVideoChild(raw, resolvedMediaType);
 
-  const {
-    parts: mediaParts,
-    truncated: mediaPartsTruncated,
-    totalPartsBeforeCap: mediaPartsTotalBeforeCap,
-  } = resolveMediaParts(raw);
+  const { parts: mediaParts, truncated: mediaPartsTruncated } = resolveMediaParts(raw);
   const firstVideoPart = mediaParts.find((p) => p.kind === "video") ?? null;
 
   // C8: `like_and_view_counts_disabled` is post-level only, and absence
@@ -296,7 +292,6 @@ export function adaptPostResponse(raw: ScrapeCreatorsMedia, url: string): MediaM
     displayedCountIsPlayCount,
     mediaParts,
     mediaPartsTruncated,
-    mediaPartsTotalBeforeCap,
     likeAndViewCountsDisabled: bool(raw.like_and_view_counts_disabled) ?? undefined,
     coauthorUsernames: resolveCoauthorUsernames(raw),
   };

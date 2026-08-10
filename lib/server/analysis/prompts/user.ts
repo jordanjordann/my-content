@@ -1,5 +1,7 @@
 import type { MediaMetadata } from "@/lib/server/analysis/types";
-import { formatAspectRatio, formatAudioLine, formatCount, formatPercent } from "./helpers";
+import { extractNumerals, type ComputedPerformanceBlock } from "@/lib/server/analysis/prose";
+import { computeEngagementRate, computeReachEngagementRatio } from "@/lib/server/analysis/performance/ratios";
+import { formatAspectRatio, formatAudioLine, formatCount, formatCountID, formatPercent, formatPercentID } from "./helpers";
 
 const CONTEXT_FRAMING_NOTE = `CATATAN: Angka-angka di atas adalah KONTEKS pendukung, bukan bukti kualitas.
 Dasarkan penilaian Anda terutama pada isi video yang Anda tonton.
@@ -38,6 +40,25 @@ function resolveDisplayedViewCount(metadata: MediaMetadata): { value: number | n
   return { value: metadata.viewCount, isPlayCount: false };
 }
 
+/**
+ * The reel-only view/play rate shown in `buildContextBlock()` — kept as a
+ * standalone pure function rather than inlined back into that call site
+ * (PR #184 review, blocker 3 re-review: verified genuinely factored-out,
+ * not a fake extraction). Returns a fraction (e.g. `0.0432`), never a
+ * percentage.
+ */
+function computeViewOrPlayRate(metadata: MediaMetadata, displayedViewCount: number | null): number | null {
+  if (
+    metadata.mediaType !== "reel" ||
+    displayedViewCount == null ||
+    metadata.followerCount == null ||
+    metadata.followerCount <= 0
+  ) {
+    return null;
+  }
+  return displayedViewCount / metadata.followerCount;
+}
+
 function formatMediaType(metadata: MediaMetadata): string {
   if (metadata.mediaType === "carousel" && metadata.carouselItemCount != null) {
     return `carousel (${metadata.carouselItemCount} slides)`;
@@ -66,21 +87,36 @@ function buildSlideManifest(metadata: MediaMetadata): string | null {
     return `${part.index + 1}. ${label}`;
   });
 
-  const truncationNote = metadata.mediaPartsTruncated
-    ? "\n\n(NOTE: this carousel has MORE slides than are listed above — it was truncated before being sent to you. Base your analysis only on the slides shown.)"
+  // TR-4 (docs/TDD-3A-3B-3C-phase-3.md §0.7a, #182): the header states NO
+  // total. `formatMediaType()` already renders the prompt's ONE canonical
+  // slide total (`carousel (${carouselItemCount} slides)`, itself
+  // `getCarouselEdges(raw).length` under TR-1) one block higher in
+  // `buildUserPrompt()`. A second total here, computed off a different
+  // population (`parts.length`, post-filter/post-cap), was a second
+  // expression rendering the same quantity into the same prompt — the
+  // exact failure class TR-1 abolished for indices and counts. Ordering is
+  // already carried by the numbered list; coverage is already carried by
+  // the `Type:` line. Deleted, not renamed, not re-derived.
+  //
+  // The incomplete-list note's gate is widened from `mediaPartsTruncated`
+  // alone to "the listed slides are not all the slides" — one predicate
+  // covering the `MAX_MEDIA_PARTS` cap, the byte cap (`truncatedForBytes`,
+  // reconciled back onto `mediaPartsTruncated` upstream) AND the null-node
+  // gap (a carousel with a null `edge.node` produces fewer real parts than
+  // `carouselItemCount` without `mediaPartsTruncated` ever being set).
+  // `mediaPartsTruncated === true` is kept as the defensive fallback for
+  // the (unreachable in practice) `carouselItemCount == null` case. The
+  // wording names no figure — every rendered slide number is a true slide
+  // position; the gap itself is deliberately not explained (TR-4).
+  const listIsIncomplete =
+    metadata.mediaPartsTruncated === true ||
+    (metadata.carouselItemCount != null && parts.length < metadata.carouselItemCount);
+
+  const incompleteListNote = listIsIncomplete
+    ? "\n\n(NOTE: not every slide of this carousel is listed above — some were not sent to you. Base your analysis only on the slides shown.)"
     : "";
 
-  // PR #95 review item 7: report "20 of 34" rather than just "20 total" when
-  // truncated — `mediaPartsTotalBeforeCap` carries the pre-truncation count
-  // through from resolveMediaParts()/prepareParts(), which used to be
-  // discarded before reaching the manifest.
-  const totalBeforeCap = metadata.mediaPartsTotalBeforeCap;
-  const countLabel =
-    totalBeforeCap != null && totalBeforeCap > parts.length
-      ? `${parts.length} of ${totalBeforeCap}`
-      : `${parts.length} total`;
-
-  return `## Slides (${countLabel}, in order)\n\n${lines.join("\n")}${truncationNote}\n\nThis is ONE post — give a single holistic verdict over all slides, not a per-slide verdict.`;
+  return `## Slides (in order)\n\n${lines.join("\n")}${incompleteListNote}\n\nThis is ONE post — give a single holistic verdict over all slides, not a per-slide verdict.`;
 }
 
 /**
@@ -108,18 +144,12 @@ function buildContextBlock(metadata: MediaMetadata): string | null {
     lines.push(`- Creator followers: ${formatCount(metadata.followerCount)}`);
   }
 
-  if (
-    metadata.mediaType === "reel" &&
-    displayedViewCount != null &&
-    metadata.followerCount != null &&
-    metadata.followerCount > 0
-  ) {
+  const viewOrPlayRate = computeViewOrPlayRate(metadata, displayedViewCount);
+  if (viewOrPlayRate != null) {
     // D1: labelled by what the numerator actually is (plays vs. views),
     // same isPlayCount condition as the count line above — the value never
     // changes, only the label.
-    lines.push(
-      `- ${isPlayCount ? "Play rate" : "View rate"}: ${formatPercent(displayedViewCount / metadata.followerCount)}`,
-    );
+    lines.push(`- ${isPlayCount ? "Play rate" : "View rate"}: ${formatPercent(viewOrPlayRate)}`);
   }
 
   const audioLine = formatAudioLine(metadata);
@@ -138,9 +168,185 @@ function buildContextBlock(metadata: MediaMetadata): string | null {
   return `## Engagement & Technical Context\n\n${lines.join("\n")}\n\n${CONTEXT_FRAMING_NOTE}`;
 }
 
+/**
+ * TDD §8.1 Half A — "the highest-risk surface" (R-13.6.4): a bare,
+ * unqualified percentage in Gemini's Indonesian prose escapes every UI
+ * safeguard when pasted into a client deck. This block:
+ *
+ * 1. Labels the figure with its denominator IN WORDS (R-12.5.1) and its
+ *    reach kind IN WORDS (R-4.3.1) — in Indonesian, because the label is
+ *    what the model echoes.
+ * 2. Supplies the figure as a single pre-formatted, already-qualified
+ *    Indonesian string (`ANGKA_ENGAGEMENT`) and instructs the model to
+ *    quote it VERBATIM rather than re-derive or re-format it.
+ * 3. States explicitly which inputs are unavailable and forbids estimating
+ *    them.
+ * 4. For image-only content, states that no reach data exists and keeps
+ *    every reach/views/plays token away from the engagement figure (AC-22).
+ * 5. Forbids comparison against the model's own priors or another post's
+ *    differently-denominated ratio (R-12.5.3).
+ * 6. Forbids computing or restating any number it was not given (S2).
+ *
+ * PR #184 review, blocker 1: the ratio arithmetic itself (the negative-
+ * sentinel guard, the reach-positivity/kind gating, the follower-zero
+ * guard) is NOT hand-derived here — it is delegated to
+ * `performance/ratios.ts`'s `computeReachEngagementRatio()`/
+ * `computeEngagementRate()`, the SAME primitives TDD §2 already assigns
+ * this arithmetic to. A second, independently-written expression for the
+ * same quantity is exactly the failure class TR-1 abolished (and TR-4
+ * abolished for slide totals) — importing a pure primitive widens nothing
+ * ("Files Affected" was a scope note about this file's own logic, not
+ * license to re-derive arithmetic another module already owns). Concretely,
+ * this closes a real drift: the prior inline `(likeCount ?? 0) + (commentCount
+ * ?? 0)` had no negative-sentinel guard, so a `-1` availability sentinel
+ * (OR-20) could render a negative engagement percentage into
+ * `ANGKA_ENGAGEMENT`, verbatim-quoted by the model — unshippable under
+ * "reliability over coverage". `ratios.ts`'s `usableCount()` rejects a
+ * negative count (returns `null`, propagated as the whole ratio's `null`)
+ * instead of arithmetic-ing over it, so that shape of drift cannot recur.
+ *
+ * Denominator preference: REACH (the displayed view/play count, using the
+ * SAME `isPlayCount`-derived kind `buildContextBlock()` labels with) when a
+ * positive reach figure exists, falling back to FOLLOWERS — this mirrors
+ * `computeReachEngagementRatio()`/`computeEngagementRate()`'s own
+ * precedence, now literally, since both are called below.
+ *
+ * `realNumerals` (blocker 3, PR #184 re-review): NOT widened to admit the
+ * context block's raw figures. The prompt also hands the model duration,
+ * resolution, post date, the `carousel (N slides)` total, and the whole
+ * slide manifest — none of which were ever on that allow-list, so widening
+ * only the five context figures fixed the least-likely fabrications while
+ * leaving the most-likely ones (a slide number, a duration) still throwing.
+ * Worse, `assertNumeralsAreReal` matches VALUES, never labels: admitting the
+ * context block's raw counts is a laundering surface — a model-invented
+ * "sekitar 15.000 orang menyimpan video ini" (a saves count nobody
+ * supplied) would pass the guard as long as it happened to reuse another
+ * figure's magnitude. Instead, `realNumerals` stays narrow
+ * (`extractNumerals(angka)` — only `ANGKA_ENGAGEMENT`'s own digits) and
+ * Half A's instructions below name `ANGKA_ENGAGEMENT` as the ONLY quotable
+ * figure. Any other numeral in the model's output is now unambiguously a
+ * violation of an explicit instruction — genuine drift, which E7/OR-25
+ * accept failing loudly on — not an incoherent "some context figures are
+ * fine, others throw" middle.
+ */
+function resolvePerformanceAssessment(metadata: MediaMetadata): {
+  block: string;
+  computedBlock: ComputedPerformanceBlock;
+} {
+  const { value: displayedViewCount, isPlayCount } = resolveDisplayedViewCount(metadata);
+  const likeCount = metadata.likeCount ?? null;
+  const commentCount = metadata.commentCount ?? null;
+  const hasEngagementCount = likeCount != null || commentCount != null;
+
+  const reachRatio = computeReachEngagementRatio({
+    likeCount,
+    commentCount,
+    reachValue: displayedViewCount,
+    reachKind: isPlayCount ? "PLAYS" : "VIEWS",
+  });
+  const followerRatio = computeEngagementRate({
+    likeCount,
+    commentCount,
+    followerCount: metadata.followerCount,
+  });
+
+  const unavailable: string[] = [];
+  if (!hasEngagementCount) {
+    unavailable.push("jumlah suka dan komentar (likes & comments)");
+  }
+
+  let angka: string | null = null;
+
+  if (hasEngagementCount && reachRatio != null) {
+    const denomWord = reachRatio.reachKind === "PLAYS" ? "yang menonton" : "penayangan";
+    angka = `${formatPercentID(reachRatio.ratio)} dari ${formatCountID(displayedViewCount ?? 0)} ${denomWord}`;
+  } else if (hasEngagementCount && followerRatio != null) {
+    angka = `${formatPercentID(followerRatio.ratio)} dari jumlah pengikut (${formatCountID(metadata.followerCount ?? 0)} pengikut)`;
+  } else {
+    unavailable.push("rasio engagement (data yang dibutuhkan untuk menghitungnya tidak lengkap)");
+  }
+
+  // AC-22, PR #184 review blocker 2: scoped to all-image content only — a
+  // single image post (`mediaType: "post"`), or a carousel every one of
+  // whose listed `mediaParts` is `kind: "image"`. `mediaType` must be
+  // consulted directly: `displayedViewCount`/`playCount` being null is NOT
+  // by itself evidence of "no video" — it is also true of a reel with
+  // `likeAndViewCountsDisabled` (`resolveDisplayedViewCount()` nulls the
+  // value on that branch regardless of media type) and, per
+  // `.claude/context/verified-facts.md` divergence 12, of a video-bearing
+  // carousel (carousel video children carry `video_play_count: null`, and
+  // this ticket does not wire a carousel reach figure — that is #143). Both
+  // are video content; neither may be told "Konten ini berupa gambar".
+  const isAllImageCarousel =
+    metadata.mediaType === "carousel" && (metadata.mediaParts ?? []).every((part) => part.kind !== "video");
+  const isImageOnly =
+    displayedViewCount == null &&
+    metadata.playCount == null &&
+    (metadata.mediaType === "post" || isAllImageCarousel);
+
+  const lines: string[] = ["## Performance Assessment Data", ""];
+
+  if (angka != null) {
+    lines.push(`ANGKA_ENGAGEMENT = "${angka}"`);
+  } else if (isImageOnly) {
+    lines.push("Konten ini berupa gambar — TIDAK ADA data reach/views/plays untuk post ini.");
+  } else {
+    lines.push("ANGKA_ENGAGEMENT tidak tersedia untuk post ini.");
+  }
+
+  lines.push("");
+  lines.push("INSTRUCTIONS (binding on your Indonesian output above):");
+  if (angka != null) {
+    lines.push(
+      `- If you reference this post's engagement/performance figure in "verdict" or "drivers", quote ANGKA_ENGAGEMENT VERBATIM, exactly as given above. Never recompute it, reformat it, round it differently, or restate it with a different denominator.`,
+    );
+  }
+  if (unavailable.length > 0) {
+    lines.push(
+      `- The following inputs are UNAVAILABLE for this post: ${unavailable.join("; ")}. Do NOT estimate, guess, or invent a number for any of them.`,
+    );
+  }
+  if (angka != null) {
+    lines.push(
+      `- ANGKA_ENGAGEMENT is the ONLY number you may quote anywhere in your output. Never restate, compute, or estimate any other number — not duration, resolution, post date, slide count, a specific slide's number, or any other figure appearing elsewhere in this prompt.`,
+    );
+  } else {
+    lines.push(
+      `- No engagement figure is available for this post. Never restate, compute, or estimate ANY number from this prompt — not duration, resolution, post date, slide count, a specific slide's number, or any other figure.`,
+    );
+  }
+  lines.push(
+    `- Never compare this post's figure against your own general knowledge/priors of "typical engagement rates", or against another post's differently-denominated ratio.`,
+  );
+  if (isImageOnly) {
+    lines.push(
+      `- This is image-only content: do not use the words "reach", "views" or "plays" anywhere near the engagement figure — no reach data exists for this post.`,
+    );
+  }
+
+  const realNumerals = angka != null ? extractNumerals(angka) : [];
+
+  return {
+    block: lines.join("\n"),
+    computedBlock: { realNumerals },
+  };
+}
+
+/**
+ * TDD §8.2's `ComputedPerformanceBlock` for THIS analysis — exported so the
+ * parser stage (`lib/server/analysis/parser`) can run the prose guard
+ * against exactly the figures this prompt actually supplied, derived from
+ * the SAME `resolvePerformanceAssessment()` call `buildUserPrompt()` uses
+ * (never a second, independent recomputation).
+ */
+export function computePerformanceAssessmentBlock(metadata: MediaMetadata): ComputedPerformanceBlock {
+  return resolvePerformanceAssessment(metadata).computedBlock;
+}
+
 export function buildUserPrompt(metadata: MediaMetadata, userPrompt: string): string {
   const contextBlock = buildContextBlock(metadata);
   const slideManifest = buildSlideManifest(metadata);
+  const performanceAssessment = resolvePerformanceAssessment(metadata).block;
   const { value: displayedViewCount, isPlayCount } = resolveDisplayedViewCount(metadata);
 
   return `Analyze the following content:
@@ -153,6 +359,8 @@ export function buildUserPrompt(metadata: MediaMetadata, userPrompt: string): st
 - Post Date: ${metadata.postDate ?? "N/A"}
 - Caption: ${metadata.caption ?? "N/A"}
 ${contextBlock ? `\n${contextBlock}\n` : ""}${slideManifest ? `\n${slideManifest}\n` : ""}
+${performanceAssessment}
+
 ---
 
 User's specific focus: ${userPrompt}

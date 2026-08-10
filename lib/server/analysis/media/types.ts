@@ -46,9 +46,15 @@ export interface MediaPart {
 /** Result of enumerating + capping a post's media parts. */
 export interface ResolvedMediaParts {
   parts: MediaPart[];
-  /** Total part count BEFORE the `MAX_MEDIA_PARTS` cap was applied. */
-  totalPartsBeforeCap: number;
-  /** `true` iff `totalPartsBeforeCap > MAX_MEDIA_PARTS` — parts were dropped. */
+  /**
+   * `true` iff the pre-cap candidate count exceeded `MAX_MEDIA_PARTS` —
+   * parts were dropped. TR-4 (`docs/TDD-3A-3B-3C-phase-3.md` §0.7a):
+   * the pre-cap total itself (`totalPartsBeforeCap`) is DELETED, not
+   * renamed — it read like a slide total and duplicated the one canonical
+   * slide-count derivation (`getCarouselEdges().length`, TR-1). If a
+   * pre-cap parts count is ever needed again, re-derive it from
+   * `getCarouselEdges()` at the point of use; do not re-carry it here.
+   */
   truncated: boolean;
 }
 

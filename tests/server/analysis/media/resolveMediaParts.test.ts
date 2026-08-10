@@ -26,10 +26,9 @@ describe("resolveMediaParts — enumeration", () => {
       dimensions: { width: 1080, height: 1920 },
     };
 
-    const { parts, truncated, totalPartsBeforeCap } = resolveMediaParts(media);
+    const { parts, truncated } = resolveMediaParts(media);
 
     expect(parts).toHaveLength(1);
-    expect(totalPartsBeforeCap).toBe(1);
     expect(truncated).toBe(false);
     expect(parts[0]).toMatchObject({ index: 0, kind: "video", url: "https://cdn.example/reel.mp4", durationSec: 30 });
   });
@@ -66,9 +65,8 @@ describe("resolveMediaParts — enumeration", () => {
     );
     const media = makeCarousel(children);
 
-    const { parts, truncated, totalPartsBeforeCap } = resolveMediaParts(media);
+    const { parts, truncated } = resolveMediaParts(media);
 
-    expect(totalPartsBeforeCap).toBe(25);
     expect(truncated).toBe(true);
     expect(parts).toHaveLength(MAX_MEDIA_PARTS);
     expect(parts[0].url).toBe("https://cdn.example/slide-0.jpg");
@@ -108,7 +106,7 @@ describe("resolveMediaParts — MediaPart.index is the REAL slide position (F2, 
       videoUrl: null,
       mediaParts,
       mediaPartsTruncated: false,
-      mediaPartsTotalBeforeCap: mediaParts.length,
+      carouselItemCount: mediaParts.length,
     };
   }
 
@@ -124,10 +122,10 @@ describe("resolveMediaParts — MediaPart.index is the REAL slide position (F2, 
     });
     const media = makeCarouselWithEdges(edges);
 
-    const { parts, totalPartsBeforeCap } = resolveMediaParts(media);
+    const { parts } = resolveMediaParts(media);
 
     // 10 edges, 1 null -> 9 real parts, but positions retain gaps.
-    expect(totalPartsBeforeCap).toBe(9);
+    expect(parts).toHaveLength(9);
     const realPosition4 = parts.find((p) => p.url === "https://cdn.example/slide-4.jpg");
     expect(realPosition4?.index).toBe(4);
   });

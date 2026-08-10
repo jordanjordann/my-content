@@ -152,9 +152,8 @@ export function resolveMediaParts(raw: ScrapeCreatorsMedia): ResolvedMediaParts 
     }
   }
 
-  const totalPartsBeforeCap = candidates.length;
-  const truncated = totalPartsBeforeCap > MAX_MEDIA_PARTS;
+  const truncated = candidates.length > MAX_MEDIA_PARTS;
   const parts = truncated ? candidates.slice(0, MAX_MEDIA_PARTS) : candidates;
 
-  return { parts, totalPartsBeforeCap, truncated };
+  return { parts, truncated };
 }

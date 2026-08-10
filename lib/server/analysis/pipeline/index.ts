@@ -291,7 +291,7 @@ export async function runAnalysis({
     const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
 
     const geminiResult = await analyzeContent(geminiParts, fullPrompt);
-    const content = parseContentAnalysis(geminiResult.text);
+    const content = parseContentAnalysis(geminiResult.text, metadata);
 
     console.log("[PIPELINE] Parsed analysis:");
     console.log(JSON.stringify(content, null, 2));
