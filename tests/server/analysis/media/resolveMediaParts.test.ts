@@ -130,13 +130,37 @@ describe("resolveMediaParts — MediaPart.index is the REAL slide position (F2, 
     expect(totalPartsBeforeCap).toBe(9);
     const realPosition4 = parts.find((p) => p.url === "https://cdn.example/slide-4.jpg");
     expect(realPosition4?.index).toBe(4);
+  });
 
-    // The prompt line for this part must read "5." (part.index + 1) — a
-    // filtered-index bug would instead have produced "4." for this slide
-    // (it is the 4th surviving node after the one null node is dropped).
+  it("SYNTHETIC MUTANT — the prompt boundary itself pins the real position: a distinguishable slide at real position 4 renders as \"5.\", never \"4.\" (prompts/user.ts, #175/#180 Finding 1)", () => {
+    // Every other slide in this fixture is an image; only real position 4 is
+    // a video. That makes the rendered label ("N. video") bound to THIS
+    // slide's identity, unlike an all-image fixture where "5. image" would
+    // print under a compacted-index mutation too (every slide shares the
+    // same label). 10 edges, real position 1 (0-based) is a null node, so a
+    // filtered/compacted array would place this video at index 3 ("4."),
+    // not the real index 4 ("5.").
+    const edges = Array.from({ length: 10 }, (_, i) => {
+      if (i === 1) {
+        return null;
+      }
+      if (i === 4) {
+        return makeVideoChild({ id: "slide-4", display_url: "https://cdn.example/slide-4.jpg" });
+      }
+      return makeImageChild({ id: `slide-${i}`, display_url: `https://cdn.example/slide-${i}.jpg` });
+    });
+    const media = makeCarouselWithEdges(edges);
+
+    const { parts } = resolveMediaParts(media);
     const metadata = buildMinimalMetadata(parts);
     const prompt = buildUserPrompt(metadata, "focus");
-    expect(prompt).toContain("5. image");
+
+    // Positive: the real-position label is present.
+    expect(prompt).toContain("5. video");
+    // Negative: the compacted-index label must NOT be present — this is
+    // what makes the assertion a genuine detector rather than one that
+    // happens to pass on a shifted manifest too.
+    expect(prompt).not.toContain("4. video");
   });
 
   it("no part's index is off by the count of preceding null nodes, across the whole carousel", () => {
