@@ -40,14 +40,16 @@ describe("assertQualifiedPercentages (TDD §8.2, Half B)", () => {
 });
 
 describe("assertNumeralsAreReal (S2/AC-7, Half B)", () => {
-  // PR #184 review, blocker 3: this shape is no longer a fixture production
-  // cannot emit — `4.1` is `ANGKA_ENGAGEMENT`'s own qualified ratio and
-  // `482100` is the raw displayed view count `resolvePerformanceAssessment()`
-  // now also allow-lists (`prompts/user.ts`'s `collectContextNumerals()`),
-  // for a post shaped like `viewCount: 482_100, likeCount: 15_000,
-  // commentCount: 5_000` — see `user.engagementLabel.test.ts`'s "Half A /
-  // Half B reconciliation" suite for the integration-level proof against the
-  // real `computePerformanceAssessmentBlock()`.
+  // This is an arbitrary, hand-picked block for unit-testing the guard in
+  // isolation — NOT a claim that `[4.1, 482100]` is the exact array
+  // `resolvePerformanceAssessment()` emits for any one post. A real
+  // `ANGKA_ENGAGEMENT` block for a reach-denominated post can carry several
+  // numerals at once (e.g. `[4.1, 482.1]` for the abbreviated `"482,1RB"`
+  // form), so `[4.1, 482100]` is at most a SUBSET of a producible block's
+  // shape, and its second element (the raw, non-abbreviated count) would
+  // not actually co-occur with `4.1` in the same `angka` string — see
+  // `user.engagementLabel.test.ts`'s "Half A narrowing" suite for the
+  // integration-level proof against the real `computePerformanceAssessmentBlock()`.
   const block: ComputedPerformanceBlock = { realNumerals: [4.1, 482100] };
 
   it("passes when every numeral in the text matches the computed block", () => {

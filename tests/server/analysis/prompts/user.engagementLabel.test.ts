@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildUserPrompt, computePerformanceAssessmentBlock } from "@/lib/server/analysis/prompts";
-import { assertNumeralsAreReal, assertPerformanceProseIsSafe } from "@/lib/server/analysis/prose";
+import { assertNumeralsAreReal, assertPerformanceProseIsSafe, NumeralFabricationError } from "@/lib/server/analysis/prose";
 import type { MediaMetadata } from "@/lib/server/analysis/types";
 
 /**
@@ -245,7 +245,7 @@ describe("buildUserPrompt — performance assessment block (TDD §8.1, ticket #1
     expect(prompt).toContain("Never compare this post's figure");
   });
 
-  it("forbids computing or restating any number it was not given (S2)", () => {
+  it("forbids computing or restating any number it was not given (S2) — names ANGKA_ENGAGEMENT as the only quotable figure (PR #184 re-review, blocker 3)", () => {
     const metadata = baseMetadata({
       viewCount: 482_100,
       likeCount: 15_000,
@@ -254,7 +254,21 @@ describe("buildUserPrompt — performance assessment block (TDD §8.1, ticket #1
 
     const prompt = buildUserPrompt(metadata, "focus");
 
-    expect(prompt).toContain("Never compute, derive, or restate any number you were not explicitly given above.");
+    expect(prompt).toContain("ANGKA_ENGAGEMENT is the ONLY number you may quote anywhere in your output.");
+  });
+
+  it("when ANGKA_ENGAGEMENT is unavailable, forbids restating ANY number from the prompt (S2)", () => {
+    const metadata = baseMetadata({
+      viewCount: null,
+      playCount: null,
+      likeCount: null,
+      commentCount: null,
+      followerCount: null,
+    });
+
+    const prompt = buildUserPrompt(metadata, "focus");
+
+    expect(prompt).toContain("No engagement figure is available for this post. Never restate, compute, or estimate ANY number");
   });
 });
 
@@ -265,11 +279,16 @@ describe("buildUserPrompt — performance assessment block (TDD §8.1, ticket #1
  * `(likeCount ?? 0) + (commentCount ?? 0)` with no such guard.
  */
 describe("buildUserPrompt — performance assessment block never renders a negative/sentinel count as a percentage (PR #184 review, blocker 1)", () => {
-  it("a -1 likeCount availability sentinel does not reach ANGKA_ENGAGEMENT as a negative percentage — reach-denominated branch", () => {
+  it("a -1 commentCount availability sentinel does not reach ANGKA_ENGAGEMENT as a negative percentage — reach-denominated branch", () => {
+    // likeCount is null (contributes 0), commentCount is the -1 sentinel —
+    // an unguarded `(likeCount ?? 0) + (commentCount ?? 0)` sum would be
+    // -1, which `-1 / 482100` renders as a genuinely negative percentage
+    // ("-0,0%"), making `/-\d/` a reachable failure for a regression to
+    // this hand-rolled sum, not a proof the fixture cannot produce.
     const metadata = baseMetadata({
       viewCount: 482_100,
-      likeCount: -1,
-      commentCount: 5_000,
+      likeCount: null,
+      commentCount: -1,
     });
 
     const prompt = buildUserPrompt(metadata, "focus");
@@ -281,11 +300,15 @@ describe("buildUserPrompt — performance assessment block never renders a negat
   });
 
   it("a -1 commentCount availability sentinel does not reach ANGKA_ENGAGEMENT as a negative percentage — follower-denominated branch", () => {
+    // Same reasoning: likeCount null (contributes 0), commentCount is the
+    // -1 sentinel, so an unguarded sum would be -1 -> a genuinely negative
+    // "-0,0%" against the 10,000-follower denominator, not a fixture that
+    // can never make `/-\d/` fail.
     const metadata = baseMetadata({
       mediaType: "post",
       viewCount: null,
       playCount: null,
-      likeCount: 500,
+      likeCount: null,
       commentCount: -1,
       followerCount: 10_000,
     });
@@ -440,14 +463,16 @@ describe("buildUserPrompt — isImageOnly consults mediaType, not just a null vi
 });
 
 /**
- * PR #184 review, blocker 3: Half A's "never restate any number you were not
- * explicitly given above" already permits a driver to quote the context
- * block's raw figures (likes, comments, followers, views/plays) — Half B's
- * `realNumerals` allow-list must include them too, or compliant prose throws
- * `NumeralFabricationError` after the (already-billed) Gemini call.
+ * PR #184 re-review, blocker 3: the reviewer rejected widening `realNumerals`
+ * to admit the context block's raw figures (a laundering surface that also
+ * left duration/slide-number fabrications open) and ruled the fix must
+ * narrow Half A's own prompt text instead — `ANGKA_ENGAGEMENT` is the ONLY
+ * number the model may quote. `realNumerals` is back to
+ * `extractNumerals(angka)` alone: any numeral outside `ANGKA_ENGAGEMENT`
+ * (context figures included) is now a genuine fabrication and must throw.
  */
-describe("Half A / Half B reconciliation — compliant prose quoting context-block figures does not throw (PR #184 review, blocker 3)", () => {
-  it("quoting the raw likes/comments count given in context does not throw, even though it is absent from ANGKA_ENGAGEMENT", () => {
+describe("Half A narrowing — ANGKA_ENGAGEMENT is the only quotable figure (PR #184 re-review, blocker 3)", () => {
+  it("quoting a raw context figure (likes count) absent from ANGKA_ENGAGEMENT throws NumeralFabricationError", () => {
     const metadata = baseMetadata({
       viewCount: 482_100,
       likeCount: 15_000,
@@ -458,15 +483,15 @@ describe("Half A / Half B reconciliation — compliant prose quoting context-blo
     expect(() =>
       assertPerformanceProseIsSafe(
         {
-          verdict: "Konten ini mendapat 15.000 suka dan 5.000 komentar, dengan engagement 4,1% dari 482,1RB penayangan.",
+          verdict: "Engagement 4,1% dari 482,1RB penayangan, performa solid.",
           drivers: ["Jumlah suka 15.000 menunjukkan performa solid."],
         },
         block,
       ),
-    ).not.toThrow();
+    ).toThrow(NumeralFabricationError);
   });
 
-  it("quoting the raw view count (482.100), not just the abbreviated 482,1RB form, does not throw", () => {
+  it("quoting the raw view count (482.100) instead of ANGKA_ENGAGEMENT's abbreviated 482,1RB form throws NumeralFabricationError", () => {
     const metadata = baseMetadata({
       viewCount: 482_100,
       likeCount: 15_000,
@@ -474,12 +499,12 @@ describe("Half A / Half B reconciliation — compliant prose quoting context-blo
     });
     const block = computePerformanceAssessmentBlock(metadata);
 
-    expect(() =>
-      assertNumeralsAreReal("Video ini ditonton 482.100 kali, cukup tinggi.", block),
-    ).not.toThrow();
+    expect(() => assertNumeralsAreReal("Video ini ditonton 482.100 kali, cukup tinggi.", block)).toThrow(
+      NumeralFabricationError,
+    );
   });
 
-  it("a genuinely fabricated numeral absent from both ANGKA_ENGAGEMENT and the context block still throws — non-vacuity proof", () => {
+  it("a genuinely fabricated numeral unrelated to any figure in the prompt still throws — non-vacuity proof", () => {
     const metadata = baseMetadata({
       viewCount: 482_100,
       likeCount: 15_000,
@@ -490,5 +515,24 @@ describe("Half A / Half B reconciliation — compliant prose quoting context-blo
     expect(() => assertNumeralsAreReal("Performanya naik 9.999.999 dibanding biasanya.", block)).toThrow(
       "Fabricated numeral",
     );
+  });
+
+  it("quoting ANGKA_ENGAGEMENT verbatim passes the guard — positive case", () => {
+    const metadata = baseMetadata({
+      viewCount: 482_100,
+      likeCount: 15_000,
+      commentCount: 5_000,
+    });
+    const block = computePerformanceAssessmentBlock(metadata);
+
+    expect(() =>
+      assertPerformanceProseIsSafe(
+        {
+          verdict: "Performa solid dengan engagement 4,1% dari 482,1RB penayangan.",
+          drivers: ["Engagement 4,1% dari 482,1RB penayangan mendukung skor ini."],
+        },
+        block,
+      ),
+    ).not.toThrow();
   });
 });

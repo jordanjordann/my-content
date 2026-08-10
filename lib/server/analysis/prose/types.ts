@@ -14,22 +14,27 @@
  * scope here; when they land, this type narrows into a slice of their
  * result (the numeral list) rather than being replaced.
  *
- * PR #184 review, blocker 3: `realNumerals` is NOT limited to the digits
- * inside `ANGKA_ENGAGEMENT` — it also carries every raw figure the
- * "## Engagement & Technical Context" block (directly above the
- * performance block in the same prompt) already handed the model: likes,
- * comments, followers, the displayed view/play count, and the view/play
- * rate. Half A's own instruction text ("never restate any number you were
- * not explicitly given above") already permits a driver to quote those —
- * they ARE explicitly given, just one section higher. Narrowing this list
- * to `ANGKA_ENGAGEMENT`'s digits alone made compliant prose throw
- * `NumeralFabricationError` *after the Gemini call was billed* whenever a
- * driver quoted a context figure verbatim (e.g. "15.000 suka"), which is
- * a guaranteed-failure-on-compliant-output bug, not a drift signal E7/OR-25
- * is meant to catch. Widening this list (rather than narrowing Half A's
- * prompt text to forbid quoting context figures) was the chosen fix: it
- * makes the guard's allow-list match what the prompt actually promises,
- * without reducing what a well-behaved model may truthfully say.
+ * PR #184 re-review, blocker 3: `realNumerals` is limited to the digits
+ * inside `ANGKA_ENGAGEMENT` alone (`extractNumerals(angka)` in
+ * `prompts/user.ts`) — it does NOT admit the "## Engagement & Technical
+ * Context" block's raw figures (likes, comments, followers, the displayed
+ * view/play count, the view/play rate), nor duration, resolution, post
+ * date, or the slide manifest. An earlier revision of this fix widened the
+ * list to admit the five context figures; the reviewer ruled that wrong for
+ * two reasons: (1) it was still incomplete — the prompt hands the model
+ * several other numbers (duration, slide totals, slide numbers) that were
+ * never on any allow-list, so the most likely fabrications (a slide number,
+ * a duration) still threw after the Gemini call was billed; (2)
+ * `assertNumeralsAreReal` matches VALUES, never labels, so admitting round
+ * audience-scale integers is a laundering surface — a model-invented "15.000
+ * orang menyimpan video ini" (a saves count nobody supplied) would pass the
+ * guard purely by reusing another figure's magnitude. The fix instead
+ * narrows Half A's own prompt text (`prompts/user.ts`) to name
+ * `ANGKA_ENGAGEMENT` as the ONLY quotable figure — so any other numeral in
+ * the model's output is unambiguously a violation of an explicit
+ * instruction (genuine drift, which E7/OR-25 accept failing loudly on),
+ * rather than the previous "some context figures are fine, others throw"
+ * incoherent middle.
  */
 export interface ComputedPerformanceBlock {
   /**

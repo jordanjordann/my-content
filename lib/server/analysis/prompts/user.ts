@@ -41,11 +41,11 @@ function resolveDisplayedViewCount(metadata: MediaMetadata): { value: number | n
 }
 
 /**
- * The reel-only view/play rate shown in `buildContextBlock()` — factored
- * out so the SAME division also feeds `resolvePerformanceAssessment()`'s
- * `realNumerals` allow-list (blocker 3, PR #184 review) without a second,
- * independently-computed expression for the same quantity (TR-1's
- * discipline). Returns a fraction (e.g. `0.0432`), never a percentage.
+ * The reel-only view/play rate shown in `buildContextBlock()` — kept as a
+ * standalone pure function rather than inlined back into that call site
+ * (PR #184 review, blocker 3 re-review: verified genuinely factored-out,
+ * not a fake extraction). Returns a fraction (e.g. `0.0432`), never a
+ * percentage.
  */
 function computeViewOrPlayRate(metadata: MediaMetadata, displayedViewCount: number | null): number | null {
   if (
@@ -211,43 +211,24 @@ function buildContextBlock(metadata: MediaMetadata): string | null {
  * `computeReachEngagementRatio()`/`computeEngagementRate()`'s own
  * precedence, now literally, since both are called below.
  *
- * `realNumerals` (blocker 3, PR #184 review): widened beyond `angka`'s own
- * numerals to also allow-list every raw figure the CONTEXT block above
- * `ANGKA_ENGAGEMENT` already handed the model (likes, comments, followers,
- * the displayed view/play count, and the view/play rate) — see
- * `collectContextNumerals()` below and its doc comment for why.
+ * `realNumerals` (blocker 3, PR #184 re-review): NOT widened to admit the
+ * context block's raw figures. The prompt also hands the model duration,
+ * resolution, post date, the `carousel (N slides)` total, and the whole
+ * slide manifest — none of which were ever on that allow-list, so widening
+ * only the five context figures fixed the least-likely fabrications while
+ * leaving the most-likely ones (a slide number, a duration) still throwing.
+ * Worse, `assertNumeralsAreReal` matches VALUES, never labels: admitting the
+ * context block's raw counts is a laundering surface — a model-invented
+ * "sekitar 15.000 orang menyimpan video ini" (a saves count nobody
+ * supplied) would pass the guard as long as it happened to reuse another
+ * figure's magnitude. Instead, `realNumerals` stays narrow
+ * (`extractNumerals(angka)` — only `ANGKA_ENGAGEMENT`'s own digits) and
+ * Half A's instructions below name `ANGKA_ENGAGEMENT` as the ONLY quotable
+ * figure. Any other numeral in the model's output is now unambiguously a
+ * violation of an explicit instruction — genuine drift, which E7/OR-25
+ * accept failing loudly on — not an incoherent "some context figures are
+ * fine, others throw" middle.
  */
-function collectContextNumerals(
-  metadata: MediaMetadata,
-  displayedViewCount: number | null,
-  viewOrPlayRate: number | null,
-): number[] {
-  const values: number[] = [];
-  if (displayedViewCount != null) {
-    values.push(displayedViewCount);
-  }
-  // Guarded against a negative availability sentinel, same discipline as
-  // the ratio arithmetic below — a `-1` sentinel is never a "real" numeral
-  // the model was given permission to echo.
-  if (metadata.likeCount != null && metadata.likeCount >= 0) {
-    values.push(metadata.likeCount);
-  }
-  if (metadata.commentCount != null && metadata.commentCount >= 0) {
-    values.push(metadata.commentCount);
-  }
-  if (metadata.followerCount != null && metadata.followerCount >= 0) {
-    values.push(metadata.followerCount);
-  }
-  if (viewOrPlayRate != null) {
-    // The context block renders this as a percentage (`formatPercent`,
-    // `rate * 100`) — store it in the same units so the guard's numeral
-    // parser (which reads whatever digits actually appear in the prose)
-    // can match it.
-    values.push(viewOrPlayRate * 100);
-  }
-  return values;
-}
-
 function resolvePerformanceAssessment(metadata: MediaMetadata): {
   block: string;
   computedBlock: ComputedPerformanceBlock;
@@ -325,7 +306,15 @@ function resolvePerformanceAssessment(metadata: MediaMetadata): {
       `- The following inputs are UNAVAILABLE for this post: ${unavailable.join("; ")}. Do NOT estimate, guess, or invent a number for any of them.`,
     );
   }
-  lines.push(`- Never compute, derive, or restate any number you were not explicitly given above.`);
+  if (angka != null) {
+    lines.push(
+      `- ANGKA_ENGAGEMENT is the ONLY number you may quote anywhere in your output. Never restate, compute, or estimate any other number — not duration, resolution, post date, slide count, a specific slide's number, or any other figure appearing elsewhere in this prompt.`,
+    );
+  } else {
+    lines.push(
+      `- No engagement figure is available for this post. Never restate, compute, or estimate ANY number from this prompt — not duration, resolution, post date, slide count, a specific slide's number, or any other figure.`,
+    );
+  }
   lines.push(
     `- Never compare this post's figure against your own general knowledge/priors of "typical engagement rates", or against another post's differently-denominated ratio.`,
   );
@@ -335,11 +324,7 @@ function resolvePerformanceAssessment(metadata: MediaMetadata): {
     );
   }
 
-  const viewOrPlayRate = computeViewOrPlayRate(metadata, displayedViewCount);
-  const realNumerals = [
-    ...(angka != null ? extractNumerals(angka) : []),
-    ...collectContextNumerals(metadata, displayedViewCount, viewOrPlayRate),
-  ];
+  const realNumerals = angka != null ? extractNumerals(angka) : [];
 
   return {
     block: lines.join("\n"),
