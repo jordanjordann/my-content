@@ -317,12 +317,20 @@ describe("buildUserPrompt — performance assessment block never renders a negat
  * null displayed view/play count while genuinely being video content.
  */
 describe("buildUserPrompt — isImageOnly consults mediaType, not just a null view/play count (PR #184 review, blocker 2)", () => {
-  it("a reel with hidden counts (likeAndViewCountsDisabled) is NOT told the image-only copy", () => {
+  it("a reel with hidden counts (likeAndViewCountsDisabled) is NOT told the image-only copy, even when playCount is also unresolved", () => {
+    // `like_and_view_counts_disabled` nulls `viewCount` at the adapter
+    // (fetcher/adapter.ts) but does NOT gate `playCount` — so in general a
+    // hidden-counts reel can still carry a populated `playCount`. This case
+    // pins the narrower, genuinely ambiguous shape: BOTH are unresolved
+    // (e.g. `video_play_count` also absent on that capture), which is
+    // exactly the shape the old `displayedViewCount == null &&
+    // metadata.playCount == null` predicate (with no `mediaType` check)
+    // misclassified as image-only.
     const metadata = baseMetadata({
       mediaType: "reel",
       viewCount: 0,
-      playCount: 116_333,
-      displayedCountIsPlayCount: true,
+      playCount: null,
+      displayedCountIsPlayCount: false,
       likeAndViewCountsDisabled: true,
       likeCount: null,
       commentCount: null,
