@@ -147,6 +147,24 @@ export function computeProvisional(postAgeHours: number | null): boolean {
  *      here anyway"), exercised directly by unit tests that pass a
  *      below-threshold sample size to this pure function.
  *   5. `NONE` when `tierUsed === "UNAVAILABLE"` — overrides everything above.
+ *
+ * PR #191 review, C1 — **ruling, recorded explicitly rather than left
+ * implicit**: `confidenceReason` is a single `ConfidenceReason | null`, not
+ * a set, so when TWO demotion causes both fire on the same post (reachable:
+ * a carousel whose slide 0 has usable reach but no engagement numerator,
+ * where `tierUsed` falls through to `AUDIENCE_FALLBACK` — rule 3 fires
+ * because `tier1Ratio` never got the chance to be `FOLLOWERS`-denominated,
+ * the ratio is simply `null` — AND rule 2 fires because
+ * `reachDerivedFrom === "CAROUSEL_FIRST_SLIDE"`), the rules are applied
+ * top-to-bottom and the LAST one to fire wins the stored `confidenceReason`
+ * — rule 3 (`CACHED_FOLLOWER_DENOMINATOR`) overwrites rule 2
+ * (`CAROUSEL_FIRST_SLIDE`) in that case. The confidence *value* (`MEDIUM`)
+ * is correct either way; only the persisted *cause* is single-valued. This
+ * is a deliberate simplification, not an oversight: `perf_confidence_reason`
+ * (migration 012) is a single-valued `TEXT` column, and DESIGN-3B §4.3's L2
+ * popover was scoped to one sentence, not a list — widening either is a
+ * schema/copy change out of this ticket's scope. See
+ * `judgement.test.ts`'s "double demotion" pin for the exact fixture.
  */
 export function computeConfidence(params: {
   tierUsed: Tier;
@@ -216,11 +234,23 @@ export function determineTierUsed(params: {
  *
  * Priority, in order:
  *
- * 1. **#169's two rows** (`REACH_HIDDEN` / `CAUSE_NOT_DETERMINABLE`), via
+ * 1. **YouTube** (PR #191 review, C2 — checked BEFORE #169's resolver, not
+ *    after). `like_and_view_counts_disabled` is an Instagram-only concept:
+ *    on YouTube the flag param is always `undefined` (structurally absent,
+ *    never confirmed `true` or `false`), which is NOT epistemic uncertainty
+ *    about a hidden-counts SETTING — that setting does not exist on this
+ *    platform. Calling `resolveHiddenCountsUnavailableReason` first (the
+ *    pre-C2 order) read "flag absent + nothing usable" as
+ *    `CAUSE_NOT_DETERMINABLE` for a YouTube video whose reach genuinely
+ *    never came back — the truthful reason is `REACH_UNKNOWN`, not "we
+ *    can't tell if this creator hid their counts" (a fact that cannot even
+ *    apply to this platform). Never `CONTENT_KIND_UNSUPPORTED` or
+ *    `REACH_NOT_ON_FIRST_SLIDE` either (both carousel/Instagram-only, TDD
+ *    §5.3 binding rule) — an unusable reach is always `REACH_UNKNOWN`, a
+ *    usable one with no audience data is always `NO_AUDIENCE_DATA`.
+ * 2. **#169's two rows** (`REACH_HIDDEN` / `CAUSE_NOT_DETERMINABLE`), via
  *    `resolveHiddenCountsUnavailableReason` — imported, not re-derived.
- * 2. **YouTube** — never `CONTENT_KIND_UNSUPPORTED` or
- *    `REACH_NOT_ON_FIRST_SLIDE` (both carousel/Instagram-only, TDD §5.3
- *    binding rule). An unusable reach is always `REACH_UNKNOWN`.
+ *    Instagram only, by construction now that YouTube returns above.
  * 3. **Instagram, no reach field at all** (`derivedFrom === "NONE"`):
  *      a. a later slide carries a usable count (`laterSlideReach.usable`)
  *         -> `REACH_NOT_ON_FIRST_SLIDE` (Path B mapping, OR-26).
@@ -269,6 +299,24 @@ export function resolveUnavailableReason(params: {
   commentState: AvailabilityState;
   followerCount: number | null;
 }): UnavailableReason {
+  const reachUsable = isUsable(params.reach.state);
+  const hasEngagementNumerator = isUsable(params.likeState) || isUsable(params.commentState);
+  const hasFollowerCount = params.followerCount != null && params.followerCount > 0;
+
+  // C2 (PR #191 review): checked BEFORE `resolveHiddenCountsUnavailableReason`
+  // — `like_and_view_counts_disabled` is an Instagram-only concept, so on
+  // YouTube the flag is always structurally absent (never a real epistemic
+  // "we don't know if it's hidden" fact) and must never route through
+  // #169's `CAUSE_NOT_DETERMINABLE`/`REACH_HIDDEN` rows.
+  if (params.platform === "youtube") {
+    if (!reachUsable) {
+      return "REACH_UNKNOWN";
+    }
+    // Reach IS usable on YouTube here; the only way UNAVAILABLE was reached
+    // is a missing audience count (Tier 3 needs no likes/comments).
+    return "NO_AUDIENCE_DATA";
+  }
+
   const hidden = resolveHiddenCountsUnavailableReason({
     likeAndViewCountsDisabled: params.likeAndViewCountsDisabled,
     reachState: params.reach.state,
@@ -277,19 +325,6 @@ export function resolveUnavailableReason(params: {
   });
   if (hidden != null) {
     return hidden;
-  }
-
-  const reachUsable = isUsable(params.reach.state);
-  const hasEngagementNumerator = isUsable(params.likeState) || isUsable(params.commentState);
-  const hasFollowerCount = params.followerCount != null && params.followerCount > 0;
-
-  if (params.platform === "youtube") {
-    if (!reachUsable) {
-      return "REACH_UNKNOWN";
-    }
-    // Reach IS usable on YouTube here; the only way UNAVAILABLE was reached
-    // is a missing audience count (Tier 3 needs no likes/comments).
-    return "NO_AUDIENCE_DATA";
   }
 
   if (params.reach.derivedFrom === "NONE") {

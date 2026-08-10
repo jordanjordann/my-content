@@ -19,6 +19,7 @@ function reach(overrides: Partial<ReachResult> = {}): ReachResult {
     state: "AVAILABLE",
     derivedFrom: "TOP_LEVEL",
     laterSlideReach: { usable: false },
+    hasVideo: true,
     ...overrides,
   };
 }
@@ -237,6 +238,17 @@ describe("computeConfidence — TDD §4 ladder", () => {
     });
     expect(result).toEqual({ confidence: "NONE", confidenceReason: null });
   });
+
+  it("PR #191 review C1 — double demotion (CAROUSEL_FIRST_SLIDE AND CACHED_FOLLOWER_DENOMINATOR both fire): confidence stays MEDIUM either way, but the LAST rule to fire (rule 3, CACHED_FOLLOWER_DENOMINATOR) wins the single-valued confidenceReason — pins the documented, ruled-on ordering rather than leaving it to fall out of source order unrecorded", () => {
+    const result = computeConfidence({
+      tierUsed: "AUDIENCE_FALLBACK",
+      reachDerivedFrom: "CAROUSEL_FIRST_SLIDE",
+      tier1Ratio: null,
+      baselineSampleSize: 0,
+    });
+    expect(result).toEqual({ confidence: "MEDIUM", confidenceReason: "CACHED_FOLLOWER_DENOMINATOR" });
+    expect(result.confidenceReason).not.toBe("CAROUSEL_FIRST_SLIDE");
+  });
 });
 
 describe("computeProvisional — flips exactly at MATURITY_FLOOR_HOURS", () => {
@@ -393,6 +405,25 @@ describe("resolveUnavailableReason — every branch reachable and distinct", () 
     expect(result).toBe("REACH_UNKNOWN");
     expect(result).not.toBe("CONTENT_KIND_UNSUPPORTED");
     expect(result).not.toBe("REACH_NOT_ON_FIRST_SLIDE");
+  });
+
+  it("PR #191 review C2 — YouTube, reach unusable AND no usable engagement inputs at all — REACH_UNKNOWN, never CAUSE_NOT_DETERMINABLE. The flag being structurally absent on YouTube is not the same epistemic gap #169's resolver exists for", () => {
+    // Before C2: `resolveHiddenCountsUnavailableReason` ran FIRST, saw the
+    // flag absent (always true on YouTube, which has no such flag) and no
+    // usable input among reach/likeState/commentState, and returned
+    // CAUSE_NOT_DETERMINABLE — a fact about "can we tell if the creator hid
+    // their counts", which does not even apply to this platform. The
+    // truthful reason is that the reach figure itself never came back.
+    const result = resolveUnavailableReason({
+      platform: "youtube",
+      reach: reach({ state: "UNKNOWN", value: null, kind: "UNKNOWN", derivedFrom: "NONE" }),
+      likeAndViewCountsDisabled: undefined,
+      likeState: "UNKNOWN",
+      commentState: "UNKNOWN",
+      followerCount: null,
+    });
+    expect(result).toBe("REACH_UNKNOWN");
+    expect(result).not.toBe("CAUSE_NOT_DETERMINABLE");
   });
 
   it("NO_AUDIENCE_DATA — YouTube, reach usable, no follower count", () => {

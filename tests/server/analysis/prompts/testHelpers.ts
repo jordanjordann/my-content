@@ -34,23 +34,46 @@ import type { MediaMetadata } from "@/lib/server/analysis/types";
  * carry a reach field at all" question `reach.ts` answers from the raw
  * payload's key set (R-12.7.1), approximated here from `MediaMetadata`
  * since these tests never construct a raw `ScrapeCreatorsMedia` payload.
+ *
+ * PR #191 review, blocker B1b: `derivedFrom` for a carousel is decided by
+ * SLIDE 0 ONLY, exactly mirroring `reach.ts`'s `resolveInstagramReach()` —
+ * a `mediaParts.some(kind === "video")` check (ANY slide) was the bug: it
+ * disagreed with production for an image-on-slide-0 + video-on-slide-3
+ * carousel, returning `CAROUSEL_FIRST_SLIDE` where production returns
+ * `NONE`, so `user.engagementLabel.test.ts` never actually exercised that
+ * shape against the real production rule. `hasVideo`, separately, DOES
+ * scan every slide (mirroring `reach.ts`'s `hasVideoChild` scan) — the two
+ * facts are deliberately NOT the same predicate.
  */
 export function buildTestComputedPerformanceBlock(metadata: MediaMetadata): ComputedPerformanceBlock {
   const { value: displayedViewCount, isPlayCount } = resolveDisplayedViewCountForTest(metadata);
 
-  const hasVideoPart = (metadata.mediaParts ?? []).some((part) => part.kind === "video");
+  const parts = metadata.mediaParts ?? [];
+  const firstSlideIsVideo = metadata.mediaType === "carousel" && parts[0]?.kind === "video";
+  const hasVideoAnywhere = parts.some((part) => part.kind === "video");
   const isReelOrShortLike = metadata.mediaType === "reel" || metadata.mediaType === "short";
   // A reel/short/video-bearing post structurally carries a reach field even
   // when its VALUE is unresolved (hidden counts, an unusable false-zero,
   // etc.) — `derivedFrom` is about field PRESENCE, not value usability.
+  // For a carousel, ONLY slide 0 decides `derivedFrom` (production's D4
+  // first-slide rule) — a later slide's video does NOT flip `derivedFrom`
+  // away from `"NONE"`, it only flips `hasVideo`.
   const looksLikeVideoContent =
-    isReelOrShortLike || hasVideoPart || metadata.likeAndViewCountsDisabled === true;
+    isReelOrShortLike ||
+    (metadata.mediaType === "carousel" ? firstSlideIsVideo : hasVideoAnywhere) ||
+    metadata.likeAndViewCountsDisabled === true;
 
   const derivedFrom: ReachDerivedFrom = !looksLikeVideoContent
     ? "NONE"
     : metadata.mediaType === "carousel"
       ? "CAROUSEL_FIRST_SLIDE"
       : "TOP_LEVEL";
+
+  // B1: `hasVideo` scans EVERY slide (or is trivially true for a reel/
+  // short/single-video post) — independent of `derivedFrom`, mirroring
+  // `reach.ts`'s `hasVideoChild`/`hasReachFields(raw)` scans.
+  const hasVideo =
+    metadata.mediaType === "carousel" ? hasVideoAnywhere : isReelOrShortLike || looksLikeVideoContent;
 
   const reachKind: ReachKind | null =
     derivedFrom === "NONE" ? null : displayedViewCount == null ? "UNKNOWN" : isPlayCount ? "PLAYS" : "VIEWS";
@@ -67,6 +90,7 @@ export function buildTestComputedPerformanceBlock(metadata: MediaMetadata): Comp
     state: reachState,
     derivedFrom,
     laterSlideReach: { usable: false as const },
+    hasVideo,
   };
 
   const likeState = resolveInstagramLikeAvailability({

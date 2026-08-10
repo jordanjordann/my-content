@@ -43,7 +43,14 @@ vi.mock("@/lib/server/analysis/fetcher", () => ({
       mediaPartsTruncated: false,
     },
     ownerHint: null,
-    reachResult: { value: null, kind: null, state: "UNKNOWN", derivedFrom: "NONE", laterSlideReach: { usable: false } },
+    reachResult: {
+      value: null,
+      kind: null,
+      state: "UNKNOWN",
+      derivedFrom: "NONE",
+      laterSlideReach: { usable: false },
+      hasVideo: false,
+    },
   }),
 }));
 

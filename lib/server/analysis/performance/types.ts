@@ -115,6 +115,30 @@ export interface ReachResult {
    * `perf_reach_derived_from`).
    */
   laterSlideReach: LaterSlideReach;
+  /**
+   * PR #191 review, blocker B1: whether this post structurally carries
+   * video content ANYWHERE — a fact `derivedFrom === "NONE"` alone cannot
+   * answer. `derivedFrom: "NONE"` only means "slide 0 (or the top-level
+   * node) carries neither reach key"; a carousel with an image on slide 0
+   * and a video on slide 3 also lands there (that is exactly the shape
+   * `resolveLaterSlideReach()` exists to keep scanning past). Conflating
+   * the two — as `prompts/user.ts` used to (`isImageOnly = derivedFrom ===
+   * "NONE"`) — told a video-bearing carousel "this is image-only content,
+   * no reach data exists", a confident, wrong, user-facing statement.
+   *
+   * `true` whenever ANY node in the post (the top-level node, or any
+   * carousel child, first slide or not) carries the `video_play_count`/
+   * `video_view_count` reach KEYS — the SAME field-presence discriminator
+   * `hasReachFields()`/R-12.7.1 already uses to decide `derivedFrom` — not
+   * a second, independent "is this video" inference. `false` only when NO
+   * node in the post carries either key: a single image post, or a
+   * carousel every one of whose slides is an image. Deliberately
+   * independent of whether that video's own reach VALUE is usable — a
+   * video slide with `video_view_count: null` still makes `hasVideo` true;
+   * "no trustworthy number for this video" and "no video" are different
+   * facts (R-4.3.1's discipline, extended to content-kind).
+   */
+  hasVideo: boolean;
 }
 
 /** Result of a count-availability resolver (`availability.ts`). */

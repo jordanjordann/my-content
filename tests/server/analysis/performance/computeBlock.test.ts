@@ -55,11 +55,19 @@ function reelReach(): ReachResult {
     state: "AVAILABLE",
     derivedFrom: "TOP_LEVEL",
     laterSlideReach: { usable: false },
+    hasVideo: true,
   };
 }
 
 function noReach(): ReachResult {
-  return { value: null, kind: null, state: "UNKNOWN", derivedFrom: "NONE", laterSlideReach: { usable: false } };
+  return {
+    value: null,
+    kind: null,
+    state: "UNKNOWN",
+    derivedFrom: "NONE",
+    laterSlideReach: { usable: false },
+    hasVideo: false,
+  };
 }
 
 let client: Client;
@@ -227,6 +235,43 @@ describe("computePerformanceBlock — all-image carousel (§12.2)", () => {
     expect(result.tierUsed).toBe("UNAVAILABLE");
     expect(result.unavailableReason).not.toBeNull();
     expect(result.unavailableReason).toBe("CONTENT_KIND_UNSUPPORTED");
+  });
+});
+
+describe("computePerformanceBlock — PR #191 review, blocker B2: understated engagement while reporting HIGH confidence", () => {
+  it("likeState UNKNOWN (YouTube OR-21: likeCountInt 0) + commentState AVAILABLE + usable reach must NOT produce a comments-only Tier 1 ratio labelled REACH_ONLY/HIGH — the whole ratio must be null, reliability over coverage", async () => {
+    const { computePerformanceBlock } = await import("@/lib/server/analysis/performance/computeBlock");
+
+    const result = await computePerformanceBlock({
+      platform: "youtube",
+      mediaType: "reel",
+      analysisMode: "full_video",
+      reach: reelReach(),
+      // OR-21: YouTube likeCountInt of 0 resolves likeState UNKNOWN (real
+      // like count may be hidden/nonzero) — but the RAW likeCount fed here
+      // is 0, the exact shape that used to silently contribute 0 (not
+      // "unknown") to the numerator via ratios.ts's usableCount(null) === 0.
+      likeCount: 0,
+      commentCount: 500,
+      likeAndViewCountsDisabled: undefined,
+      followerCount: null,
+      audienceSourceFetchedAt: null,
+      postDate: new Date(Date.now() - 1000 * 60 * 60 * 200).toISOString(),
+      profileId: null,
+      analysisId: randomUUID(),
+      schemaVersion: SCHEMA_VERSION,
+    });
+
+    // Before the fix: tier1Ratio = { denominator: "REACH", ratio: 500 /
+    // 100_000, ... }, tierUsed "REACH_ONLY", confidence "HIGH" — a
+    // confident-looking number that silently excluded the (unknown, possibly
+    // large) like count. After the fix: no engagement numerator is
+    // trustworthy (likeState UNKNOWN), so no Tier 1 ratio is produced at
+    // all, and with no follower count for Tier 3 either, the whole score is
+    // UNAVAILABLE.
+    expect(result.tier1Ratio).toBeNull();
+    expect(result.tierUsed).toBe("UNAVAILABLE");
+    expect(result.confidence).toBe("NONE");
   });
 });
 

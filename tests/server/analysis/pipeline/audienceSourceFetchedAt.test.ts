@@ -76,6 +76,7 @@ beforeEach(async () => {
         state: "AVAILABLE",
         derivedFrom: "TOP_LEVEL",
         laterSlideReach: { usable: false },
+        hasVideo: true,
       },
     }),
   }));
@@ -147,7 +148,7 @@ afterEach(() => {
 describe("runAnalysis — audience_source_fetched_at (TDD §1.3, ticket #143 step 4)", () => {
   it("is written at analysis time and does NOT change when the profile cache is subsequently refreshed", async () => {
     const { runAnalysis } = await import("@/lib/server/analysis/pipeline");
-    const { getProfileByUsername, upsertProfile } = await import("@/lib/server/profiles/repository");
+    const { getProfileByUsername } = await import("@/lib/server/profiles/repository");
 
     const result = await runAnalysis({
       url: "https://www.instagram.com/reel/abc/",
@@ -170,22 +171,11 @@ describe("runAnalysis — audience_source_fetched_at (TDD §1.3, ticket #143 ste
     // Simulate a later profile cache refresh — `profiles.last_fetched_at`
     // moves forward, mutating the very value `audience_source_fetched_at`
     // was copied from. Forced to a fixed, unambiguously-later value via a
-    // direct write (rather than relying on `upsertProfile`'s `datetime('now')`,
-    // whose second-granularity could coincide with the write above within
-    // the same test run) so the inequality assertion below is not flaky.
-    await upsertProfile({
-      platform: "instagram",
-      username: "creator-audience-test",
-      externalId: "ext-1",
-      followerCount: 60_000,
-      followingCount: null,
-      fullName: null,
-      profilePicUrl: null,
-      biography: null,
-      isVerified: null,
-      isBusinessAccount: null,
-      isPrivate: null,
-    });
+    // direct write (rather than `upsertProfile`'s `datetime('now')`, whose
+    // second-granularity could coincide with the write above within the
+    // same test run, and which — PR #191 review C6 — this test does not
+    // otherwise need to call at all) so the inequality assertion below is
+    // not flaky.
     await client.execute({
       sql: "UPDATE profiles SET last_fetched_at = '2099-01-01 00:00:00' WHERE id = ?",
       args: [profileId],

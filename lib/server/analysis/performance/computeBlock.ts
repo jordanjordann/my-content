@@ -5,7 +5,7 @@ import {
   resolveYoutubeCommentAvailability,
   resolveYoutubeLikeAvailability,
 } from "./availability";
-import { computeBaseline, computeBucketKey, denominatorForBucket } from "./baseline";
+import { computeBaseline, computeBucketKey } from "./baseline";
 import type { AnalysisMode, MediaType } from "./baseline";
 import { MATURITY_FLOOR_HOURS } from "./constants";
 import { computeJudgement } from "./judgement";
@@ -69,6 +69,26 @@ function isUsableAvailability(state: AvailabilityState): boolean {
   return state === "AVAILABLE" || state === "ZERO";
 }
 
+/**
+ * PR #191 review, blocker B2 — reliability over coverage, owner-ruled. The
+ * numerator this function feeds `ratios.ts` is `likeCount + commentCount`
+ * (a SUM), so the gate that decides whether to compute it at all must
+ * require BOTH components to be trustworthy, not just one. The prior `||`
+ * gate let a single usable component (e.g. `commentState: "AVAILABLE"`)
+ * unlock the ratio while the OTHER component was `likeState: "UNKNOWN"` —
+ * `params.likeCount`, the RAW count, still got passed straight into
+ * `computeReachEngagementRatio`/`computeEngagementRate` below regardless of
+ * `likeState`, and `ratios.ts`'s own `usableCount(null)` silently reads as
+ * `0`, not "unknown" — so a post with real, hidden likes (OR-21: YouTube's
+ * `likeCountInt: 0`/`null`/absent all resolve `UNKNOWN`) rendered a
+ * comments-only ratio, understated by up to the hidden like count, labelled
+ * `tierUsed: "REACH_ONLY"` / `confidence: "HIGH"` with no demotion reason —
+ * a confident-looking wrong number. The owner's standing ruling is explicit:
+ * prefer producing NO figure over a partial one dressed up as complete. `&&`
+ * makes that the only reachable outcome — if either component is not
+ * individually `AVAILABLE`/`ZERO`, the whole ratio is `null`, never a
+ * partial sum.
+ */
 function resolveTier1Ratio(params: {
   reach: ReachResult;
   likeCount: number | null;
@@ -78,7 +98,7 @@ function resolveTier1Ratio(params: {
   followerCount: number | null;
 }): Tier1Ratio | null {
   const hasEngagementNumerator =
-    isUsableAvailability(params.likeState) || isUsableAvailability(params.commentState);
+    isUsableAvailability(params.likeState) && isUsableAvailability(params.commentState);
   if (!hasEngagementNumerator) {
     return null;
   }
@@ -184,10 +204,12 @@ export async function computePerformanceBlock(
 
   const reachValueForBaseline = isUsableAvailability(input.reach.state) ? input.reach.value : null;
 
-  // denominatorForBucket() throws on a malformed key — computeBucketKey()
-  // above already validated platform/mediaType/analysisMode, so this call
-  // only re-derives the axis, it does not re-validate.
-  denominatorForBucket(bucketKey);
+  // PR #191 review, C5: `denominatorForBucket(bucketKey)` used to be called
+  // here for its side effect only (a discarded return value) — but
+  // `computeBucketKey()` above already validated platform/mediaType/
+  // analysisMode and throws on anything malformed, so that call re-derived
+  // nothing new and asserted nothing `computeBucketKey()` hadn't already.
+  // Dropped rather than kept as a no-op "validation".
 
   // D5 part 3 / TDD §6: Tier 2's baseline excludes candidates younger than
   // the maturity floor. No `profileId` means no creator to compare against

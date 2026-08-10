@@ -199,13 +199,18 @@ function buildContextBlock(metadata: MediaMetadata): string | null {
  * prompt: `computeBlock.ts` -> `judgement`/`ratios.ts`. No fallback, no
  * second path, no default — the old inline derivation is deleted.
  *
- * `isImageOnly` is `computed.reach.derivedFrom === "NONE"` — the SAME fact
- * `reach.ts` (R-12.7.1, field-presence branching) already establishes for
- * `perf_reach_derived_from`, not a second, hand-rolled `mediaType`/
- * `mediaParts` inference. This is a strict improvement over the prior
- * hand-rolled check (PR #184 review blocker 2's own bug class — a
- * `mediaType`-only heuristic that could not see divergence 12/13's
- * video-in-carousel-with-null-top-level-fields shape).
+ * `isImageOnly` is `computed.reach.derivedFrom === "NONE" &&
+ * !computed.reach.hasVideo` (PR #191 review, blocker B1). `derivedFrom ===
+ * "NONE"` ALONE is not enough: it also fires for a carousel with an image
+ * on slide 0 and a video on slide 3 — the exact case
+ * `resolveLaterSlideReach()` exists to keep scanning past — which is video
+ * content, not image-only content. `computed.reach.hasVideo` is the SAME
+ * field-presence fact `reach.ts` (R-12.7.1) establishes across every node
+ * of the post (not just slide 0), reused here rather than a second,
+ * hand-rolled `mediaType`/`mediaParts` inference. This is a strict
+ * improvement over the prior hand-rolled check (PR #184 review blocker 2's
+ * own bug class — a `mediaType`-only heuristic that could not see
+ * divergence 12/13's video-in-carousel-with-null-top-level-fields shape).
  *
  * `realNumerals` (blocker 3, PR #184 re-review): NOT widened to admit the
  * context block's raw figures. The prompt also hands the model duration,
@@ -254,11 +259,14 @@ function resolvePerformanceAssessment(
     unavailable.push("rasio engagement (data yang dibutuhkan untuk menghitungnya tidak lengkap)");
   }
 
-  // AC-22, PR #184 review blocker 2: "no reach field exists at all" — the
-  // SAME fact reach.ts's field-presence branching (R-12.7.1) already
-  // establishes as `derivedFrom === "NONE"`, reused here rather than a
-  // second, hand-rolled `mediaType`/`mediaParts` inference.
-  const isImageOnly = computed.reach.derivedFrom === "NONE";
+  // AC-22, PR #184 review blocker 2 / PR #191 review blocker B1: "no reach
+  // field exists at all, AND no video exists anywhere in the post" — the
+  // SAME facts reach.ts's field-presence branching (R-12.7.1) already
+  // establishes as `derivedFrom === "NONE"` / `hasVideo`, reused here
+  // rather than a second, hand-rolled `mediaType`/`mediaParts` inference.
+  // `derivedFrom === "NONE"` alone is NOT sufficient — it also covers a
+  // video-bearing carousel whose video isn't on slide 0.
+  const isImageOnly = computed.reach.derivedFrom === "NONE" && !computed.reach.hasVideo;
 
   const lines: string[] = ["## Performance Assessment Data", ""];
 

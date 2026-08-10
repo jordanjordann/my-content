@@ -421,6 +421,82 @@ describe("buildUserPrompt — isImageOnly consults mediaType, not just a null vi
     expect(performanceBlock).not.toContain("image-only content");
   });
 
+  it("PR #191 review, blocker B1 (the regressed image-only bug): image on slide 0, video on slide 3 — derivedFrom is NONE (slide 0 has no reach fields), but this is NOT image-only content and must not be told so", () => {
+    // This is the exact shape `resolveLaterSlideReach()` exists to keep
+    // scanning past: slide 0 is an image (no reach fields at all), so
+    // `derivedFrom` is "NONE" — but slide 3 is a video. Before the B1 fix,
+    // `isImageOnly` was `derivedFrom === "NONE"` alone, which told a
+    // video-bearing carousel "this is image-only content, no reach data
+    // exists" — a confident, wrong, user-facing statement.
+    const metadata = baseMetadata({
+      mediaType: "carousel",
+      viewCount: null,
+      playCount: null,
+      likeCount: 500,
+      commentCount: 20,
+      followerCount: 10_000,
+      carouselItemCount: 4,
+      mediaParts: [
+        {
+          index: 0,
+          kind: "image",
+          url: "slide-0",
+          durationSec: null,
+          width: null,
+          height: null,
+          playCount: null,
+          viewCount: null,
+          displayedCountIsPlayCount: false,
+        },
+        {
+          index: 1,
+          kind: "image",
+          url: "slide-1",
+          durationSec: null,
+          width: null,
+          height: null,
+          playCount: null,
+          viewCount: null,
+          displayedCountIsPlayCount: false,
+        },
+        {
+          index: 2,
+          kind: "image",
+          url: "slide-2",
+          durationSec: null,
+          width: null,
+          height: null,
+          playCount: null,
+          viewCount: null,
+          displayedCountIsPlayCount: false,
+        },
+        {
+          index: 3,
+          kind: "video",
+          url: "slide-3",
+          durationSec: 12,
+          width: null,
+          height: null,
+          playCount: null,
+          viewCount: 999,
+          displayedCountIsPlayCount: false,
+        },
+      ],
+    });
+
+    const computed = buildTestComputedPerformanceBlock(metadata);
+    // Pins the test helper (B1b) alongside production: slide 0 alone
+    // decides derivedFrom (NONE here), while hasVideo scans every slide.
+    expect(computed.reach.derivedFrom).toBe("NONE");
+    expect(computed.reach.hasVideo).toBe(true);
+
+    const prompt = buildUserPrompt(metadata, "focus", computed);
+    const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
+
+    expect(performanceBlock).not.toContain("Konten ini berupa gambar");
+    expect(performanceBlock).not.toContain("image-only content");
+  });
+
   it("an all-image carousel still gets the image-only copy (AC-22, unchanged)", () => {
     const metadata = baseMetadata({
       mediaType: "carousel",
