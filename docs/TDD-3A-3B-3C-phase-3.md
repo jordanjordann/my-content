@@ -383,7 +383,8 @@ Phase 3 adds:
 lib/server/analysis/performance/
 ├── index.ts            # barrel — re-exports only
 ├── types.ts            # ReachKind, AvailabilityState, Denominator, Tier, Confidence,
-│                       # UnavailableReason, Tier1Ratio (discriminated union), ComputedPerformanceBlock
+│                       # UnavailableReason, Tier1Ratio (discriminated union),
+│                       # LaterSlideReach (discriminated union, §3.1), ComputedPerformanceBlock
 ├── constants.ts        # MATURITY_FLOOR_HOURS, BASELINE_MIN_SAMPLE, ROUNDING_TOLERANCE, bucket nouns
 ├── reach.ts            # resolveReach()      — the carousel/top-level branch (§5.1)
 ├── availability.ts     # resolveAvailability() — the four states (§5.4)
@@ -393,6 +394,15 @@ lib/server/analysis/performance/
 ├── judgement.ts        # NEW per OR-13: tierUsed, confidence, basedOnVideos, provisional,
 │                       # unavailableReason — all computed in code
 └── computeBlock.ts     # orchestrates the above into ComputedPerformanceBlock
+
+lib/server/analysis/carousel/       # NEW per TR-1 (§0.7), shipped by #180
+├── index.ts            # barrel — re-exports only
+├── types.ts            # CarouselEdge
+└── getCarouselEdges.ts # the ONE canonical slide derivation: every slide COUNT is
+                        # getCarouselEdges(raw).length, every slide INDEX is an index
+                        # into that PRE-FILTER array. Neutral (schema types only) so
+                        # fetcher/adapter.ts and media/resolveMediaParts.ts can depend
+                        # on it without inverting the layering onto performance/.
 
 lib/server/analysis/prose/
 ├── index.ts
@@ -482,16 +492,98 @@ Two further reasons it could not be repaired even if those two were patched:
 #### The ruling
 
 Compute the distinction **where the payload is in hand**, not by cross-module inference. At
-`resolveInstagramReach()`'s carousel `noneResult()` return, `children` is already in scope and
-`hasReachFields` is already the R-12.7.1-compliant presence check:
+`resolveInstagramReach()`'s carousel `noneResult()` return the carousel's own edges are already in scope, so
+the fact is established from the same payload, in the same function, with no cross-module inference.
+
+`ReachResult` gains **one additive field, `laterSlideReach`**, carrying that fact forward; `derivedFrom` is
+**unchanged** and keeps its three values. The judgement module (#143) maps it onto `unavailableReason` (§5.3).
+
+> **SUPERSEDED, 2026-08-10 (#172) — the original carrier, quoted so the record is not silently rewritten.**
+> As first written, this ruling read:
+>
+> > `hasReachFields` is already the R-12.7.1-compliant presence check:
+> >
+> > ```ts
+> > // same payload, same function, same presence discriminator — no inference
+> > const someSlideHasReach = children.some(hasReachFields);
+> > ```
+> >
+> > `ReachResult` gains one additive boolean carrying that fact forward.
+>
+> **Why it was written that way:** OR-26's question was *"are these two facts, or one?"* — and for answering
+> *that* question a boolean is sufficient. The carrier was chosen to be the smallest thing that answered it.
+>
+> **Why it could not survive.** Two separate defects, fixed in two stages:
+>
+> 1. **The predicate was presence-only** (`children.some(hasReachFields)`). PR #161's review established that
+>    a later slide merely *carrying* the reach keys is not enough — `video_view_count: null` on a later video
+>    slide satisfies a presence check while having **no count to print**. The predicate must require a
+>    **usable count**, i.e. a slide that `resolveNodeReach()` actually resolves to `AVAILABLE` or `ZERO`
+>    (a corroborated zero is a real fact, R-4.3.1; `UNKNOWN` is not usable).
+> 2. **The carrier was a boolean.** `DESIGN-3C` §5.4's **R-N1** is binding: the figure and its kind word are
+>    **required** whenever `REACH_NOT_ON_FIRST_SLIDE` renders. A boolean asserts a number exists while being
+>    structurally incapable of producing it — the exact fabricated-adjacent diagnosis **R-13.5.3a** exists to
+>    forbid. It was replaced by `LaterSlideReach` in PR #164, extended in PR #167.
+>
+> **OR-26's reasoning is unchanged and is NOT superseded** — see *"Why not a fourth `derivedFrom` value"*
+> below, and §5.3's three-outcome table. Only the carrier changed.
+
+#### The carrier as it actually ships — `LaterSlideReach` (#161, #164, #167)
+
+Declared in `lib/server/analysis/performance/types.ts`; consumed by #143. Reproduced here because §3.1 is the
+section #143 is scoped from, and scoping against prose is how the boolean survived this long:
 
 ```ts
-// same payload, same function, same presence discriminator — no inference
-const someSlideHasReach = children.some(hasReachFields);
+export type LaterSlideReach =
+  | { usable: false }
+  | {
+      usable: true;
+      value: number;                        // never negative
+      kind: Exclude<ReachKind, "UNKNOWN">;  // "PLAYS" | "VIEWS" — structurally excludes UNKNOWN
+      slideIndex: number;                   // 0-based index into the PRE-FILTER `edges` array
+      slideCount: number;                   // `edges.length`, pre-filter — the SAME array
+    };
 ```
 
-`ReachResult` gains one additive boolean carrying that fact forward; `derivedFrom` is **unchanged** and keeps
-its three values. The judgement module (#143) maps it onto `unavailableReason` (§5.3).
+**This shape is the guard. It is not a description of a guard.** Five properties are enforced by `tsc`, not by
+this paragraph — which is the whole reason this correction exists (a doc comment claimed a guarantee the type
+system did not hold):
+
+1. `{ usable: true, value: 5 }` **does not compile** — `kind` is required, so R-N2's *"value and kind travel
+   together"* cannot be violated.
+2. `kind` cannot be `"UNKNOWN"` — R-N2's second half. A later slide whose kind cannot be established degrades
+   the **whole union** to `{ usable: false }`; it never travels as an unlabelled number.
+3. `{ usable: false }` has **no read path** to `value`, `kind`, `slideIndex` or `slideCount`. There is nothing
+   to reach for without first narrowing on `usable: true`.
+4. All four payload fields are **required**, not optional. The single production construction site
+   (`resolveLaterSlideReach()` in `reach.ts`) always knows its own position and the total it scanned, so
+   optionality would only buy every consumer a `??` fallback for a case that cannot occur.
+5. Illegal states are **unrepresentable, not merely documented.** Per TR-2 (§0.7), *doc comments are not
+   guards.*
+
+**Provenance of `slideIndex` / `slideCount` — the thing most likely to be silently re-broken (#167, TR-1).**
+Both come from the **pre-filter `edges` array**, reached through the one canonical derivation
+`getCarouselEdges()` (`lib/server/analysis/carousel/`, promoted there by **#180** under TR-1). They must
+**never** be derived from a filtered/compacted children array: a single null `edge.node` before the usable
+slide shifts every later index down by one and prints *"slide 6"* for what the user sees as the 7th slide.
+Pairing an `edges`-derived `slideIndex` with a filtered-array `slideCount` produces a second, equally
+confident wrong number (*"slide 6 of 9"* on a 10-slide carousel). The scan skips null nodes with `continue`;
+it does not remove them from the array first.
+
+**R-N3 is binding and stays visible:** if more than one later slide carries a usable count, use the **first**
+one, and only **its own** value and kind — **never** a sum, maximum or mean across slides. A per-post reach
+figure is something D4 / R-D3 have explicitly declined to compute.
+
+**R-N4's status changed at the type level (#167), and its design intent did not.** R-N4 calls `slideIndex` a
+*nice-to-have*. It is now **required** in TS, because the producer always has it. R-N4's actual intent — *a
+missing index must never suppress the figure* — is unaffected and is now unreachable-by-construction rather
+than a rule to remember. The next reader should not have to reconcile the word "optional" with a required
+field, so it is written down here.
+
+**The fallback is mandatory, and it is the reliability-over-coverage side of the trade (R-N1, R-13.5.3a).**
+If either the value or the kind cannot be established, `laterSlideReach` is `{ usable: false }`,
+`REACH_NOT_ON_FIRST_SLIDE` **must not render**, and the row falls back to **`CAUSE_NOT_DETERMINABLE`** (§5.3).
+Worse product, but not a false one.
 
 **Why not a fourth `derivedFrom` value:** `derivedFrom` answers *"where did this number come from"*. When
 there is no number, `NONE` is the complete and correct answer to that question. The split is a *why*, and
@@ -652,9 +744,14 @@ value may ever be written on the YouTube path at all.
 #### Migration **`013_reach_unavailable_reason.sql`** — and 3A renumbers to `014`
 
 **Ticket: [#155](https://github.com/jordanjordann/my-content/issues/155)** (3B-7). It carries the migration,
-the `ReachResult` boolean and the `reach.ts` change. It is **unblocked** (its inputs #151 and #152 are merged)
-and **blocks #143**, which consumes the boolean and writes the new enum value. #143 no longer carries the
-migration.
+the `ReachResult.laterSlideReach` field (`LaterSlideReach`, §3.1 — **not** the boolean this line originally
+said; corrected 2026-08-10, #172) and the `reach.ts` change. It is **unblocked** (its inputs #151 and #152 are
+merged) and **blocks #143**, which consumes `laterSlideReach` and writes the new enum value. #143 no longer
+carries the migration.
+
+**#143 reads `laterSlideReach.usable` — never a presence check of its own.** The `REACH_NOT_ON_FIRST_SLIDE`
+row above is writable **only** when `laterSlideReach.usable === true`; when it is `false`, the row is
+`CAUSE_NOT_DETERMINABLE`, per R-N1 (§3.1).
 
 Migration **012 is merged**, so its `CHECK` on `perf_unavailable_reason` is live. **SQLite cannot alter a
 `CHECK` in place**, so this is a **full `analyses` table rebuild** following 012's own pattern (which
@@ -1423,7 +1520,7 @@ The PRD is **wrong on `main`**. These edits are applied in the same PR as this T
                  └► 3B-5 [BE] judgement module + pipeline wiring + persistence   [also needs 3B-7]
                       └► 3B-6 [BE] read path + API response shape + server-side pagination
 
-3B-7 [BE] migration 013 + ReachResult boolean (OR-26, #155)   [needs only 3B-1 + 3B-2, both MERGED]
+3B-7 [BE] migration 013 + ReachResult.laterSlideReach (OR-26, #155)   [needs only 3B-1 + 3B-2, both MERGED]
   └► blocks 3B-5 (#143); should also precede 3B-6 (#144) so the read path types 7 values, not 6.
      Runs in PARALLEL with 3B-3 (#141) and 3B-4 (#142) — no shared files.
 
