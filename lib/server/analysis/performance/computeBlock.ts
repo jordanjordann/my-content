@@ -8,7 +8,7 @@ import {
 import { computeBaseline, computeBucketKey } from "./baseline";
 import type { AnalysisMode, MediaType } from "./baseline";
 import { MATURITY_FLOOR_HOURS } from "./constants";
-import { computeJudgement } from "./judgement";
+import { computeJudgement, hasComputableEngagementNumerator } from "./judgement";
 import { computeEngagementRate, computeReachEngagementRatio, computeReachPerFollower } from "./ratios";
 import type {
   AvailabilityState,
@@ -88,6 +88,13 @@ function isUsableAvailability(state: AvailabilityState): boolean {
  * makes that the only reachable outcome — if either component is not
  * individually `AVAILABLE`/`ZERO`, the whole ratio is `null`, never a
  * partial sum.
+ *
+ * PR #191 review, N1 — this gate now lives in `judgement.ts`'s
+ * `hasComputableEngagementNumerator`, the ONE shared home for this
+ * predicate. `resolveUnavailableReason` in that same module reads the
+ * identical gate to decide `CAUSE_NOT_DETERMINABLE` vs `NO_AUDIENCE_DATA`
+ * for the case this function rejects — two inline copies of this `&&`
+ * had already drifted into a `&&`/`||` disagreement once; this is the fix.
  */
 function resolveTier1Ratio(params: {
   reach: ReachResult;
@@ -97,8 +104,10 @@ function resolveTier1Ratio(params: {
   commentState: AvailabilityState;
   followerCount: number | null;
 }): Tier1Ratio | null {
-  const hasEngagementNumerator =
-    isUsableAvailability(params.likeState) && isUsableAvailability(params.commentState);
+  const hasEngagementNumerator = hasComputableEngagementNumerator({
+    likeState: params.likeState,
+    commentState: params.commentState,
+  });
   if (!hasEngagementNumerator) {
     return null;
   }

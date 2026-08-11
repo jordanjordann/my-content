@@ -115,6 +115,31 @@ function isUsable(state: AvailabilityState): boolean {
 }
 
 /**
+ * PR #191 review, blocker N1 — the single home for "is the engagement
+ * numerator (likes + comments) trustworthy enough to compute a SUM from".
+ * Before this fix, `computeBlock.ts`'s `resolveTier1Ratio` gated the same
+ * question with `&&` (blocker B2's owner-ruled fix: a partial sum dressed
+ * up as complete is a confident-looking wrong number) while this module
+ * gated a DIFFERENT branch of the same question with `||` — two
+ * independently-maintained copies of one predicate that had already
+ * drifted (TR-1/TR-2's exact failure class). `computeBlock.ts` and
+ * `judgement.ts` both import THIS function now; neither keeps its own
+ * inline expression.
+ *
+ * `||` ("is there ANY usable numerator at all") is still a genuinely
+ * different question — it answers "does this content expose literally
+ * nothing to score" (`CONTENT_KIND_UNSUPPORTED`'s PRD §12.6 collapse case)
+ * — and is kept as its own local check in `resolveUnavailableReason` below,
+ * not folded into this function.
+ */
+export function hasComputableEngagementNumerator(params: {
+  likeState: AvailabilityState;
+  commentState: AvailabilityState;
+}): boolean {
+  return isUsable(params.likeState) && isUsable(params.commentState);
+}
+
+/**
  * `provisional` — PRD §4.5 point 2 / TDD §4: `post_age_hours < MATURITY_FLOOR_HOURS`.
  * `null` age (unresolvable `postDate`) is NOT treated as provisional — there
  * is no evidence the post is young, and asserting "early" without evidence
@@ -262,8 +287,16 @@ export function determineTierUsed(params: {
  *         `resolveHiddenCountsUnavailableReason` as `null` (the PR #179/#184
  *         fold-in's "AC-30 hole") — it now lands here instead of falling
  *         off the end of this function.
- *      c. otherwise (a numerator exists, no follower count) ->
- *         `NO_AUDIENCE_DATA` (R-12.2.4).
+ *      c. a numerator exists but no follower count -> `NO_AUDIENCE_DATA`
+ *         (R-12.2.4).
+ *      d. a numerator exists AND a follower count exists (PR #191 review,
+ *         N1) -> `CAUSE_NOT_DETERMINABLE`. The only way `UNAVAILABLE` is
+ *         reached with both present is `computeBlock.ts`'s
+ *         `resolveTier1Ratio` rejecting a PARTIAL numerator via the shared
+ *         `hasComputableEngagementNumerator` gate (one of like/comment
+ *         usable, not both) — owner-ruled: this is an epistemic gap, not a
+ *         missing-audience-data one, so it must not share
+ *         `NO_AUDIENCE_DATA`'s enum value (R-13.5.3a).
  * 4. **Instagram, reach field exists but is unusable**
  *    (`derivedFrom !== "NONE"`, state not `AVAILABLE`/`ZERO`) ->
  *    `REACH_UNKNOWN`. This is the AC-30 fix's video-content branch — the
@@ -300,7 +333,14 @@ export function resolveUnavailableReason(params: {
   followerCount: number | null;
 }): UnavailableReason {
   const reachUsable = isUsable(params.reach.state);
-  const hasEngagementNumerator = isUsable(params.likeState) || isUsable(params.commentState);
+  // "ANY usable numerator at all" — a different question from the shared
+  // `hasComputableEngagementNumerator` gate below (see that function's doc):
+  // this one only decides the true collapse case, `CONTENT_KIND_UNSUPPORTED`.
+  const hasAnyUsableNumerator = isUsable(params.likeState) || isUsable(params.commentState);
+  const hasComputableNumerator = hasComputableEngagementNumerator({
+    likeState: params.likeState,
+    commentState: params.commentState,
+  });
   const hasFollowerCount = params.followerCount != null && params.followerCount > 0;
 
   // C2 (PR #191 review): checked BEFORE `resolveHiddenCountsUnavailableReason`
@@ -331,10 +371,32 @@ export function resolveUnavailableReason(params: {
     if (params.reach.laterSlideReach.usable) {
       return "REACH_NOT_ON_FIRST_SLIDE";
     }
-    if (!hasEngagementNumerator) {
+    if (!hasAnyUsableNumerator) {
       return "CONTENT_KIND_UNSUPPORTED";
     }
-    return "NO_AUDIENCE_DATA";
+    if (!hasFollowerCount) {
+      return "NO_AUDIENCE_DATA";
+    }
+    if (!hasComputableNumerator) {
+      // PR #191 review, N1 (owner ruling): a numerator component IS usable
+      // and a follower count IS known, but the shared
+      // `hasComputableEngagementNumerator` gate (the same one
+      // `computeBlock.ts`'s `resolveTier1Ratio` uses) rejected this
+      // PARTIAL numerator — one of like/comment usable, not both (B2's
+      // reliability-over-coverage rule forbids summing a partial numerator
+      // and calling it complete). We genuinely cannot determine engagement
+      // here; asserting "no follower count" would be false (one exists) —
+      // exactly the confident-wrong-fact class `CAUSE_NOT_DETERMINABLE`
+      // exists to name instead (R-13.5.3a).
+      return "CAUSE_NOT_DETERMINABLE";
+    }
+    // Both numerator components usable AND a follower count exists —
+    // `resolveTier1Ratio` would already have produced a `FOLLOWERS`-
+    // denominated Tier 1 ratio, so `tierUsed` could not be `UNAVAILABLE`
+    // here. Defensive catch-all only, not a documented scenario — same
+    // posture as item 6's catch-all below, mapped to the same truthful
+    // reason rather than a thrown assertion.
+    return "CAUSE_NOT_DETERMINABLE";
   }
 
   if (!reachUsable) {

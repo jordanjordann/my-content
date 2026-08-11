@@ -238,6 +238,41 @@ describe("computePerformanceBlock — all-image carousel (§12.2)", () => {
   });
 });
 
+describe("computePerformanceBlock — PR #191 review, blocker N1: the two numerator gates must agree", () => {
+  it("all-image carousel, ONE usable numerator component, REAL follower count -> CAUSE_NOT_DETERMINABLE, never NO_AUDIENCE_DATA", async () => {
+    const { computePerformanceBlock } = await import("@/lib/server/analysis/performance/computeBlock");
+
+    const result = await computePerformanceBlock({
+      platform: "instagram",
+      mediaType: "carousel",
+      analysisMode: "images_only",
+      reach: noReach(),
+      // likeCount is real and usable; commentCount is absent (UNKNOWN) — a
+      // PARTIAL numerator. Unlike the B2 test above (`followerCount: null`,
+      // which hits the truthful NO_AUDIENCE_DATA branch and cannot catch
+      // this), this creator HAS a real follower count.
+      likeCount: 32_313,
+      commentCount: null,
+      likeAndViewCountsDisabled: false,
+      followerCount: 10_000,
+      audienceSourceFetchedAt: null,
+      postDate: new Date(Date.now() - 1000 * 60 * 60 * 200).toISOString(),
+      profileId: null,
+      analysisId: randomUUID(),
+      schemaVersion: SCHEMA_VERSION,
+    });
+
+    // Before the fix: `judgement.ts`'s `hasEngagementNumerator` used `||`,
+    // read the lone usable `likeState` as "a numerator exists", and fell
+    // through to `NO_AUDIENCE_DATA` — rendered to the user as "No follower
+    // count available" for a creator with 10,000 followers.
+    expect(result.tier1Ratio).toBeNull();
+    expect(result.tierUsed).toBe("UNAVAILABLE");
+    expect(result.unavailableReason).toBe("CAUSE_NOT_DETERMINABLE");
+    expect(result.unavailableReason).not.toBe("NO_AUDIENCE_DATA");
+  });
+});
+
 describe("computePerformanceBlock — PR #191 review, blocker B2: understated engagement while reporting HIGH confidence", () => {
   it("likeState UNKNOWN (YouTube OR-21: likeCountInt 0) + commentState AVAILABLE + usable reach must NOT produce a comments-only Tier 1 ratio labelled REACH_ONLY/HIGH — the whole ratio must be null, reliability over coverage", async () => {
     const { computePerformanceBlock } = await import("@/lib/server/analysis/performance/computeBlock");

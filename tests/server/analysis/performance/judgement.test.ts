@@ -381,6 +381,39 @@ describe("resolveUnavailableReason — every branch reachable and distinct", () 
     expect(result).toBe("NO_AUDIENCE_DATA");
   });
 
+  it("PR #191 review N1 — CAUSE_NOT_DETERMINABLE, never NO_AUDIENCE_DATA, when an all-image carousel has ONE usable numerator component AND a REAL follower count", () => {
+    // Case 4 (owner ruling on PR #191's re-review): an all-image carousel
+    // (`derivedFrom: "NONE"` — no reach field at all) where `likeState` is
+    // usable but `commentState` is not (e.g. comments simply weren't
+    // returned). `computeBlock.ts`'s `resolveTier1Ratio` correctly rejects
+    // this PARTIAL numerator via the shared `hasComputableEngagementNumerator`
+    // `&&` gate (B2) and produces no Tier 1 ratio, so `tierUsed` reaches
+    // `UNAVAILABLE`. Before this fix, `resolveUnavailableReason` gated the
+    // SAME question with `||` — which reads a lone usable `likeState` as
+    // "an engagement numerator exists" and fell through to `NO_AUDIENCE_DATA`
+    // even though `followerCount` is real (10,000) — a confident-wrong
+    // "No follower count available" for a creator who HAS one.
+    const result = resolveUnavailableReason({
+      platform: "instagram",
+      reach: reach({ state: "UNKNOWN", value: null, kind: null, derivedFrom: "NONE" }),
+      likeAndViewCountsDisabled: false,
+      likeState: "AVAILABLE",
+      commentState: "UNKNOWN",
+      followerCount: 10_000,
+    });
+
+    expect(result).toBe("CAUSE_NOT_DETERMINABLE");
+    expect(result).not.toBe("NO_AUDIENCE_DATA");
+
+    // And the rendered L1 string must not be DESIGN-3B row 4's "no follower
+    // count" copy — that would assert a false DATA fact when a follower
+    // count exists. It renders row 3's epistemic copy instead (the only
+    // approved string for this reason).
+    const rendered = renderHiddenCountsReasonShortForm(result as "CAUSE_NOT_DETERMINABLE");
+    expect(rendered).toBe("No performance data published");
+    expect(rendered).not.toBe("No follower count available");
+  });
+
   it("REACH_UNKNOWN — Instagram video content whose reach field exists but is unusable, flag confirmed false", () => {
     const result = resolveUnavailableReason({
       platform: "instagram",
