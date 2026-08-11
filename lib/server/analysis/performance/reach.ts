@@ -149,8 +149,8 @@ function resolveLaterSlideReach(edges: CarouselEdge[]): LaterSlideReach {
   return { usable: false };
 }
 
-function noneResult(laterSlideReach: LaterSlideReach = { usable: false }): ReachResult {
-  return { value: null, kind: null, state: "UNKNOWN", derivedFrom: "NONE", laterSlideReach };
+function noneResult(laterSlideReach: LaterSlideReach = { usable: false }, hasVideo = false): ReachResult {
+  return { value: null, kind: null, state: "UNKNOWN", derivedFrom: "NONE", laterSlideReach, hasVideo };
 }
 
 /**
@@ -180,6 +180,16 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
     // `REACH_NOT_ON_FIRST_SLIDE` path for a post that qualifies for it.
     const edges = getCarouselEdges(raw);
     const firstSlide = edges[0]?.node;
+    // B1 (PR #191 review): scanned once here, over the WHOLE pre-filter
+    // `edges` array — the SAME field-presence discriminator `hasReachFields`
+    // already applies per-node — and reused for BOTH branches below, so
+    // `hasVideo` never depends on which slide happened to carry reach
+    // fields first. A carousel with an image on slide 0 and a video on
+    // slide 3 (video's own `video_view_count` possibly still unusable)
+    // resolves `hasVideo: true` here even though `derivedFrom` stays
+    // `"NONE"` — that split is exactly what `isImageOnly` in
+    // `prompts/user.ts` must consult instead of `derivedFrom` alone.
+    const hasVideoChild = edges.some((edge) => edge.node != null && hasReachFields(edge.node));
     if (!firstSlide || !hasReachFields(firstSlide)) {
       // OR-26 / #155: distinguish "no slide in this carousel carries a
       // reach field" from "slide 0 doesn't, but a later slide does" —
@@ -197,7 +207,7 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
       // reused here, rather than calling `getCarouselEdges(raw)` a second
       // time — same behaviour, one fewer redundant derivation.
       const laterSlideReach = resolveLaterSlideReach(edges);
-      return noneResult(laterSlideReach);
+      return noneResult(laterSlideReach, hasVideoChild);
     }
 
     const node = resolveNodeReach(firstSlide, "view");
@@ -205,6 +215,7 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
       ...node,
       derivedFrom: "CAROUSEL_FIRST_SLIDE" as ReachDerivedFrom,
       laterSlideReach: { usable: false },
+      hasVideo: true,
     };
   }
 
@@ -213,7 +224,12 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
   }
 
   const node = resolveNodeReach(raw, "play");
-  return { ...node, derivedFrom: "TOP_LEVEL" as ReachDerivedFrom, laterSlideReach: { usable: false } };
+  return {
+    ...node,
+    derivedFrom: "TOP_LEVEL" as ReachDerivedFrom,
+    laterSlideReach: { usable: false },
+    hasVideo: true,
+  };
 }
 
 /**
@@ -228,22 +244,65 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
  * never in the response), while `TOP_LEVEL` is "the field exists" even when
  * its value is unusable (`null`, negative, non-finite).
  */
+/**
+ * `hasVideo` is unconditionally `true` on every branch here (B1, PR #191
+ * review): every YouTube post this module resolves reach for IS a video —
+ * there is no YouTube image-only content kind in this pipeline. `NONE`
+ * here means "the `viewCountInt` field itself was never in the response",
+ * not "no video exists" — unlike Instagram's `NONE`, it must never be read
+ * as image-only content by `prompts/user.ts`.
+ */
 export function resolveYoutubeReach(viewCountInt: unknown): ReachResult {
   if (viewCountInt === undefined) {
-    return { value: null, kind: "UNKNOWN", state: "UNKNOWN", derivedFrom: "NONE", laterSlideReach: { usable: false } };
+    return {
+      value: null,
+      kind: "UNKNOWN",
+      state: "UNKNOWN",
+      derivedFrom: "NONE",
+      laterSlideReach: { usable: false },
+      hasVideo: true,
+    };
   }
 
   const value = num(viewCountInt);
 
   if (value === null) {
-    return { value: null, kind: "UNKNOWN", state: "UNKNOWN", derivedFrom: "TOP_LEVEL", laterSlideReach: { usable: false } };
+    return {
+      value: null,
+      kind: "UNKNOWN",
+      state: "UNKNOWN",
+      derivedFrom: "TOP_LEVEL",
+      laterSlideReach: { usable: false },
+      hasVideo: true,
+    };
   }
   if (value < 0) {
-    return { value: null, kind: "UNKNOWN", state: "UNKNOWN", derivedFrom: "TOP_LEVEL", laterSlideReach: { usable: false } };
+    return {
+      value: null,
+      kind: "UNKNOWN",
+      state: "UNKNOWN",
+      derivedFrom: "TOP_LEVEL",
+      laterSlideReach: { usable: false },
+      hasVideo: true,
+    };
   }
   if (value === 0) {
-    return { value: 0, kind: "VIEWS", state: "ZERO", derivedFrom: "TOP_LEVEL", laterSlideReach: { usable: false } };
+    return {
+      value: 0,
+      kind: "VIEWS",
+      state: "ZERO",
+      derivedFrom: "TOP_LEVEL",
+      laterSlideReach: { usable: false },
+      hasVideo: true,
+    };
   }
 
-  return { value, kind: "VIEWS", state: "AVAILABLE", derivedFrom: "TOP_LEVEL", laterSlideReach: { usable: false } };
+  return {
+    value,
+    kind: "VIEWS",
+    state: "AVAILABLE",
+    derivedFrom: "TOP_LEVEL",
+    laterSlideReach: { usable: false },
+    hasVideo: true,
+  };
 }

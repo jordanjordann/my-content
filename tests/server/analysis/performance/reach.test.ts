@@ -34,6 +34,7 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
       state: "AVAILABLE",
       derivedFrom: "TOP_LEVEL",
       laterSlideReach: { usable: false },
+      hasVideo: true,
     });
   });
 
@@ -48,10 +49,11 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
       state: "AVAILABLE",
       derivedFrom: "CAROUSEL_FIRST_SLIDE",
       laterSlideReach: { usable: false },
+      hasVideo: true,
     });
   });
 
-  it("AC-6/AC-18 — an all-image carousel yields no reach value and no kind, derivedFrom NONE", () => {
+  it("AC-6/AC-18 — an all-image carousel yields no reach value and no kind, derivedFrom NONE, hasVideo false (B1: genuinely no video anywhere)", () => {
     const media = loadMedia("ig_carousel_all_images_10_slides.json");
 
     const result = resolveInstagramReach(media);
@@ -62,6 +64,7 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
       state: "UNKNOWN",
       derivedFrom: "NONE",
       laterSlideReach: { usable: false },
+      hasVideo: false,
     });
   });
 
@@ -73,6 +76,7 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
     expect(result.derivedFrom).toBe("NONE");
     expect(result.value).toBeNull();
     expect(result.kind).toBeNull();
+    expect(result.hasVideo).toBe(false);
     // Regression guard for the falsified analysis_mode derivation (TDD
     // §3.1): a single image post is metadata_only, not images_only, so a
     // reader keyed off analysis_mode would misread this as case 2. It is
@@ -110,6 +114,11 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
     expect(result.derivedFrom).toBe("NONE");
     expect(result.value).toBeNull();
     expect(result.kind).toBeNull();
+    // B1 (PR #191 review): this carousel has 7 real video slides — merely
+    // relocated to indices 1-9 by the swap. `derivedFrom` staying "NONE"
+    // must not be read as "image-only content" (that is exactly the bug
+    // B1 fixes) — `hasVideo` is the fact that distinguishes them.
+    expect(result.hasVideo).toBe(true);
     expect(result.laterSlideReach).toEqual({
       usable: true,
       value: 163_868,
@@ -165,6 +174,10 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
     expect(result.derivedFrom).toBe("NONE");
     expect(result.value).toBeNull();
     expect(result.kind).toBeNull();
+    // B1: the reach KEYS are still present on every video slide (only their
+    // VALUES were nulled) — `hasVideo` is a presence check, so it stays
+    // true even though no slide's reach VALUE is usable.
+    expect(result.hasVideo).toBe(true);
     expect(result.laterSlideReach).toEqual({ usable: false });
   });
 
@@ -205,6 +218,7 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
       state: "ZERO",
       derivedFrom: "TOP_LEVEL",
       laterSlideReach: { usable: false },
+      hasVideo: true,
     });
   });
 
@@ -227,6 +241,11 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
 
     const result = resolveInstagramReach(media);
     expect(result.derivedFrom).toBe("NONE");
+    // B1 (PR #191 review, the regressed image-only bug): image on slide 0,
+    // video on slide 3 (here slide 1) is exactly the shape that must NOT be
+    // told "this is image-only content, no reach data exists" — `hasVideo`
+    // must be true even though `derivedFrom` is "NONE".
+    expect(result.hasVideo).toBe(true);
     // OR-26 / #155 / R-N2: this is exactly case 2 — slide 0 has no reach
     // fields but a later slide does, with a genuinely usable value — so the
     // figure and its kind must travel together, at the later slide's index.
@@ -339,10 +358,11 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
       state: "ZERO",
       derivedFrom: "CAROUSEL_FIRST_SLIDE",
       laterSlideReach: { usable: false },
+      hasVideo: true,
     });
   });
 
-  it("an empty carousel (no children) resolves NONE rather than throwing", () => {
+  it("an empty carousel (no children) resolves NONE rather than throwing, hasVideo false", () => {
     const media = makeCarousel([]);
 
     // [].some(...) is false — the empty-children case falls out correctly
@@ -353,6 +373,7 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
       state: "UNKNOWN",
       derivedFrom: "NONE",
       laterSlideReach: { usable: false },
+      hasVideo: false,
     });
   });
 
@@ -385,6 +406,7 @@ describe("resolveInstagramReach — synthetic branch pins", () => {
       state: "AVAILABLE",
       derivedFrom: "CAROUSEL_FIRST_SLIDE",
       laterSlideReach: { usable: false },
+      hasVideo: true,
     });
   });
 
@@ -532,6 +554,7 @@ describe("resolveYoutubeReach", () => {
       state: "AVAILABLE",
       derivedFrom: "TOP_LEVEL",
       laterSlideReach: { usable: false },
+      hasVideo: true,
     });
   });
 
@@ -572,6 +595,7 @@ describe("resolveYoutubeReach", () => {
       state: "ZERO",
       derivedFrom: "TOP_LEVEL",
       laterSlideReach: { usable: false },
+      hasVideo: true,
     });
   });
 });

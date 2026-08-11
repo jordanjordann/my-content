@@ -1,6 +1,7 @@
 import { computePerformanceAssessmentBlock } from "@/lib/server/analysis/prompts";
 import { assertPerformanceProseIsSafe } from "@/lib/server/analysis/prose";
 import { ANALYSIS_SCHEMA_VERSION } from "@/lib/server/analysis/schema/constants";
+import type { ComputedPerformanceBlock } from "@/lib/server/analysis/performance/types";
 import type { ContentAnalysis, MediaMetadata } from "@/lib/server/analysis/types";
 import { assertContentAnalysis } from "./validation";
 
@@ -19,15 +20,25 @@ import { assertContentAnalysis } from "./validation";
  * (`ProseQualifierError`/`NumeralFabricationError`) on a bare unqualified
  * percentage or a fabricated numeral in `performance.verdict`/`drivers[]`.
  * No stripping, no rewriting, no automatic repair retry (§8.2/§8.3). The
- * computed block it checks against is derived from the SAME `metadata` the
- * prompt was built from (`computePerformanceAssessmentBlock`,
- * `prompts/user.ts`), never a second, independently-derived figure.
+ * computed block it checks against is the SAME `ComputedPerformanceBlock`
+ * (`computeBlock.ts`) the prompt was built from
+ * (`computePerformanceAssessmentBlock`, `prompts/user.ts`) — passed through
+ * from the pipeline, never a second, independently-derived figure (ticket
+ * #143 — `computeBlock.ts` is computed exactly once per analysis, including
+ * its one DB read for the Tier 2 baseline).
  */
-export function parseContentAnalysis(text: string, metadata: MediaMetadata): ContentAnalysis {
+export function parseContentAnalysis(
+  text: string,
+  metadata: MediaMetadata,
+  computedBlock: ComputedPerformanceBlock,
+): ContentAnalysis {
   const parsed: unknown = JSON.parse(text);
   const validated = assertContentAnalysis(parsed);
 
-  assertPerformanceProseIsSafe(validated.performance, computePerformanceAssessmentBlock(metadata));
+  assertPerformanceProseIsSafe(
+    validated.performance,
+    computePerformanceAssessmentBlock(metadata, computedBlock),
+  );
 
   // [TAXONOMY] instrumentation (TDD §4.6, PRD §4.3.5/§4.3.6): one structured
   // log line per completed analysis carrying the classified values, so the

@@ -1,10 +1,9 @@
 /**
  * Types for the performance module (TDD §2 module placement, §6 type
- * unions). This ticket (#140) only needs the subset that `reach.ts`,
- * `availability.ts` and `ratios.ts` produce/consume — `Tier`, `Confidence`,
- * `UnavailableReason` and the full `ComputedPerformanceBlock` belong to
- * `judgement.ts`/`computeBlock.ts` (3B-5, out of scope here) and are not
- * declared prematurely.
+ * unions). `Tier`, `Confidence`, `ConfidenceReason`, `UnavailableReason` and
+ * `ComputedPerformanceBlock` are ticket #143's (3B-5) — declared here per
+ * TDD §2's module map (`types.ts` is the single source of truth for the
+ * whole module, not `judgement.ts`/`computeBlock.ts` individually).
  */
 
 /**
@@ -116,6 +115,30 @@ export interface ReachResult {
    * `perf_reach_derived_from`).
    */
   laterSlideReach: LaterSlideReach;
+  /**
+   * PR #191 review, blocker B1: whether this post structurally carries
+   * video content ANYWHERE — a fact `derivedFrom === "NONE"` alone cannot
+   * answer. `derivedFrom: "NONE"` only means "slide 0 (or the top-level
+   * node) carries neither reach key"; a carousel with an image on slide 0
+   * and a video on slide 3 also lands there (that is exactly the shape
+   * `resolveLaterSlideReach()` exists to keep scanning past). Conflating
+   * the two — as `prompts/user.ts` used to (`isImageOnly = derivedFrom ===
+   * "NONE"`) — told a video-bearing carousel "this is image-only content,
+   * no reach data exists", a confident, wrong, user-facing statement.
+   *
+   * `true` whenever ANY node in the post (the top-level node, or any
+   * carousel child, first slide or not) carries the `video_play_count`/
+   * `video_view_count` reach KEYS — the SAME field-presence discriminator
+   * `hasReachFields()`/R-12.7.1 already uses to decide `derivedFrom` — not
+   * a second, independent "is this video" inference. `false` only when NO
+   * node in the post carries either key: a single image post, or a
+   * carousel every one of whose slides is an image. Deliberately
+   * independent of whether that video's own reach VALUE is usable — a
+   * video slide with `video_view_count: null` still makes `hasVideo` true;
+   * "no trustworthy number for this video" and "no video" are different
+   * facts (R-4.3.1's discipline, extended to content-kind).
+   */
+  hasVideo: boolean;
 }
 
 /** Result of a count-availability resolver (`availability.ts`). */
@@ -256,4 +279,82 @@ export type BaselineResult =
  */
 export function assertNever(value: never): never {
   throw new Error(`assertNever: unreachable case reached with value ${JSON.stringify(value)}`);
+}
+
+/**
+ * OR-13 (PRD §5.2 / TDD §4). Which of the three graceful-degradation tiers
+ * (PRD §3.3) actually produced `performanceScore`. `REACH_ONLY` covers BOTH
+ * a reach-denominated Tier 1 ratio AND a follower-denominated one (all-image
+ * content, §12.2) — DESIGN-3B §3.1 is explicit that the enum does not carry
+ * that distinction; the L1 phrase does, keyed off `Tier1Ratio.denominator`,
+ * not off `tierUsed`. `AUDIENCE_FALLBACK` is Tier 3 (`reach ÷ followers`) —
+ * never applicable to content with no reach at all (§12.5's table).
+ */
+export type Tier = "CREATOR_BASELINE" | "REACH_ONLY" | "AUDIENCE_FALLBACK" | "UNAVAILABLE";
+
+/** OR-13 (PRD §5.2 / TDD §4). `NONE` iff `tierUsed === "UNAVAILABLE"`. */
+export type Confidence = "HIGH" | "MEDIUM" | "LOW" | "NONE";
+
+/**
+ * TDD §4's confidence ladder — the three demotion causes, matching
+ * `perf_confidence_reason`'s `CHECK` (migration 012) exactly. `null` when
+ * confidence is `HIGH` (nothing demoted it) or `NONE` (no score at all).
+ */
+export type ConfidenceReason = "CACHED_FOLLOWER_DENOMINATOR" | "CAROUSEL_FIRST_SLIDE" | "THIN_SAMPLE";
+
+/**
+ * TDD §5.3 (seven members, OR-26). `unavailableReason` has TWO origins
+ * (TDD §4's "two origins, not one" subsection, binding on #143):
+ *
+ *   - Path A — resolved inside `judgement.ts`: `REACH_HIDDEN`,
+ *     `CAUSE_NOT_DETERMINABLE`, `REACH_UNKNOWN`, `CONTENT_KIND_UNSUPPORTED`,
+ *     `NO_AUDIENCE_DATA`, `INSUFFICIENT_HISTORY`.
+ *   - Path B — decided upstream in `reach.ts` (`resolveLaterSlideReach()`,
+ *     `ReachResult.laterSlideReach`) and only MAPPED here:
+ *     `REACH_NOT_ON_FIRST_SLIDE`. `judgement.ts` reads
+ *     `laterSlideReach.usable` — it must never re-derive Path B, and
+ *     `reach.ts` must never import this type (the mapping is
+ *     one-directional).
+ *
+ * `null` iff a score was produced (`tierUsed !== "UNAVAILABLE"`).
+ */
+export type UnavailableReason =
+  | "REACH_HIDDEN"
+  | "REACH_UNKNOWN"
+  | "CONTENT_KIND_UNSUPPORTED"
+  | "REACH_NOT_ON_FIRST_SLIDE"
+  | "NO_AUDIENCE_DATA"
+  | "INSUFFICIENT_HISTORY"
+  | "CAUSE_NOT_DETERMINABLE";
+
+/**
+ * TDD §2 module map / §5.1-§5.2 (OR-13). The full frozen computed block —
+ * written by code, never by Gemini (D2) — that `computeBlock.ts` produces
+ * and `pipeline/index.ts` persists verbatim to the `perf_*` columns
+ * (migration 012/013). This is deliberately a DIFFERENT type from
+ * `lib/server/analysis/prose`'s `ComputedPerformanceBlock` (that one is
+ * narrowly the prose guard's numeral allow-list, #142's scope) — same name,
+ * different module, never imported together without an alias.
+ */
+export interface ComputedPerformanceBlock {
+  reach: ReachResult;
+  likeState: AvailabilityState;
+  commentState: AvailabilityState;
+  /** Null whenever no denominator-bearing ratio could be computed (R-12.2.2/R-12.2.4). */
+  tier1Ratio: Tier1Ratio | null;
+  /** Null on every content kind with no reach at all (Tier 3 never applies there, §12.5). */
+  tier3Ratio: Tier3Ratio | null;
+  bucketKey: string;
+  baseline: BaselineResult;
+  /** Hours between `postDate` and analysis time. `null` when `postDate` is unresolvable. */
+  postAgeHours: number | null;
+  /** Copy of `profiles.last_fetched_at` at write time (§1.3) — `null` when no profile resolved. */
+  audienceSourceFetchedAt: string | null;
+  tierUsed: Tier;
+  confidence: Confidence;
+  confidenceReason: ConfidenceReason | null;
+  /** `basedOnVideos` — always `baseline.sampleSize`, never null (R-8.4.4/R-13.3.4). */
+  basedOnVideos: number;
+  provisional: boolean;
+  unavailableReason: UnavailableReason | null;
 }

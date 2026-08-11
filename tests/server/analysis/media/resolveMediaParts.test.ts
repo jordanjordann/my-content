@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { buildUserPrompt } from "@/lib/server/analysis/prompts";
+import { buildTestComputedPerformanceBlock } from "../prompts/testHelpers";
 import { resolveMediaParts } from "@/lib/server/analysis/media";
 import { MAX_MEDIA_PARTS } from "@/lib/server/analysis/media/constants";
 import type { MediaMetadata } from "@/lib/server/analysis/types";
@@ -151,7 +152,7 @@ describe("resolveMediaParts — MediaPart.index is the REAL slide position (F2, 
 
     const { parts } = resolveMediaParts(media);
     const metadata = buildMinimalMetadata(parts);
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
 
     // Positive: the real-position label is present.
     expect(prompt).toContain("5. video");

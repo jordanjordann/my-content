@@ -1,6 +1,8 @@
 import type { MediaMetadata, OwnerProfileHint } from "@/lib/server/analysis/types";
 import { getInstagramPost } from "@/lib/server/scrapecreators";
 import { adaptPostResponse, extractOwnerProfile } from "@/lib/server/analysis/fetcher/adapter";
+import { resolveInstagramReach } from "@/lib/server/analysis/performance/reach";
+import type { ReachResult } from "@/lib/server/analysis/performance/types";
 
 export interface FetchedInstagramMetadata {
   metadata: MediaMetadata;
@@ -9,6 +11,17 @@ export interface FetchedInstagramMetadata {
    * to opportunistically hydrate from without a second API call.
    */
   ownerHint: OwnerProfileHint | null;
+  /**
+   * Ticket #143 (TDD §2 architecture: `adapter -> computeBlock -> prompt-
+   * build`). Reach resolution (`resolveInstagramReach`) needs the raw
+   * `ScrapeCreatorsMedia` payload — R-12.7.1's field-presence branching only
+   * works against the real payload shape, never against `MediaMetadata`,
+   * which has already lost the `edge_sidecar_to_children` / `video_play_
+   * count` / `video_view_count` keys by the time it's built. Computed here,
+   * where `raw` is in scope, rather than threading the raw payload itself
+   * through the pipeline.
+   */
+  reachResult: ReachResult;
 }
 
 /**
@@ -30,5 +43,6 @@ export async function fetchInstagramMetadata(url: string): Promise<FetchedInstag
   return {
     metadata: adaptPostResponse(raw, url),
     ownerHint: extractOwnerProfile(raw),
+    reachResult: resolveInstagramReach(raw),
   };
 }

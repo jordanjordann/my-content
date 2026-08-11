@@ -35,6 +35,14 @@ vi.mock("@/lib/server/analysis/fetcher", () => ({
       mediaPartsTruncated: false,
     },
     ownerHint: null,
+    reachResult: {
+      value: null,
+      kind: null,
+      state: "UNKNOWN",
+      derivedFrom: "NONE",
+      laterSlideReach: { usable: false },
+      hasVideo: false,
+    },
   }),
 }));
 
@@ -63,7 +71,7 @@ vi.mock("@/lib/server/analysis/prompts", () => ({
 }));
 
 vi.mock("@/lib/server/analysis/parser", () => ({
-  parseContentAnalysis: () => ({ schemaVersion: 2 }),
+  parseContentAnalysis: () => ({ schemaVersion: 2, performance: { performanceScore: null, verdict: "", drivers: [] } }),
 }));
 
 vi.mock("@/lib/server/ollama", () => ({
@@ -90,7 +98,10 @@ describe("runAnalysis — fingerprint recompute failure never fails the analysis
     const result = await runAnalysis({ url: "https://www.instagram.com/reel/abc/", prompt: "focus on hooks" });
 
     expect(result.analysisId).toBeDefined();
-    expect(result.content).toEqual({ schemaVersion: 2 });
+    expect(result.content).toEqual({
+      schemaVersion: 2,
+      performance: { performanceScore: null, verdict: "", drivers: [] },
+    });
 
     const { recomputeFingerprint } = await import("@/lib/server/fingerprint");
     expect(recomputeFingerprint).toHaveBeenCalledWith("profile-1");

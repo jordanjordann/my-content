@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildUserPrompt, computePerformanceAssessmentBlock } from "@/lib/server/analysis/prompts";
 import { assertNumeralsAreReal, assertPerformanceProseIsSafe, NumeralFabricationError } from "@/lib/server/analysis/prose";
 import type { MediaMetadata } from "@/lib/server/analysis/types";
+import { buildTestComputedPerformanceBlock } from "./testHelpers";
 
 /**
  * D1 (ticket #110): the prompt must label a displayed play count as "Plays",
@@ -34,7 +35,7 @@ describe("buildUserPrompt — engagement count label (D1, ticket #110)", () => {
       displayedCountIsPlayCount: true,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
 
     expect(prompt).toContain("- Plays: 116,333");
     expect(prompt).not.toContain("Views: 116,333");
@@ -50,7 +51,7 @@ describe("buildUserPrompt — engagement count label (D1, ticket #110)", () => {
       displayedCountIsPlayCount: false,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
 
     expect(prompt).toContain("- Views: 150,780");
     expect(prompt).toContain("- View rate:");
@@ -65,7 +66,7 @@ describe("buildUserPrompt — engagement count label (D1, ticket #110)", () => {
       displayedCountIsPlayCount: true,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
 
     expect(prompt).toContain("- Plays: 116,333");
     expect(prompt).toContain("- Play rate:");
@@ -90,7 +91,7 @@ describe("buildUserPrompt — engagement count label (D1, ticket #110)", () => {
       likeAndViewCountsDisabled: true,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
 
     // The header line still prints "- Views: N/A" (unchanged N/A fallback
     // behaviour) — what must be ABSENT is any populated count/rate line in
@@ -112,7 +113,7 @@ describe("buildUserPrompt — engagement count label (D1, ticket #110)", () => {
       displayedCountIsPlayCount: true,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
 
     expect(prompt).toContain("- Views: 42,000");
     expect(prompt).not.toContain("- Plays:");
@@ -138,7 +139,7 @@ describe("buildUserPrompt — performance assessment block (TDD §8.1, ticket #1
       commentCount: 5_000,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
 
     expect(prompt).toContain("## Performance Assessment Data");
     expect(prompt).toContain('ANGKA_ENGAGEMENT = "4,1% dari 482,1RB penayangan"');
@@ -155,7 +156,7 @@ describe("buildUserPrompt — performance assessment block (TDD §8.1, ticket #1
       commentCount: 0,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
     const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
 
     expect(performanceBlock).toContain("yang menonton");
@@ -172,7 +173,7 @@ describe("buildUserPrompt — performance assessment block (TDD §8.1, ticket #1
       followerCount: 10_000,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
     const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
 
     expect(performanceBlock).toContain("dari jumlah pengikut");
@@ -191,7 +192,7 @@ describe("buildUserPrompt — performance assessment block (TDD §8.1, ticket #1
     // followerCount present -> follower-denominated figure is available;
     // this pins that no reach/views/plays token appears in the quoted
     // figure itself — the sentence the model is told to echo verbatim.
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
     const angkaLine = prompt.split("\n").find((line) => line.startsWith("ANGKA_ENGAGEMENT")) ?? "";
 
     expect(angkaLine).not.toMatch(/\breach\b/i);
@@ -211,7 +212,7 @@ describe("buildUserPrompt — performance assessment block (TDD §8.1, ticket #1
       followerCount: null,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
     const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
 
     expect(performanceBlock).toContain("TIDAK ADA data reach/views/plays");
@@ -227,7 +228,7 @@ describe("buildUserPrompt — performance assessment block (TDD §8.1, ticket #1
       followerCount: null,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
 
     expect(prompt).toContain("UNAVAILABLE");
     expect(prompt).toContain("Do NOT estimate, guess, or invent");
@@ -240,7 +241,7 @@ describe("buildUserPrompt — performance assessment block (TDD §8.1, ticket #1
       commentCount: 5_000,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
 
     expect(prompt).toContain("Never compare this post's figure");
   });
@@ -252,7 +253,7 @@ describe("buildUserPrompt — performance assessment block (TDD §8.1, ticket #1
       commentCount: 5_000,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
 
     expect(prompt).toContain("ANGKA_ENGAGEMENT is the ONLY number you may quote anywhere in your output.");
   });
@@ -266,7 +267,7 @@ describe("buildUserPrompt — performance assessment block (TDD §8.1, ticket #1
       followerCount: null,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
 
     expect(prompt).toContain("No engagement figure is available for this post. Never restate, compute, or estimate ANY number");
   });
@@ -291,7 +292,7 @@ describe("buildUserPrompt — performance assessment block never renders a negat
       commentCount: -1,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
     const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
 
     expect(performanceBlock).not.toMatch(/-\d/);
@@ -313,7 +314,7 @@ describe("buildUserPrompt — performance assessment block never renders a negat
       followerCount: 10_000,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
     const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
 
     expect(performanceBlock).not.toMatch(/-\d/);
@@ -327,7 +328,7 @@ describe("buildUserPrompt — performance assessment block never renders a negat
       commentCount: 5_000,
     });
 
-    const block = computePerformanceAssessmentBlock(metadata);
+    const block = computePerformanceAssessmentBlock(metadata, buildTestComputedPerformanceBlock(metadata));
 
     expect(block.realNumerals.some((n) => n < 0)).toBe(false);
   });
@@ -360,7 +361,7 @@ describe("buildUserPrompt — isImageOnly consults mediaType, not just a null vi
       followerCount: 10_000,
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
     const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
 
     expect(performanceBlock).not.toContain("Konten ini berupa gambar");
@@ -413,7 +414,83 @@ describe("buildUserPrompt — isImageOnly consults mediaType, not just a null vi
       ],
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
+    const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
+
+    expect(performanceBlock).not.toContain("Konten ini berupa gambar");
+    expect(performanceBlock).not.toContain("image-only content");
+  });
+
+  it("PR #191 review, blocker B1 (the regressed image-only bug): image on slide 0, video on slide 3 — derivedFrom is NONE (slide 0 has no reach fields), but this is NOT image-only content and must not be told so", () => {
+    // This is the exact shape `resolveLaterSlideReach()` exists to keep
+    // scanning past: slide 0 is an image (no reach fields at all), so
+    // `derivedFrom` is "NONE" — but slide 3 is a video. Before the B1 fix,
+    // `isImageOnly` was `derivedFrom === "NONE"` alone, which told a
+    // video-bearing carousel "this is image-only content, no reach data
+    // exists" — a confident, wrong, user-facing statement.
+    const metadata = baseMetadata({
+      mediaType: "carousel",
+      viewCount: null,
+      playCount: null,
+      likeCount: 500,
+      commentCount: 20,
+      followerCount: 10_000,
+      carouselItemCount: 4,
+      mediaParts: [
+        {
+          index: 0,
+          kind: "image",
+          url: "slide-0",
+          durationSec: null,
+          width: null,
+          height: null,
+          playCount: null,
+          viewCount: null,
+          displayedCountIsPlayCount: false,
+        },
+        {
+          index: 1,
+          kind: "image",
+          url: "slide-1",
+          durationSec: null,
+          width: null,
+          height: null,
+          playCount: null,
+          viewCount: null,
+          displayedCountIsPlayCount: false,
+        },
+        {
+          index: 2,
+          kind: "image",
+          url: "slide-2",
+          durationSec: null,
+          width: null,
+          height: null,
+          playCount: null,
+          viewCount: null,
+          displayedCountIsPlayCount: false,
+        },
+        {
+          index: 3,
+          kind: "video",
+          url: "slide-3",
+          durationSec: 12,
+          width: null,
+          height: null,
+          playCount: null,
+          viewCount: 999,
+          displayedCountIsPlayCount: false,
+        },
+      ],
+    });
+
+    const computed = buildTestComputedPerformanceBlock(metadata);
+    // Pins the test helper (B1b) alongside production: slide 0 alone
+    // decides derivedFrom (NONE here), while hasVideo scans every slide.
+    expect(computed.reach.derivedFrom).toBe("NONE");
+    expect(computed.reach.hasVideo).toBe(true);
+
+    const prompt = buildUserPrompt(metadata, "focus", computed);
     const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
 
     expect(performanceBlock).not.toContain("Konten ini berupa gambar");
@@ -455,7 +532,7 @@ describe("buildUserPrompt — isImageOnly consults mediaType, not just a null vi
       ],
     });
 
-    const prompt = buildUserPrompt(metadata, "focus");
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
     const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
 
     expect(performanceBlock).toContain("Konten ini berupa gambar");
@@ -478,7 +555,7 @@ describe("Half A narrowing — ANGKA_ENGAGEMENT is the only quotable figure (PR 
       likeCount: 15_000,
       commentCount: 5_000,
     });
-    const block = computePerformanceAssessmentBlock(metadata);
+    const block = computePerformanceAssessmentBlock(metadata, buildTestComputedPerformanceBlock(metadata));
 
     expect(() =>
       assertPerformanceProseIsSafe(
@@ -497,7 +574,7 @@ describe("Half A narrowing — ANGKA_ENGAGEMENT is the only quotable figure (PR 
       likeCount: 15_000,
       commentCount: 5_000,
     });
-    const block = computePerformanceAssessmentBlock(metadata);
+    const block = computePerformanceAssessmentBlock(metadata, buildTestComputedPerformanceBlock(metadata));
 
     expect(() => assertNumeralsAreReal("Video ini ditonton 482.100 kali, cukup tinggi.", block)).toThrow(
       NumeralFabricationError,
@@ -510,7 +587,7 @@ describe("Half A narrowing — ANGKA_ENGAGEMENT is the only quotable figure (PR 
       likeCount: 15_000,
       commentCount: 5_000,
     });
-    const block = computePerformanceAssessmentBlock(metadata);
+    const block = computePerformanceAssessmentBlock(metadata, buildTestComputedPerformanceBlock(metadata));
 
     expect(() => assertNumeralsAreReal("Performanya naik 9.999.999 dibanding biasanya.", block)).toThrow(
       "Fabricated numeral",
@@ -523,7 +600,7 @@ describe("Half A narrowing — ANGKA_ENGAGEMENT is the only quotable figure (PR 
       likeCount: 15_000,
       commentCount: 5_000,
     });
-    const block = computePerformanceAssessmentBlock(metadata);
+    const block = computePerformanceAssessmentBlock(metadata, buildTestComputedPerformanceBlock(metadata));
 
     expect(() =>
       assertPerformanceProseIsSafe(

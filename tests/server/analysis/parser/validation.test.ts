@@ -4,6 +4,7 @@ import { parseContentAnalysis } from "@/lib/server/analysis/parser/analysis";
 import { AnalysisValidationError, assertContentAnalysis } from "@/lib/server/analysis/parser/validation";
 import { ANALYSIS_SCHEMA_VERSION } from "@/lib/server/analysis/schema/constants";
 import type { MediaMetadata } from "@/lib/server/analysis/types";
+import { buildTestComputedPerformanceBlock } from "../prompts/testHelpers";
 
 /** Minimal `MediaMetadata` — the prose guard's computed block resolves off this. */
 function baseMetadata(overrides: Partial<MediaMetadata> = {}): MediaMetadata {
@@ -20,6 +21,11 @@ function baseMetadata(overrides: Partial<MediaMetadata> = {}): MediaMetadata {
     videoUrl: null,
     ...overrides,
   };
+}
+
+/** Ticket #143 — `parseContentAnalysis` now takes the `ComputedPerformanceBlock` `computeBlock.ts` produces, not a bare `metadata`. */
+function parse(text: string, metadata: MediaMetadata = baseMetadata()) {
+  return parseContentAnalysis(text, metadata, buildTestComputedPerformanceBlock(metadata));
 }
 
 /**
@@ -106,33 +112,33 @@ describe("assertContentAnalysis — valid payload", () => {
 
 describe("parseContentAnalysis — end to end", () => {
   it("stamps schemaVersion server-side and normalises hookTypeSecondary", () => {
-    const result = parseContentAnalysis(JSON.stringify(validRawPayload()), baseMetadata());
+    const result = parse(JSON.stringify(validRawPayload()));
     expect(result.schemaVersion).toBe(ANALYSIS_SCHEMA_VERSION);
     expect(result.style.hookTypeSecondary).toBeNull();
     expect(result.performance.performanceScore).toBe(4);
   });
 
   it("propagates JSON.parse's SyntaxError on malformed JSON, never repairs it", () => {
-    expect(() => parseContentAnalysis("{not valid json", baseMetadata())).toThrow(SyntaxError);
+    expect(() => parse("{not valid json")).toThrow(SyntaxError);
   });
 
   it("propagates SyntaxError on a MAX_TOKENS-truncated body (mid-string cutoff)", () => {
     const truncated = JSON.stringify(validRawPayload()).slice(0, 40);
-    expect(() => parseContentAnalysis(truncated, baseMetadata())).toThrow(SyntaxError);
+    expect(() => parse(truncated)).toThrow(SyntaxError);
   });
 
   it("TDD §8.2 — the prose guard runs here and throws loudly on a bare unqualified percentage in verdict", () => {
     const raw = validRawPayload();
     (raw.performance as Record<string, unknown>).verdict = "Engagement-nya cukup tinggi, sekitar 4,1%.";
 
-    expect(() => parseContentAnalysis(JSON.stringify(raw), baseMetadata())).toThrow(/Unqualified percentage/);
+    expect(() => parse(JSON.stringify(raw))).toThrow(/Unqualified percentage/);
   });
 
   it("TDD §8.2 — the prose guard throws loudly on a fabricated numeral (non-percentage) in drivers[] absent from the computed block — non-vacuity proof", () => {
     const raw = validRawPayload();
     (raw.performance as Record<string, unknown>).drivers = ["Hook-nya menarik perhatian dalam 12 detik pertama."];
 
-    expect(() => parseContentAnalysis(JSON.stringify(raw), baseMetadata())).toThrow(/Fabricated numeral/);
+    expect(() => parse(JSON.stringify(raw))).toThrow(/Fabricated numeral/);
   });
 
   it("a performance figure the prompt actually supplied (quoted verbatim) passes the guard end to end", () => {
@@ -141,7 +147,7 @@ describe("parseContentAnalysis — end to end", () => {
     (raw.performance as Record<string, unknown>).verdict = 'Performa solid, engagement "4,1% dari 482,1RB penayangan".';
     (raw.performance as Record<string, unknown>).drivers = ["Reach yang kuat mendukung skor ini."];
 
-    expect(() => parseContentAnalysis(JSON.stringify(raw), metadata)).not.toThrow();
+    expect(() => parse(JSON.stringify(raw), metadata)).not.toThrow();
   });
 });
 

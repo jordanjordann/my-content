@@ -1,6 +1,6 @@
 import type { MediaMetadata } from "@/lib/server/analysis/types";
-import { extractNumerals, type ComputedPerformanceBlock } from "@/lib/server/analysis/prose";
-import { computeEngagementRate, computeReachEngagementRatio } from "@/lib/server/analysis/performance/ratios";
+import { extractNumerals, type ComputedPerformanceBlock as ProseComputedBlock } from "@/lib/server/analysis/prose";
+import type { ComputedPerformanceBlock } from "@/lib/server/analysis/performance/types";
 import { formatAspectRatio, formatAudioLine, formatCount, formatCountID, formatPercent, formatPercentID } from "./helpers";
 
 const CONTEXT_FRAMING_NOTE = `CATATAN: Angka-angka di atas adalah KONTEKS pendukung, bukan bukti kualitas.
@@ -187,29 +187,30 @@ function buildContextBlock(metadata: MediaMetadata): string | null {
  *    differently-denominated ratio (R-12.5.3).
  * 6. Forbids computing or restating any number it was not given (S2).
  *
- * PR #184 review, blocker 1: the ratio arithmetic itself (the negative-
- * sentinel guard, the reach-positivity/kind gating, the follower-zero
- * guard) is NOT hand-derived here — it is delegated to
- * `performance/ratios.ts`'s `computeReachEngagementRatio()`/
- * `computeEngagementRate()`, the SAME primitives TDD §2 already assigns
- * this arithmetic to. A second, independently-written expression for the
- * same quantity is exactly the failure class TR-1 abolished (and TR-4
- * abolished for slide totals) — importing a pure primitive widens nothing
- * ("Files Affected" was a scope note about this file's own logic, not
- * license to re-derive arithmetic another module already owns). Concretely,
- * this closes a real drift: the prior inline `(likeCount ?? 0) + (commentCount
- * ?? 0)` had no negative-sentinel guard, so a `-1` availability sentinel
- * (OR-20) could render a negative engagement percentage into
- * `ANGKA_ENGAGEMENT`, verbatim-quoted by the model — unshippable under
- * "reliability over coverage". `ratios.ts`'s `usableCount()` rejects a
- * negative count (returns `null`, propagated as the whole ratio's `null`)
- * instead of arithmetic-ing over it, so that shape of drift cannot recur.
+ * **Ticket #143 (PR #184 review findings 1/7): the ratio arithmetic no
+ * longer lives here at all.** This function used to hand-derive the Tier 1
+ * ratio inline (a second expression for the same quantity `performance/
+ * ratios.ts` and `computeBlock.ts` already own — the TR-1 failure class,
+ * repeated a third time in this subsystem had it survived). It now
+ * **renders** the `ComputedPerformanceBlock` `computeBlock.ts` produced —
+ * `computed.tier1Ratio`, `computed.reach`, `computed.likeState`/
+ * `commentState` — and computes nothing itself. There is exactly ONE
+ * expression in the codebase that produces the Tier 1 ratio reaching this
+ * prompt: `computeBlock.ts` -> `judgement`/`ratios.ts`. No fallback, no
+ * second path, no default — the old inline derivation is deleted.
  *
- * Denominator preference: REACH (the displayed view/play count, using the
- * SAME `isPlayCount`-derived kind `buildContextBlock()` labels with) when a
- * positive reach figure exists, falling back to FOLLOWERS — this mirrors
- * `computeReachEngagementRatio()`/`computeEngagementRate()`'s own
- * precedence, now literally, since both are called below.
+ * `isImageOnly` is `computed.reach.derivedFrom === "NONE" &&
+ * !computed.reach.hasVideo` (PR #191 review, blocker B1). `derivedFrom ===
+ * "NONE"` ALONE is not enough: it also fires for a carousel with an image
+ * on slide 0 and a video on slide 3 — the exact case
+ * `resolveLaterSlideReach()` exists to keep scanning past — which is video
+ * content, not image-only content. `computed.reach.hasVideo` is the SAME
+ * field-presence fact `reach.ts` (R-12.7.1) establishes across every node
+ * of the post (not just slide 0), reused here rather than a second,
+ * hand-rolled `mediaType`/`mediaParts` inference. This is a strict
+ * improvement over the prior hand-rolled check (PR #184 review blocker 2's
+ * own bug class — a `mediaType`-only heuristic that could not see
+ * divergence 12/13's video-in-carousel-with-null-top-level-fields shape).
  *
  * `realNumerals` (blocker 3, PR #184 re-review): NOT widened to admit the
  * context block's raw figures. The prompt also hands the model duration,
@@ -229,26 +230,18 @@ function buildContextBlock(metadata: MediaMetadata): string | null {
  * accept failing loudly on — not an incoherent "some context figures are
  * fine, others throw" middle.
  */
-function resolvePerformanceAssessment(metadata: MediaMetadata): {
+function resolvePerformanceAssessment(
+  metadata: MediaMetadata,
+  computed: ComputedPerformanceBlock,
+): {
   block: string;
-  computedBlock: ComputedPerformanceBlock;
+  computedBlock: ProseComputedBlock;
 } {
-  const { value: displayedViewCount, isPlayCount } = resolveDisplayedViewCount(metadata);
-  const likeCount = metadata.likeCount ?? null;
-  const commentCount = metadata.commentCount ?? null;
-  const hasEngagementCount = likeCount != null || commentCount != null;
-
-  const reachRatio = computeReachEngagementRatio({
-    likeCount,
-    commentCount,
-    reachValue: displayedViewCount,
-    reachKind: isPlayCount ? "PLAYS" : "VIEWS",
-  });
-  const followerRatio = computeEngagementRate({
-    likeCount,
-    commentCount,
-    followerCount: metadata.followerCount,
-  });
+  const hasEngagementCount =
+    computed.likeState === "AVAILABLE" ||
+    computed.likeState === "ZERO" ||
+    computed.commentState === "AVAILABLE" ||
+    computed.commentState === "ZERO";
 
   const unavailable: string[] = [];
   if (!hasEngagementCount) {
@@ -257,32 +250,23 @@ function resolvePerformanceAssessment(metadata: MediaMetadata): {
 
   let angka: string | null = null;
 
-  if (hasEngagementCount && reachRatio != null) {
-    const denomWord = reachRatio.reachKind === "PLAYS" ? "yang menonton" : "penayangan";
-    angka = `${formatPercentID(reachRatio.ratio)} dari ${formatCountID(displayedViewCount ?? 0)} ${denomWord}`;
-  } else if (hasEngagementCount && followerRatio != null) {
-    angka = `${formatPercentID(followerRatio.ratio)} dari jumlah pengikut (${formatCountID(metadata.followerCount ?? 0)} pengikut)`;
-  } else {
+  if (computed.tier1Ratio?.denominator === "REACH") {
+    const denomWord = computed.tier1Ratio.reachKind === "PLAYS" ? "yang menonton" : "penayangan";
+    angka = `${formatPercentID(computed.tier1Ratio.ratio)} dari ${formatCountID(computed.reach.value ?? 0)} ${denomWord}`;
+  } else if (computed.tier1Ratio?.denominator === "FOLLOWERS") {
+    angka = `${formatPercentID(computed.tier1Ratio.ratio)} dari jumlah pengikut (${formatCountID(metadata.followerCount ?? 0)} pengikut)`;
+  } else if (hasEngagementCount) {
     unavailable.push("rasio engagement (data yang dibutuhkan untuk menghitungnya tidak lengkap)");
   }
 
-  // AC-22, PR #184 review blocker 2: scoped to all-image content only — a
-  // single image post (`mediaType: "post"`), or a carousel every one of
-  // whose listed `mediaParts` is `kind: "image"`. `mediaType` must be
-  // consulted directly: `displayedViewCount`/`playCount` being null is NOT
-  // by itself evidence of "no video" — it is also true of a reel with
-  // `likeAndViewCountsDisabled` (`resolveDisplayedViewCount()` nulls the
-  // value on that branch regardless of media type) and, per
-  // `.claude/context/verified-facts.md` divergence 12, of a video-bearing
-  // carousel (carousel video children carry `video_play_count: null`, and
-  // this ticket does not wire a carousel reach figure — that is #143). Both
-  // are video content; neither may be told "Konten ini berupa gambar".
-  const isAllImageCarousel =
-    metadata.mediaType === "carousel" && (metadata.mediaParts ?? []).every((part) => part.kind !== "video");
-  const isImageOnly =
-    displayedViewCount == null &&
-    metadata.playCount == null &&
-    (metadata.mediaType === "post" || isAllImageCarousel);
+  // AC-22, PR #184 review blocker 2 / PR #191 review blocker B1: "no reach
+  // field exists at all, AND no video exists anywhere in the post" — the
+  // SAME facts reach.ts's field-presence branching (R-12.7.1) already
+  // establishes as `derivedFrom === "NONE"` / `hasVideo`, reused here
+  // rather than a second, hand-rolled `mediaType`/`mediaParts` inference.
+  // `derivedFrom === "NONE"` alone is NOT sufficient — it also covers a
+  // video-bearing carousel whose video isn't on slide 0.
+  const isImageOnly = computed.reach.derivedFrom === "NONE" && !computed.reach.hasVideo;
 
   const lines: string[] = ["## Performance Assessment Data", ""];
 
@@ -333,20 +317,30 @@ function resolvePerformanceAssessment(metadata: MediaMetadata): {
 }
 
 /**
- * TDD §8.2's `ComputedPerformanceBlock` for THIS analysis — exported so the
- * parser stage (`lib/server/analysis/parser`) can run the prose guard
- * against exactly the figures this prompt actually supplied, derived from
- * the SAME `resolvePerformanceAssessment()` call `buildUserPrompt()` uses
- * (never a second, independent recomputation).
+ * TDD §8.2's prose-guard `ComputedPerformanceBlock` (the narrow
+ * `{ realNumerals }` shape, `lib/server/analysis/prose`) for THIS analysis —
+ * exported so the parser stage (`lib/server/analysis/parser`) can run the
+ * prose guard against exactly the figures this prompt actually supplied,
+ * derived from the SAME `resolvePerformanceAssessment()` call
+ * `buildUserPrompt()` uses (never a second, independent recomputation). Both
+ * take the SAME `computed: ComputedPerformanceBlock` — the one
+ * `computeBlock.ts` produced once in the pipeline, never recomputed here.
  */
-export function computePerformanceAssessmentBlock(metadata: MediaMetadata): ComputedPerformanceBlock {
-  return resolvePerformanceAssessment(metadata).computedBlock;
+export function computePerformanceAssessmentBlock(
+  metadata: MediaMetadata,
+  computed: ComputedPerformanceBlock,
+): ProseComputedBlock {
+  return resolvePerformanceAssessment(metadata, computed).computedBlock;
 }
 
-export function buildUserPrompt(metadata: MediaMetadata, userPrompt: string): string {
+export function buildUserPrompt(
+  metadata: MediaMetadata,
+  userPrompt: string,
+  computed: ComputedPerformanceBlock,
+): string {
   const contextBlock = buildContextBlock(metadata);
   const slideManifest = buildSlideManifest(metadata);
-  const performanceAssessment = resolvePerformanceAssessment(metadata).block;
+  const performanceAssessment = resolvePerformanceAssessment(metadata, computed).block;
   const { value: displayedViewCount, isPlayCount } = resolveDisplayedViewCount(metadata);
 
   return `Analyze the following content:

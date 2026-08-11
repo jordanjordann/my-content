@@ -746,6 +746,13 @@ REACH_HIDDEN | REACH_UNKNOWN | CONTENT_KIND_UNSUPPORTED
 | INSUFFICIENT_HISTORY | CAUSE_NOT_DETERMINABLE
 ```
 
+**`INSUFFICIENT_HISTORY` is declared here but intentionally NOT produced by `judgement.ts`** (PR #191 review, Leo).
+Owner-ruled, not open for re-litigation: R-C4 makes a Tier 2 cold start a NON-`unavailable` partial-absence
+state, so no code path in `resolveUnavailableReason()` ever returns it — and the value stays in the union and
+in migration 012/013's `CHECK` regardless, because removing it would make a legitimate already-stored row
+unrepresentable on read. `THIN_SAMPLE` (the `ConfidenceReason`, a separate enum) is kept for the same reason.
+See `judgement.ts`'s `resolveUnavailableReason()` doc comment for the full "declared-but-unproduced" reasoning.
+
 `CAUSE_NOT_DETERMINABLE` satisfies R-13.5.3a. **Two different facts must not share one enum value.** Jessica
 proposed the name `PERFORMANCE_DATA_ABSENT`; naming is the tech lead's call and `CAUSE_NOT_DETERMINABLE` is
 chosen because it names the epistemic state rather than the data state — which is precisely the distinction

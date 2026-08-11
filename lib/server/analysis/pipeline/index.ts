@@ -16,6 +16,8 @@ import { resolveProfile } from "@/lib/server/profiles";
 import type { Profile, ProfileInput } from "@/lib/server/profiles";
 import type { OwnerProfileHint } from "@/lib/server/analysis/types";
 import { recomputeFingerprint } from "@/lib/server/fingerprint";
+import { computePerformanceBlock } from "@/lib/server/analysis/performance/computeBlock";
+import { ANALYSIS_SCHEMA_VERSION } from "@/lib/server/analysis/schema/constants";
 
 /**
  * OwnerProfileHint.username is `string | null` (extracted from a payload
@@ -99,7 +101,7 @@ export async function runAnalysis({
     report("classifying", 1, "URL classified");
     report("fetching", 1, "Fetching content metadata...");
 
-    const { metadata, ownerHint } = await fetchMetadata(classified);
+    const { metadata, ownerHint, reachResult } = await fetchMetadata(classified);
 
     console.log("[PIPELINE] Metadata fetched:");
     console.log(JSON.stringify(metadata, null, 2));
@@ -238,6 +240,37 @@ export async function runAnalysis({
     // "never fetched".
     const coauthorProducersJson = JSON.stringify(metadata.coauthorUsernames ?? []);
 
+    // Ticket #143 (TDD §2: `adapter -> computeBlock -> prompt-build`). Runs
+    // once, here — its one DB read (`computeBaseline`'s Tier 2 query) is
+    // deliberately the same round trip this stage was always going to make,
+    // and the SAME resulting block is handed to `buildUserPrompt()` below,
+    // to the prose guard (`parseContentAnalysis`) after Gemini responds, and
+    // to the `perf_*` write in this same UPDATE — never recomputed.
+    //
+    // `audience_source_fetched_at` (step 4, TDD §1.3): a copy of
+    // `profiles.last_fetched_at` taken NOW, at write time — `profiles.
+    // last_fetched_at` is mutated by the next cache refresh, so this is the
+    // only place a completed analysis can ever recover how stale its own
+    // audience denominator was (R-13.3.2/R-13.4.5).
+    const computedBlock = await computePerformanceBlock({
+      platform: classified.platform,
+      mediaType: metadata.mediaType,
+      analysisMode,
+      reach: reachResult,
+      likeCount: metadata.likeCount,
+      commentCount: metadata.commentCount,
+      likeAndViewCountsDisabled: metadata.likeAndViewCountsDisabled,
+      followerCount,
+      audienceSourceFetchedAt: profile?.lastFetchedAt ?? null,
+      postDate: metadata.postDate,
+      profileId: profile?.id ?? null,
+      analysisId,
+      schemaVersion: ANALYSIS_SCHEMA_VERSION,
+    });
+
+    console.log("[PIPELINE] Computed performance block:");
+    console.log(JSON.stringify(computedBlock, null, 2));
+
     await db.execute({
       sql: `
         UPDATE analyses
@@ -249,6 +282,12 @@ export async function runAnalysis({
             original_width = ?, original_height = ?, carousel_item_count = ?,
             profile_id = ?, follower_count = ?,
             analysis_mode = ?, coauthor_producers = ?, like_and_view_counts_disabled = ?,
+            perf_reach_value = ?, perf_reach_kind = ?, perf_reach_derived_from = ?,
+            perf_tier1_ratio = ?, perf_tier1_denominator = ?, perf_bucket_key = ?,
+            perf_baseline_median = ?, perf_baseline_sample_size = ?, perf_multiplier = ?,
+            perf_post_age_hours = ?, audience_source_fetched_at = ?,
+            perf_tier_used = ?, perf_confidence = ?, perf_confidence_reason = ?,
+            perf_provisional = ?, perf_unavailable_reason = ?,
             updated_at = datetime('now')
         WHERE id = ?
       `,
@@ -280,6 +319,22 @@ export async function runAnalysis({
         analysisMode,
         coauthorProducersJson,
         toDbBool(metadata.likeAndViewCountsDisabled),
+        computedBlock.reach.value,
+        computedBlock.reach.kind,
+        computedBlock.reach.derivedFrom,
+        computedBlock.tier1Ratio?.ratio ?? null,
+        computedBlock.tier1Ratio?.denominator ?? null,
+        computedBlock.bucketKey,
+        computedBlock.baseline.state !== "COLD_START" ? computedBlock.baseline.median : null,
+        computedBlock.baseline.sampleSize,
+        computedBlock.baseline.state === "MEASURED" ? computedBlock.baseline.multiplier : null,
+        computedBlock.postAgeHours != null ? Math.round(computedBlock.postAgeHours) : null,
+        computedBlock.audienceSourceFetchedAt,
+        computedBlock.tierUsed,
+        computedBlock.confidence,
+        computedBlock.confidenceReason,
+        toDbBool(computedBlock.provisional),
+        computedBlock.unavailableReason,
         analysisId,
       ],
     });
@@ -287,25 +342,34 @@ export async function runAnalysis({
     report("analyzing", 0, "Running Gemini analysis...");
 
     const systemPrompt = buildSystemInstruction();
-    const userPrompt = buildUserPrompt(metadata, prompt);
+    const userPrompt = buildUserPrompt(metadata, prompt, computedBlock);
     const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
 
     const geminiResult = await analyzeContent(geminiParts, fullPrompt);
-    const content = parseContentAnalysis(geminiResult.text, metadata);
+    const content = parseContentAnalysis(geminiResult.text, metadata, computedBlock);
 
     console.log("[PIPELINE] Parsed analysis:");
     console.log(JSON.stringify(content, null, 2));
 
     report("saving", 0, "Saving results...");
 
+    // Step 5: `performance_score` is promoted to its own column (TDD §5.2,
+    // OR-8 — 3C paginates/sorts server-side, so it cannot live only inside
+    // the `result_content` JSON blob).
     await db.execute({
       sql: `
         UPDATE analyses
         SET raw_gemini = ?, result_content = ?, result_created_at = datetime('now'),
-            status = 'completed', schema_version = ?, updated_at = datetime('now')
+            status = 'completed', schema_version = ?, performance_score = ?, updated_at = datetime('now')
         WHERE id = ?
       `,
-      args: [geminiResult.raw, JSON.stringify(content), content.schemaVersion, analysisId],
+      args: [
+        geminiResult.raw,
+        JSON.stringify(content),
+        content.schemaVersion,
+        content.performance.performanceScore,
+        analysisId,
+      ],
     });
 
     report("complete", 1, "Analysis complete");
