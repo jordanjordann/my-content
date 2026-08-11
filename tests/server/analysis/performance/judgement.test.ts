@@ -405,13 +405,15 @@ describe("resolveUnavailableReason — every branch reachable and distinct", () 
     expect(result).toBe("CAUSE_NOT_DETERMINABLE");
     expect(result).not.toBe("NO_AUDIENCE_DATA");
 
-    // And the rendered L1 string must not be DESIGN-3B row 4's "no follower
-    // count" copy — that would assert a false DATA fact when a follower
-    // count exists. It renders row 3's epistemic copy instead (the only
-    // approved string for this reason).
-    const rendered = renderHiddenCountsReasonShortForm(result as "CAUSE_NOT_DETERMINABLE");
-    expect(rendered).toBe("No performance data published");
-    expect(rendered).not.toBe("No follower count available");
+    // NOTE: no assertion of the rendered copy here. DESIGN-3B §4.3 currently
+    // has NO row covering this case (follower count known, engagement
+    // partially known via a lone usable likeState, numerator not
+    // computable) — row 3's copy ("No performance data published" / "...no
+    // view, like or comment data...") is FALSE for this fixture, which has
+    // 32,313 likes and a real follower count. Do not restore an assertion
+    // that `renderHiddenCountsReasonShortForm(result)` equals row 3's copy;
+    // the correct string doesn't exist yet and is a designer's call. A
+    // design ticket to add the missing DESIGN-3B row is being filed.
   });
 
   it("REACH_UNKNOWN — Instagram video content whose reach field exists but is unusable, flag confirmed false", () => {
