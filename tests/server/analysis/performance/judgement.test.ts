@@ -5,7 +5,7 @@ import {
   computeJudgement,
   computeProvisional,
   determineTierUsed,
-  renderHiddenCountsReasonShortForm,
+  renderUnavailableReasonShortForm,
   resolveHiddenCountsUnavailableReason,
   resolveUnavailableReason,
 } from "@/lib/server/analysis/performance/judgement";
@@ -128,21 +128,21 @@ describe("resolveHiddenCountsUnavailableReason — R-13.5.3a's two-fact split", 
  * asserts the actual rendered strings, and their inequality, which is what
  * a wrong mapping breaks.
  */
-describe("renderHiddenCountsReasonShortForm — AC-30, DESIGN-3B §5 rows 1 and 3", () => {
+describe("renderUnavailableReasonShortForm — AC-30, DESIGN-3B §5 rows 1 and 3", () => {
   it("REACH_HIDDEN renders DESIGN-3B row 1's exact L1 string", () => {
-    expect(renderHiddenCountsReasonShortForm("REACH_HIDDEN")).toBe("Creator hid the counts");
+    expect(renderUnavailableReasonShortForm("REACH_HIDDEN")).toBe("Creator hid the counts");
   });
 
   it("CAUSE_NOT_DETERMINABLE renders DESIGN-3B row 3's exact L1 string — string 3, not string 1", () => {
-    expect(renderHiddenCountsReasonShortForm("CAUSE_NOT_DETERMINABLE")).toBe(
+    expect(renderUnavailableReasonShortForm("CAUSE_NOT_DETERMINABLE")).toBe(
       "No performance data published",
     );
   });
 
   it("negative assertion (AC-30) — the CAUSE_NOT_DETERMINABLE string never asserts the creator hid their counts", () => {
-    const rendered = renderHiddenCountsReasonShortForm("CAUSE_NOT_DETERMINABLE");
+    const rendered = renderUnavailableReasonShortForm("CAUSE_NOT_DETERMINABLE");
 
-    expect(rendered).not.toBe(renderHiddenCountsReasonShortForm("REACH_HIDDEN"));
+    expect(rendered).not.toBe(renderUnavailableReasonShortForm("REACH_HIDDEN"));
     expect(rendered).not.toMatch(/hid/i);
     expect(rendered).not.toMatch(/creator/i);
   });
@@ -163,9 +163,56 @@ describe("renderHiddenCountsReasonShortForm — AC-30, DESIGN-3B §5 rows 1 and 
 
     expect(hidden).not.toBeNull();
     expect(notDeterminable).not.toBeNull();
-    expect(renderHiddenCountsReasonShortForm(hidden!)).not.toBe(
-      renderHiddenCountsReasonShortForm(notDeterminable!),
+    expect(renderUnavailableReasonShortForm(hidden!)).not.toBe(
+      renderUnavailableReasonShortForm(notDeterminable!),
     );
+  });
+});
+
+/**
+ * Ticket #144 — the widened renderer's remaining five members (the two
+ * above, REACH_HIDDEN/CAUSE_NOT_DETERMINABLE, were #169's; these five are
+ * new here). DESIGN-3B §5 rows 2/4 and TDD §3.1's table for the other two.
+ * `INSUFFICIENT_HISTORY` is asserted `null` (no approved copy exists —
+ * declared-but-unproduced, TDD §5.3) rather than any fabricated sentence.
+ */
+describe("renderUnavailableReasonShortForm — the full seven-member union", () => {
+  it("REACH_UNKNOWN renders DESIGN-3B row 2's exact L1 string", () => {
+    expect(renderUnavailableReasonShortForm("REACH_UNKNOWN")).toBe("No view count published");
+  });
+
+  it("NO_AUDIENCE_DATA renders DESIGN-3B row 4's exact L1 string", () => {
+    expect(renderUnavailableReasonShortForm("NO_AUDIENCE_DATA")).toBe("No follower count available");
+  });
+
+  it("CONTENT_KIND_UNSUPPORTED renders TDD §3.1's exact sentence", () => {
+    expect(renderUnavailableReasonShortForm("CONTENT_KIND_UNSUPPORTED")).toBe(
+      "This post type doesn't report view counts.",
+    );
+  });
+
+  it("REACH_NOT_ON_FIRST_SLIDE renders TDD §3.1's exact sentence", () => {
+    expect(renderUnavailableReasonShortForm("REACH_NOT_ON_FIRST_SLIDE")).toBe(
+      "Views are reported on later slides of this carousel, but the score reads the first slide only.",
+    );
+  });
+
+  it("INSUFFICIENT_HISTORY renders null — no approved copy exists for a declared-but-unproduced reason", () => {
+    expect(renderUnavailableReasonShortForm("INSUFFICIENT_HISTORY")).toBeNull();
+  });
+
+  it("all six non-null strings are pairwise distinct — no two reasons collapse to one sentence", () => {
+    const reasons = [
+      "REACH_HIDDEN",
+      "REACH_UNKNOWN",
+      "CAUSE_NOT_DETERMINABLE",
+      "NO_AUDIENCE_DATA",
+      "CONTENT_KIND_UNSUPPORTED",
+      "REACH_NOT_ON_FIRST_SLIDE",
+    ] as const;
+    const rendered = reasons.map((reason) => renderUnavailableReasonShortForm(reason));
+
+    expect(new Set(rendered).size).toBe(rendered.length);
   });
 });
 
@@ -417,7 +464,7 @@ describe("resolveUnavailableReason — every branch reachable and distinct", () 
     // assertion here. The negative check below (guarding N1 — this must
     // never render row 4's "no follower count" copy) is still true and
     // stays.
-    const rendered = renderHiddenCountsReasonShortForm(result as "CAUSE_NOT_DETERMINABLE");
+    const rendered = renderUnavailableReasonShortForm(result);
     expect(rendered).not.toBe("No follower count available");
   });
 

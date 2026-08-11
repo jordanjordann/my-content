@@ -25,14 +25,17 @@ export {
   computeJudgement,
   computeProvisional,
   determineTierUsed,
-  renderHiddenCountsReasonShortForm,
+  renderUnavailableReasonShortForm,
   resolveHiddenCountsUnavailableReason,
   resolveUnavailableReason,
 } from "./judgement";
-export type { HiddenCountsUnavailableReason } from "./judgement";
+export type { HiddenCountsUnavailableReason, UnavailableReasonShortForm } from "./judgement";
 
 export { computePerformanceBlock } from "./computeBlock";
 export type { ComputePerformanceBlockInput } from "./computeBlock";
+
+export { buildComputedPerformanceBlock } from "./readModel";
+export type { PerformanceBlockRow, PerformanceComputed, PerformanceTier2 } from "./readModel";
 
 export { assertNever } from "./types";
 export type {

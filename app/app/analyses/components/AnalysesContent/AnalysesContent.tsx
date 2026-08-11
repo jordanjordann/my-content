@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { useAnalysesQuery, useAnalyzeContentMutation, useDeleteAnalysisMutation } from "@/lib/api/analyses";
+import { useAllAnalysesQuery, useAnalyzeContentMutation, useDeleteAnalysisMutation } from "@/lib/api/analyses";
 import type { ProgressState } from "@/app/app/analyses/components/progress/AnalysisProgressPanel/types";
 import { AnalysisDataTable } from "@/app/app/analyses/components/grids/AnalysisDataTable";
 import { AnalysisGridSkeleton } from "@/app/app/analyses/components/grids/AnalysisGridSkeleton";
@@ -24,7 +24,10 @@ export function AnalysesContent() {
   const searchParams = useSearchParams();
   const detailId = searchParams.get("id");
 
-  const { data, isPending } = useAnalysesQuery();
+  // B4 (PR #196 review) — this page's filters are client-side over the full corpus, so it
+  // must fetch every row in one response, not one server-paginated page. See
+  // `useAllAnalysesQuery` for why; #145 replaces this page with server-side filtering.
+  const { data, isPending } = useAllAnalysesQuery();
   const { mutate: startAnalysis, isPending: isAnalyzing } = useAnalyzeContentMutation();
   const { mutate: removeAnalysis, isPending: isDeleting } = useDeleteAnalysisMutation();
   const [modalOpen, setModalOpen] = useState(false);
@@ -32,6 +35,11 @@ export function AnalysesContent() {
 
   const analyses = data?.analyses ?? [];
   const accounts = data?.accounts ?? [];
+  // Ticket #144 blocker B2: this is the server's unfiltered count. With `useAllAnalysesQuery`
+  // (B4) `analyses` already spans the full corpus in one response, so this equals
+  // `analyses.length` in practice — kept as `pagination.total` (not derived) so it stays
+  // correct even if this page's fetch strategy changes again before #145 lands.
+  const serverTotalCount = data?.pagination.total ?? 0;
 
   const {
     filters,
@@ -43,7 +51,15 @@ export function AnalysesContent() {
     clearAll,
     anyActive,
   } = useAnalysisFilters();
-  const { filtered, counts, totalCount } = useFilteredAnalyses(analyses, filters, accounts);
+  // B4 fix: `analyses` is the full corpus (see `useAllAnalysesQuery` above), so `filtered`/
+  // `counts` search every row, not just one server-paginated page. This client-side filtering
+  // approach is a bridge for the OLD page only — #145 replaces it with server-side filtering.
+  const { filtered, counts, totalCount } = useFilteredAnalyses(
+    analyses,
+    filters,
+    accounts,
+    serverTotalCount,
+  );
 
   const handleClearSelection = useCallback(
     (dimension: Parameters<typeof setDimension>[0]) => setDimension(dimension, []),

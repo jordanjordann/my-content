@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 import { getAnalysisDetail } from "@/lib/server/db";
 import { isAuthenticated } from "@/lib/server/auth";
+import { buildComputedPerformanceBlock, type PerformanceBlockRow } from "@/lib/server/analysis/performance";
+import type { AnalysisPerformance } from "@/lib/api/analyses/types";
 
 export const runtime = "nodejs";
 
@@ -30,6 +32,49 @@ export async function GET(
       }
     }
 
+    // Ticket #144 (TDD §7) — purely additive, verbatim same derivation as
+    // `app/api/analyses/route.ts`'s list endpoint.
+    const computed = buildComputedPerformanceBlock({
+      platform: detail.platform as "instagram" | "youtube",
+      likeCount: detail.likeCount,
+      commentCount: detail.commentCount,
+      likeAndViewCountsDisabled: detail.likeAndViewCountsDisabled,
+      followerCount: detail.followerCount,
+      audienceSourceFetchedAt: detail.audienceSourceFetchedAt,
+      createdAt: detail.createdAt,
+      perfReachValue: detail.perfReachValue,
+      perfReachKind: detail.perfReachKind as PerformanceBlockRow["perfReachKind"],
+      perfReachDerivedFrom: detail.perfReachDerivedFrom as PerformanceBlockRow["perfReachDerivedFrom"],
+      perfTier1Ratio: detail.perfTier1Ratio,
+      perfTier1Denominator: detail.perfTier1Denominator as PerformanceBlockRow["perfTier1Denominator"],
+      perfBucketKey: detail.perfBucketKey,
+      perfBaselineMedian: detail.perfBaselineMedian,
+      perfBaselineSampleSize: detail.perfBaselineSampleSize,
+      perfMultiplier: detail.perfMultiplier,
+      perfPostAgeHours: detail.perfPostAgeHours,
+      perfTierUsed: detail.perfTierUsed as PerformanceBlockRow["perfTierUsed"],
+      perfConfidence: detail.perfConfidence as PerformanceBlockRow["perfConfidence"],
+      perfConfidenceReason: detail.perfConfidenceReason as PerformanceBlockRow["perfConfidenceReason"],
+      perfProvisional: detail.perfProvisional,
+      perfUnavailableReason: detail.perfUnavailableReason as PerformanceBlockRow["perfUnavailableReason"],
+    });
+
+    const resultsPerformance = (results as { performance?: { performanceScore: number | null; verdict: string; drivers: string[] } } | null)
+      ?.performance;
+
+    const performance: AnalysisPerformance =
+      computed == null
+        ? null
+        : {
+            computed,
+            judgement: {
+              performanceScore: resultsPerformance?.performanceScore ?? null,
+              // B3: `null` means no judgement exists — never fabricate an empty string.
+              verdict: resultsPerformance?.verdict ?? null,
+              drivers: resultsPerformance?.drivers ?? [],
+            },
+          };
+
     return NextResponse.json({
       id: detail.id,
       prompt: detail.prompt,
@@ -49,6 +94,7 @@ export async function GET(
       durationSec: detail.durationSec,
       results,
       createdAt: detail.createdAt,
+      performance,
     });
   } catch (error) {
     return NextResponse.json(

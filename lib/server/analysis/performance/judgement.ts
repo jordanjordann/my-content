@@ -19,10 +19,16 @@ import type {
  * `basedOnVideos`, `provisional`, and the full seven-member
  * `unavailableReason` enum.
  *
- * `resolveHiddenCountsUnavailableReason`/`renderHiddenCountsReasonShortForm`
- * below are #169's — kept as-is, not re-derived (TDD §4's "unavailableReason
- * has TWO origins" subsection: #143 IMPORTS this slice rather than
- * reimplementing it). Everything below them is new in this ticket.
+ * `resolveHiddenCountsUnavailableReason` below is #169's — kept as-is, not
+ * re-derived (TDD §4's "unavailableReason has TWO origins" subsection: #143
+ * IMPORTS this slice rather than reimplementing it).
+ *
+ * `renderUnavailableReasonShortForm` (below) is ticket #144's — it REPLACES
+ * #169's `renderHiddenCountsReasonShortForm` (PR #179 review / the #144
+ * scope note folded onto this ticket): that function only covered two of
+ * the seven `UnavailableReason` members (DESIGN-3B §5 rows 1 and 3).
+ * #144 owns the FULL seven-member renderer so the canonical L1 copy has
+ * exactly one home, never two competing renderers drifting out of sync.
  */
 
 /**
@@ -87,23 +93,64 @@ export function resolveHiddenCountsUnavailableReason(params: {
 }
 
 /**
- * DESIGN-3B §5 rows 1 and 3, L1 (in-cell) short form. **The copy is not
- * touched here** — these are the exact strings DESIGN-3B already carries;
- * this function only guarantees, at the type level, that the two rows
- * cannot be mapped to the same string (an exhaustive `switch` over a
- * closed 2-member union, with `assertNever` on the impossible branch —
- * AGENTS.md/owner preference: illegal states unrepresentable, not a doc
- * comment). #144/#145 own the remaining five reasons' L1 strings and the
- * L2 popover copy for all seven — this function must not be widened to
- * cover them; it exists only to make R-13.5.3a's two-fact split provably
- * render as two different strings (AC-30).
+ * Ticket #144 — the full seven-member `UnavailableReason` L1 (in-cell)
+ * short-form renderer, typed as a literal-string union (not `string`) per
+ * the PR #179 review's explicit ask: *"it costs nothing and makes a future
+ * edit to the copy visible at every call site."* **The copy is not
+ * invented here** — five of the seven strings are DESIGN-3B §5's exact L1
+ * cells (rows 1/2/3/4) or TDD §3.1's exact plain-language sentences
+ * (`CONTENT_KIND_UNSUPPORTED`, `REACH_NOT_ON_FIRST_SLIDE`).
+ *
+ * Two deliberate exceptions, neither of which fabricates copy:
+ *
+ * - `REACH_NOT_ON_FIRST_SLIDE` — R-N1 (DESIGN-3C §5.4) requires the actual
+ *   later-slide figure and its kind to accompany this state ("a later
+ *   slide reports 0 views"); that figure is not part of the enum this
+ *   function receives, so what's returned here is TDD §3.1's own
+ *   context-free framing sentence, not DESIGN-3C's per-row cell copy. A
+ *   caller that has the figure (e.g. a future L1 cell renderer) composes
+ *   the two; this function does not synthesize a fake specific number.
+ * - `INSUFFICIENT_HISTORY` — declared on `UnavailableReason` but
+ *   intentionally never produced by `resolveUnavailableReason` (TDD §5.3,
+ *   PR #191 review, Leo's note). No DESIGN-3B/DESIGN-3C row exists for it
+ *   and no scenario in the corpus reaches it, so there is no approved copy
+ *   to render. Per the standing instruction to never invent user-facing
+ *   copy, this returns `null` rather than a fabricated sentence — a caller
+ *   reaching this branch should treat it as unreachable in production and
+ *   flag it, not display it.
+ *
+ * An exhaustive `switch` over the closed seven-member union, with
+ * `assertNever` on the impossible default branch, guarantees at the type
+ * level that no two members can be silently mapped to the same string by
+ * accident (AGENTS.md/owner preference: illegal states unrepresentable,
+ * not a doc comment) — the same discipline #169's narrower version used
+ * for its two rows, extended to all seven.
  */
-export function renderHiddenCountsReasonShortForm(reason: HiddenCountsUnavailableReason): string {
+export type UnavailableReasonShortForm =
+  | "Creator hid the counts"
+  | "No view count published"
+  | "No performance data published"
+  | "No follower count available"
+  | "This post type doesn't report view counts."
+  | "Views are reported on later slides of this carousel, but the score reads the first slide only."
+  | null;
+
+export function renderUnavailableReasonShortForm(reason: UnavailableReason): UnavailableReasonShortForm {
   switch (reason) {
     case "REACH_HIDDEN":
       return "Creator hid the counts";
+    case "REACH_UNKNOWN":
+      return "No view count published";
     case "CAUSE_NOT_DETERMINABLE":
       return "No performance data published";
+    case "NO_AUDIENCE_DATA":
+      return "No follower count available";
+    case "CONTENT_KIND_UNSUPPORTED":
+      return "This post type doesn't report view counts.";
+    case "REACH_NOT_ON_FIRST_SLIDE":
+      return "Views are reported on later slides of this carousel, but the score reads the first slide only.";
+    case "INSUFFICIENT_HISTORY":
+      return null;
     default:
       return assertNever(reason);
   }

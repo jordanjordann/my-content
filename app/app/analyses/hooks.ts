@@ -133,11 +133,19 @@ export function useAnalysisFilters() {
  *
  * `accounts` is the full account list from the query response (not derived from `analyses`) so
  * that a zero-match account still emits a `0`-count option (design §10.4 — never hide options).
+ *
+ * Ticket #144 introduced server-side pagination (`ANALYSES_PAGE_SIZE`/page) for the future 3C
+ * table, which would have silently capped this page's filters at one page. B4 (PR #196 review)
+ * fixes that for THIS page specifically: the caller uses `useAllAnalysesQuery` to fetch the full
+ * corpus in one response, so `analyses` here is the full corpus again, same as pre-#144.
+ * `totalCount` is still passed in separately from `pagination.total` rather than derived as
+ * `analyses.length`, so this stays correct even if the caller's fetch strategy changes again.
  */
 export function useFilteredAnalyses(
   analyses: AnalysisListItemIndexed[],
   filters: AnalysisFilters,
   accounts: string[],
+  totalCount: number,
 ) {
   return useMemo(() => {
     const filtered = analyses.filter(
@@ -174,6 +182,6 @@ export function useFilteredAnalyses(
       })),
     };
 
-    return { filtered, counts, totalCount: analyses.length };
-  }, [analyses, filters, accounts]);
+    return { filtered, counts, totalCount };
+  }, [analyses, filters, accounts, totalCount]);
 }
