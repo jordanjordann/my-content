@@ -98,6 +98,54 @@ describe("getAnalysesList — pagination (50/page)", () => {
     expect(page1Ids.some((id: string) => page2Ids.includes(id))).toBe(false);
   });
 
+  /**
+   * B1 (code review on #196): the test above cannot prove the `a.id ASC` tiebreaker matters,
+   * because every one of its 63 rows gets a DISTINCT sort key (`creator-${i}`) — with no ties,
+   * `LIMIT`/`OFFSET` is already a total order regardless of the tiebreaker, so deleting
+   * `, a.id ASC` from `buildOrderByClause` left this suite green for the wrong reason.
+   *
+   * This fixture gives all 63 rows an IDENTICAL sort key (`postDate` sorted by `posted`), so
+   * `a.id ASC` is the ONLY thing capable of producing a total order across the two pages. It
+   * asserts both duplication AND omission explicitly (not just an id-set union match), by
+   * checking the exact expected id set on each page against the full, ascending-by-id ordering.
+   *
+   * Mutation-verified: with `, a.id ASC` removed from `buildOrderByClause`, this test FAILED
+   * (union size dropped below 63 due to duplicate ids landing on both pages, with SQLite's
+   * tie-scan order non-deterministic across the two separate `LIMIT/OFFSET` queries). Restored
+   * immediately after with the Edit tool; `git diff` confirmed clean.
+   */
+  it("with every row sharing an IDENTICAL sort key, the `a.id ASC` tiebreaker alone prevents duplication/omission across pages", async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 63; i++) {
+      ids.push(
+        await insertAnalysis(db, {
+          username: `creator-${i}`,
+          // Same value on every row — the `posted` sort key cannot break any tie by itself.
+          postDate: "2026-01-01T00:00:00.000Z",
+        }),
+      );
+    }
+    // `a.id ASC` is the deterministic total order once `posted` is constant across all rows.
+    const expectedOrder = [...ids].sort();
+
+    const page1 = await dbModule.getAnalysesList({ page: 1, sortBy: "posted", sortDir: "asc" });
+    const page2 = await dbModule.getAnalysesList({ page: 2, sortBy: "posted", sortDir: "asc" });
+
+    expect(page1.analyses).toHaveLength(50);
+    expect(page2.analyses).toHaveLength(13);
+
+    const page1Ids = page1.analyses.map((a: { id: string }) => a.id);
+    const page2Ids = page2.analyses.map((a: { id: string }) => a.id);
+
+    // Exact expected id set per page (catches BOTH a duplicated id landing on both pages AND a
+    // dropped id missing from both) — not merely a union-size check.
+    expect(page1Ids).toEqual(expectedOrder.slice(0, 50));
+    expect(page2Ids).toEqual(expectedOrder.slice(50, 63));
+
+    const union = new Set([...page1Ids, ...page2Ids]);
+    expect(union.size).toBe(63);
+  });
+
   it("ordering is stable across repeated reads of the same page (same sort key ties broken by id)", async () => {
     for (let i = 0; i < 5; i++) {
       await insertAnalysis(db, { username: "same-creator", perfReachValue: 100 });

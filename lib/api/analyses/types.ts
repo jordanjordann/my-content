@@ -101,10 +101,18 @@ export type PerformanceComputed = {
   unavailableReason: UnavailableReason | null;
 };
 
-/** The model's judgement-layer output, lifted out of `result_content` the same way `overallScore`/`scorecard` already are. */
+/**
+ * The model's judgement-layer output, lifted out of `result_content` the same way
+ * `overallScore`/`scorecard` already are.
+ *
+ * `verdict` is `string | null` — `null` means no judgement exists for this row (e.g. an
+ * `UNAVAILABLE` row, or `result_content` with no `performance` block), consistent with
+ * `performanceScore`. Never substitute `""` for absence: the client must be able to
+ * distinguish "no judgement" from "the model returned an empty verdict".
+ */
 export type PerformanceJudgement = {
   performanceScore: number | null;
-  verdict: string;
+  verdict: string | null;
   drivers: string[];
 };
 

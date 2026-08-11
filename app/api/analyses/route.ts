@@ -76,7 +76,9 @@ function buildPerformance(row: PerformanceBlockRow, resultContent: string | null
     computed,
     judgement: {
       performanceScore: performance?.performanceScore ?? null,
-      verdict: performance?.verdict ?? "",
+      // B3: `null` means no judgement exists (e.g. no `performance` block in
+      // `result_content`) — never fabricate an empty string for that case.
+      verdict: performance?.verdict ?? null,
       drivers: performance?.drivers ?? [],
     },
   };

@@ -32,6 +32,9 @@ export function AnalysesContent() {
 
   const analyses = data?.analyses ?? [];
   const accounts = data?.accounts ?? [];
+  // Ticket #144 blocker B2: this is the server's unfiltered count across ALL pages, not
+  // `analyses.length` (which is only the current 50-row page). See `useFilteredAnalyses` for why.
+  const serverTotalCount = data?.pagination.total ?? 0;
 
   const {
     filters,
@@ -43,7 +46,17 @@ export function AnalysesContent() {
     clearAll,
     anyActive,
   } = useAnalysisFilters();
-  const { filtered, counts, totalCount } = useFilteredAnalyses(analyses, filters, accounts);
+  // KNOWN LIMITATION (B2, not fixed by this ticket — flagged for a follow-up owned by #145):
+  // `analyses` here is page-scoped (server-side pagination, 50/page), so `filtered`/`counts` only
+  // ever see the current page even though `accounts` (and now `totalCount`) reflect the FULL
+  // corpus. A filter whose only matches live on page 2+ will show a false "no results" state.
+  // Fully fixing this requires moving filtering server-side, which is out of scope for #144.
+  const { filtered, counts, totalCount } = useFilteredAnalyses(
+    analyses,
+    filters,
+    accounts,
+    serverTotalCount,
+  );
 
   const handleClearSelection = useCallback(
     (dimension: Parameters<typeof setDimension>[0]) => setDimension(dimension, []),

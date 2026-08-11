@@ -225,6 +225,27 @@ describe("GET /api/analyses — performance shape, the ticket's three verificati
     expect(row.performance.judgement.performanceScore).toBeNull();
     expect(row.performance.computed.tier1).toBeNull();
   });
+
+  it("B3: a row whose result_content carries no `performance` block gets judgement.verdict null, never a fabricated empty string", async () => {
+    await insertAnalysis(db, {
+      username: "creator-no-judgement-block",
+      // No `performance` key at all — distinct from the above test's `verdict: ""`,
+      // which is a real (if empty) model output. This is the "block never existed" case.
+      resultContent: { overallScore: 2, scorecard: {} },
+      perfReachValue: null,
+      perfReachDerivedFrom: "NONE",
+      perfTierUsed: "UNAVAILABLE",
+      perfConfidence: "NONE",
+      perfUnavailableReason: "REACH_HIDDEN",
+    });
+
+    const response = await listRoute.GET(makeGetRequest());
+    const body = await response.json();
+    const row = body.analyses[0];
+
+    expect(row.performance.judgement).toEqual({ performanceScore: null, verdict: null, drivers: [] });
+    expect(row.performance.judgement.verdict).not.toBe("");
+  });
 });
 
 describe("GET /api/analyses — D8, byte-identical across two reads", () => {

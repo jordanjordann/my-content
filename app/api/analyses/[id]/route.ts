@@ -69,7 +69,8 @@ export async function GET(
             computed,
             judgement: {
               performanceScore: resultsPerformance?.performanceScore ?? null,
-              verdict: resultsPerformance?.verdict ?? "",
+              // B3: `null` means no judgement exists — never fabricate an empty string.
+              verdict: resultsPerformance?.verdict ?? null,
               drivers: resultsPerformance?.drivers ?? [],
             },
           };

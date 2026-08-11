@@ -133,11 +133,19 @@ export function useAnalysisFilters() {
  *
  * `accounts` is the full account list from the query response (not derived from `analyses`) so
  * that a zero-match account still emits a `0`-count option (design §10.4 — never hide options).
+ *
+ * Ticket #144 — `analyses` is now only the CURRENT PAGE (server-side pagination, 50/page), not
+ * the full corpus. `totalCount` is passed in separately from `pagination.total` (the server's
+ * unfiltered row count across all pages) rather than derived as `analyses.length`, which would
+ * silently cap the "Showing X of Y" announcement at the page size. Filtering/counting below still
+ * only sees the current page — see the caller-side note in `AnalysesContent.tsx` for what remains
+ * unfixed by this ticket.
  */
 export function useFilteredAnalyses(
   analyses: AnalysisListItemIndexed[],
   filters: AnalysisFilters,
   accounts: string[],
+  totalCount: number,
 ) {
   return useMemo(() => {
     const filtered = analyses.filter(
@@ -174,6 +182,6 @@ export function useFilteredAnalyses(
       })),
     };
 
-    return { filtered, counts, totalCount: analyses.length };
-  }, [analyses, filters, accounts]);
+    return { filtered, counts, totalCount };
+  }, [analyses, filters, accounts, totalCount]);
 }
