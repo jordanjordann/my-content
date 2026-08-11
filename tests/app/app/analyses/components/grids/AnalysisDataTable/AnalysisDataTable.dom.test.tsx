@@ -183,6 +183,79 @@ const ROW_F_CAROUSEL_RAW_MISMATCH = baseRow({
   },
 });
 
+/**
+ * Row G — completed, `INSUFFICIENT_HISTORY` (PR #198 review, round 3, blocker 2). No
+ * approved copy exists for this state (DESIGN-3B §5.2/`render.ts`'s own doc — it returns
+ * `null` on purpose): the Performance cell must render the table's honest "—" placeholder,
+ * never row 3's `No performance data published` sentence, which may be false for this post.
+ */
+const ROW_G_INSUFFICIENT_HISTORY = baseRow({
+  id: "row-g-insufficient-history",
+  title: "Too new to judge",
+  performance: {
+    computed: {
+      reach: { value: null, kind: null, derivedFrom: "NONE", state: "UNKNOWN" },
+      likes: { value: null, state: "UNKNOWN" },
+      comments: { value: null, state: "UNKNOWN" },
+      audience: { value: null, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
+      postAgeHours: 1,
+      tier1: null,
+      tier2: null,
+      tier3: null,
+      tierUsed: "UNAVAILABLE",
+      confidence: "NONE",
+      confidenceReason: null,
+      provisional: false,
+      unavailableReason: "INSUFFICIENT_HISTORY",
+    },
+    judgement: { performanceScore: null, verdict: null, drivers: [] },
+  },
+});
+
+/**
+ * Row H — completed, but `performance: null` (a pre-schema-3 row, `AnalysisListItemIndexed`'s
+ * own doc: `tableDerived` is `null` iff `performance` is `null`). Distinct from Row D:
+ * status is `"completed"`, so `AnalysisTableRow`'s whole-row failed treatment does NOT apply
+ * and the Performance cell must reach the `row.tableDerived == null` branch directly.
+ */
+const ROW_H_PRE_SCHEMA_3 = baseRow({
+  id: "row-h-pre-schema-3",
+  title: "Pre-redesign row",
+  schemaVersion: null,
+  performance: null,
+});
+
+/**
+ * Row I — a reel with the same `derivedFrom: "NONE"` + follower-denominated Tier 1 shape
+ * as Row B's carousel, but `mediaType: "reel"` (PR #198 review, round 3, item 2: DESIGN-3C
+ * R-13.5.2 forbids collapsing "not published for image posts" onto video content). The Eng.
+ * / reach cell must read `no post-level reach` (DESIGN-3C §5.4 line 293), never the
+ * image-posts string, which would be false for a reel.
+ */
+const ROW_I_REEL_NO_RESULT_REACH = baseRow({
+  id: "row-i-reel-hidden-reach",
+  mediaType: "reel",
+  title: "Reel with hidden reach",
+  performance: {
+    computed: {
+      reach: { value: null, kind: null, derivedFrom: "NONE", state: "UNKNOWN" },
+      likes: { value: 300, state: "AVAILABLE" },
+      comments: { value: 4, state: "AVAILABLE" },
+      audience: { value: 50_000, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
+      postAgeHours: 20,
+      tier1: { denominator: "FOLLOWERS", ratio: 0.006 },
+      tier2: { median: null, sampleSize: 1, bucketKey: "instagram:reel:full_video", multiplier: null },
+      tier3: null,
+      tierUsed: "AUDIENCE_FALLBACK",
+      confidence: "MEDIUM",
+      confidenceReason: "CACHED_FOLLOWER_DENOMINATOR",
+      provisional: false,
+      unavailableReason: null,
+    },
+    judgement: { performanceScore: 2, verdict: "Rough read.", drivers: [] },
+  },
+});
+
 const ALL_ROWS = [ROW_A_SCORED, ROW_B_COLD_START, ROW_C_SCORELESS, ROW_D_FAILED];
 
 function buildFetchMock(rows: AnalysisListItem[], capturedUrls: string[]) {
@@ -335,6 +408,47 @@ describe("AnalysisDataTable — row 3 vs row 3b (DESIGN-3B §5.4, PR #198 review
     const row = (await screen.findByText("Quiet post")).closest("tr") as HTMLElement;
     expect(within(row).getAllByText("No performance data published").length).toBeGreaterThan(0);
     expect(within(row).queryByText("Engagement data incomplete")).not.toBeInTheDocument();
+  });
+});
+
+describe("AnalysisDataTable — Performance cell never borrows another row's reason (PR #198 review, round 3, blocker 2)", () => {
+  it("INSUFFICIENT_HISTORY (no approved copy exists) renders the honest '—' placeholder, never row 3's sentence", async () => {
+    renderTable([ROW_G_INSUFFICIENT_HISTORY]);
+    const row = (await screen.findByText("Too new to judge")).closest("tr") as HTMLElement;
+    const scoped = within(row);
+    expect(scoped.queryByText("No performance data published")).not.toBeInTheDocument();
+    // The Performance cell (col 6) specifically — scope to its own <td> since other cells
+    // in this row legitimately also render "—" (Counts, vs their usual, both engagement
+    // columns all lack the data INSUFFICIENT_HISTORY describes).
+    const cells = row.querySelectorAll("td");
+    const performanceCell = cells[5] as HTMLElement;
+    expect(within(performanceCell).getByText("—")).toBeInTheDocument();
+  });
+
+  it("a pre-schema-3 row (`performance: null`, status completed — `tableDerived == null`) renders '—', never row 3's sentence", async () => {
+    renderTable([ROW_H_PRE_SCHEMA_3]);
+    const row = (await screen.findByText("Pre-redesign row")).closest("tr") as HTMLElement;
+    const scoped = within(row);
+    expect(scoped.queryByText("No performance data published")).not.toBeInTheDocument();
+    const cells = row.querySelectorAll("td");
+    const performanceCell = cells[5] as HTMLElement;
+    expect(within(performanceCell).getByText("—")).toBeInTheDocument();
+  });
+});
+
+describe("AnalysisDataTable — Eng. / reach reason text does not collapse reel and image-post rows (PR #198 review, round 3, item 2, DESIGN-3C R-13.5.2 / §5.4 line 293)", () => {
+  it("an image-only carousel (mediaType 'carousel', reach derivedFrom NONE) still reads 'not published for image posts'", async () => {
+    renderTable([ROW_B_COLD_START]);
+    const row = (await screen.findByText("10 Ide Konten Ramadan")).closest("tr") as HTMLElement;
+    expect(within(row).getByText("not published for image posts")).toBeInTheDocument();
+    expect(within(row).queryByText("no post-level reach")).not.toBeInTheDocument();
+  });
+
+  it("a reel with the same reach shape (mediaType 'reel') reads 'no post-level reach', never the image-posts string", async () => {
+    renderTable([ROW_I_REEL_NO_RESULT_REACH]);
+    const row = (await screen.findByText("Reel with hidden reach")).closest("tr") as HTMLElement;
+    expect(within(row).getByText("no post-level reach")).toBeInTheDocument();
+    expect(within(row).queryByText("not published for image posts")).not.toBeInTheDocument();
   });
 });
 

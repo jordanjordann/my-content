@@ -1,5 +1,6 @@
 import { resolveUnavailableReasonCopy } from "@/lib/analysis/performance/render";
 import type {
+  AnalysisListItem,
   AnalysisPerformance,
   AnalysisPlatform,
   AnalysisTableDerivedPerformance,
@@ -11,6 +12,18 @@ import type {
   PerformanceComputed,
   Tier,
 } from "@/lib/api/analyses/types";
+
+/**
+ * Video-bearing media types, per `AnalysisListItem["mediaType"]` — the only content-kind
+ * signal the client actually has (`lib/api/analyses/types.ts`; the server's finer-grained
+ * `ReachResult.hasVideo`, `lib/server/analysis/performance/reach.ts`, is not part of the
+ * #144 API response). `carousel` is deliberately excluded: a carousel can be all-image, and
+ * `deriveEngagementCell` only reaches its media-type branch when `computed.reach.derivedFrom
+ * === "NONE"` — which the server only ever produces for a carousel when NO slide, first or
+ * later, carries a reach field (a genuinely image-only carousel) — so treating `carousel` as
+ * "video" here would be the wrong direction of error.
+ */
+const VIDEO_MEDIA_TYPES: ReadonlySet<AnalysisListItem["mediaType"]> = new Set(["reel", "short"]);
 
 /** Lowercase, trim, and collapse whitespace runs to a single space. */
 export function normalize(s: string): string {
@@ -204,13 +217,19 @@ function deriveMultiplierCell(computed: PerformanceComputed): AnalysisTableMulti
  * Cols 8/9 — Direction A (TDD §9.2 / DESIGN-3C §4). Every row fills exactly one of the two
  * columns; the other renders a plain-language reason, never a blank.
  *
- * The two "wrong-denominator" reasons are DESIGN-3C §4's own worked example table, verbatim,
- * not invented: `no follower measure here` (Eng. / followers, reel row) and
- * `not published for image posts` (Eng. / reach, all-image-carousel row).
+ * The "wrong-denominator" reasons are DESIGN-3C's own worked examples, verbatim, not
+ * invented: `no follower measure here` (§4, Eng. / followers, reel row) and, for Eng. /
+ * reach, one of two strings depending on the row's actual content kind — collapsing them
+ * is exactly what R-13.5.2 (§5.4) forbids: `not published for image posts` (§4, all-image-
+ * carousel row) for genuinely image-only content, or `no post-level reach` (§5.4 line 293)
+ * for video content (a reel, a video-bearing carousel) whose reach happens to be
+ * unavailable — that post DOES publish counts, so the image-posts string would be false
+ * (PR #198 review, round 3, blocker: the fix must not pick the string by denominator alone).
  */
 function deriveEngagementCell(
   computed: PerformanceComputed,
   denominator: "REACH" | "FOLLOWERS",
+  mediaType: AnalysisListItem["mediaType"],
 ): AnalysisTableEngagementCell {
   const { tier1, unavailableReason, reach, audience } = computed;
 
@@ -234,7 +253,12 @@ function deriveEngagementCell(
     // nothing wrong; the other denominator simply won).
     return {
       kind: "reason",
-      text: denominator === "REACH" ? "not published for image posts" : "no follower measure here",
+      text:
+        denominator === "REACH"
+          ? VIDEO_MEDIA_TYPES.has(mediaType)
+            ? "no post-level reach"
+            : "not published for image posts"
+          : "no follower measure here",
     };
   }
 
@@ -266,6 +290,7 @@ export function resolveAbsentScoreReasonText(computed: PerformanceComputed): str
  */
 export function deriveAnalysisTablePerformance(
   performance: AnalysisPerformance,
+  mediaType: AnalysisListItem["mediaType"],
 ): AnalysisTableDerivedPerformance | null {
   if (performance == null) {
     return null;
@@ -277,7 +302,7 @@ export function deriveAnalysisTablePerformance(
     reachCountState: classifyReachCountState(computed.reach),
     performanceCell: derivePerformanceCell(computed, judgement.performanceScore),
     multiplierCell: deriveMultiplierCell(computed),
-    engagementReachCell: deriveEngagementCell(computed, "REACH"),
-    engagementFollowersCell: deriveEngagementCell(computed, "FOLLOWERS"),
+    engagementReachCell: deriveEngagementCell(computed, "REACH", mediaType),
+    engagementFollowersCell: deriveEngagementCell(computed, "FOLLOWERS", mediaType),
   };
 }

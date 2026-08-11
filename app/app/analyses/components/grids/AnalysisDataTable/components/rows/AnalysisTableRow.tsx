@@ -226,8 +226,16 @@ function PerformanceCell({ row, failed }: { row: AnalysisListItemIndexed; failed
   const cell = row.tableDerived?.performanceCell;
 
   if (cell == null || cell.kind === "reason") {
-    const reasonText = cell?.text ?? "No performance data published";
-    return <p className="text-xs text-muted-foreground">{reasonText}</p>;
+    // `cell?.text` is `null` for two genuine states: `INSUFFICIENT_HISTORY` (no approved
+    // copy exists for it, DESIGN-3B §5.2 — `resolveUnavailableReasonCopy` returns `null`
+    // on purpose) and `row.tableDerived == null` (a pre-schema-3 row). Neither state may
+    // borrow another row's sentence (PR #198 review, round 3, blocker 2) — the same muted
+    // "—" this table already uses for every other absent metric (`ScorePips`,
+    // `MultiplierCell`'s `dash` kind) is the honest placeholder here too.
+    if (cell?.text != null) {
+      return <p className="text-xs text-muted-foreground">{cell.text}</p>;
+    }
+    return <span className="text-sm text-muted-foreground">—</span>;
   }
 
   return (
