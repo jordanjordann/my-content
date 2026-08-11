@@ -28,6 +28,7 @@ export async function getAnalyses(params: GetAnalysesParams = {}): Promise<Analy
   if (params.page != null) searchParams.set("page", String(params.page));
   if (params.sortBy != null) searchParams.set("sortBy", params.sortBy);
   if (params.sortDir != null) searchParams.set("sortDir", params.sortDir);
+  if (params.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
 
   const query = searchParams.toString();
   return fetchJson<AnalysesListResponse>(`/api/analyses${query ? `?${query}` : ""}`);

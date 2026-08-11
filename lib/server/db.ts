@@ -62,6 +62,18 @@ export async function deleteSettings(keys: string[]) {
 export const ANALYSES_PAGE_SIZE = 50;
 
 /**
+ * PR #196 review, B4 — bridge cap for the OLD `/app/analyses` page
+ * (`AnalysesContent.tsx`), whose client-side filters need the full corpus,
+ * not one server-paginated page. `getAnalysesList({ pageSize })` accepts an
+ * explicit override up to this cap so that page can request "all rows in
+ * one response" without removing the `ANALYSES_PAGE_SIZE`-per-page default
+ * #144 built (and #145's server-side-filtered 3C table still relies on).
+ * Once #145 replaces the old page, its call site (and this constant) goes
+ * away — do NOT reach for a large `pageSize` in new code.
+ */
+export const ANALYSES_MAX_PAGE_SIZE = 5000;
+
+/**
  * Ticket #144 — the sortable fields (TDD §9.6): creator, posted, reach,
  * content score, performance score, multiplier, and each engagement
  * column separately (reach-denominated / follower-denominated Tier 1
@@ -106,6 +118,14 @@ export interface GetAnalysesListParams {
   sortBy?: AnalysesSortField;
   /** Defaults to `"desc"`. */
   sortDir?: SortDirection;
+  /**
+   * Defaults to `ANALYSES_PAGE_SIZE` (50). B4 bridge — an explicit override,
+   * clamped to `[1, ANALYSES_MAX_PAGE_SIZE]`, lets a caller request a
+   * larger single response (e.g. the OLD `/app/analyses` page's "fetch all"
+   * mode) without disturbing the default page size #145's server-paginated
+   * table depends on.
+   */
+  pageSize?: number;
 }
 
 /**
@@ -135,7 +155,11 @@ export async function getAnalysesList(params: GetAnalysesListParams = {}) {
   const page = params.page != null && params.page >= 1 ? Math.floor(params.page) : 1;
   const sortBy = params.sortBy ?? "posted";
   const sortDir = params.sortDir ?? "desc";
-  const offset = (page - 1) * ANALYSES_PAGE_SIZE;
+  const pageSize =
+    params.pageSize != null && params.pageSize >= 1
+      ? Math.min(Math.floor(params.pageSize), ANALYSES_MAX_PAGE_SIZE)
+      : ANALYSES_PAGE_SIZE;
+  const offset = (page - 1) * pageSize;
 
   const [listResult, countResult] = await Promise.all([
     db.execute({
@@ -184,7 +208,7 @@ export async function getAnalysesList(params: GetAnalysesListParams = {}) {
         ${buildOrderByClause(sortBy, sortDir)}
         LIMIT ? OFFSET ?
       `,
-      args: [ANALYSES_PAGE_SIZE, offset],
+      args: [pageSize, offset],
     }),
     db.execute({ sql: "SELECT COUNT(*) as count FROM analyses", args: [] }),
   ]);
@@ -238,9 +262,9 @@ export async function getAnalysesList(params: GetAnalysesListParams = {}) {
     analyses,
     pagination: {
       page,
-      pageSize: ANALYSES_PAGE_SIZE,
+      pageSize,
       total,
-      totalPages: Math.max(1, Math.ceil(total / ANALYSES_PAGE_SIZE)),
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
     },
   };
 }

@@ -134,12 +134,12 @@ export function useAnalysisFilters() {
  * `accounts` is the full account list from the query response (not derived from `analyses`) so
  * that a zero-match account still emits a `0`-count option (design §10.4 — never hide options).
  *
- * Ticket #144 — `analyses` is now only the CURRENT PAGE (server-side pagination, 50/page), not
- * the full corpus. `totalCount` is passed in separately from `pagination.total` (the server's
- * unfiltered row count across all pages) rather than derived as `analyses.length`, which would
- * silently cap the "Showing X of Y" announcement at the page size. Filtering/counting below still
- * only sees the current page — see the caller-side note in `AnalysesContent.tsx` for what remains
- * unfixed by this ticket.
+ * Ticket #144 introduced server-side pagination (`ANALYSES_PAGE_SIZE`/page) for the future 3C
+ * table, which would have silently capped this page's filters at one page. B4 (PR #196 review)
+ * fixes that for THIS page specifically: the caller uses `useAllAnalysesQuery` to fetch the full
+ * corpus in one response, so `analyses` here is the full corpus again, same as pre-#144.
+ * `totalCount` is still passed in separately from `pagination.total` rather than derived as
+ * `analyses.length`, so this stays correct even if the caller's fetch strategy changes again.
  */
 export function useFilteredAnalyses(
   analyses: AnalysisListItemIndexed[],

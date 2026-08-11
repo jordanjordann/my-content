@@ -282,6 +282,13 @@ export type GetAnalysesParams = {
   page?: number;
   sortBy?: AnalysesSortField;
   sortDir?: SortDirection;
+  /**
+   * B4 (PR #196 review) — optional override of the server's default page
+   * size (50). The OLD `/app/analyses` page's `useAllAnalysesQuery` (see
+   * `lib/api/analyses/hooks.ts`) sets this to `ANALYSES_FETCH_ALL_PAGE_SIZE`
+   * so its client-side filters search the full corpus, not one page.
+   */
+  pageSize?: number;
 };
 
 export type AnalyzeResponse = {

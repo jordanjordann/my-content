@@ -4,6 +4,7 @@ import {
   getAnalysesList,
   getUniqueAccounts,
   deleteAnalysis,
+  ANALYSES_MAX_PAGE_SIZE,
   type AnalysesSortField,
   type SortDirection,
 } from "@/lib/server/db";
@@ -45,6 +46,22 @@ function parsePage(raw: string | null): number | null {
   }
   const parsed = Number(raw);
   return Number.isInteger(parsed) && parsed >= 1 ? parsed : null;
+}
+
+/**
+ * B4 (PR #196 review) — optional override of the server default page size
+ * (`ANALYSES_PAGE_SIZE`), clamped to `[1, ANALYSES_MAX_PAGE_SIZE]` at the DB
+ * layer. Used by the OLD `/app/analyses` page's "fetch all" bridge; #145's
+ * server-paginated 3C table leaves this unset and gets the 50/page default.
+ */
+function parsePageSize(raw: string | null): number | null | undefined {
+  if (raw == null) {
+    return undefined;
+  }
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= ANALYSES_MAX_PAGE_SIZE
+    ? parsed
+    : null;
 }
 
 /**
@@ -94,6 +111,7 @@ export async function GET(request: Request) {
     const page = parsePage(searchParams.get("page"));
     const sortBy = parseSortBy(searchParams.get("sortBy"));
     const sortDir = parseSortDir(searchParams.get("sortDir"));
+    const pageSize = parsePageSize(searchParams.get("pageSize"));
 
     if (page == null) {
       return NextResponse.json({ error: "Invalid 'page' query parameter." }, { status: 400 });
@@ -104,9 +122,15 @@ export async function GET(request: Request) {
     if (sortDir == null) {
       return NextResponse.json({ error: "Invalid 'sortDir' query parameter." }, { status: 400 });
     }
+    if (pageSize === null) {
+      return NextResponse.json(
+        { error: `Invalid 'pageSize' query parameter — must be an integer between 1 and ${ANALYSES_MAX_PAGE_SIZE}.` },
+        { status: 400 },
+      );
+    }
 
     const [{ analyses, pagination }, accounts] = await Promise.all([
-      getAnalysesList({ page, sortBy, sortDir }),
+      getAnalysesList({ page, sortBy, sortDir, pageSize }),
       getUniqueAccounts(),
     ]);
 

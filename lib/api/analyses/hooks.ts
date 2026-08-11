@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getAnalyses, getAnalysis, analyzeContent, deleteAnalysis } from "@/lib/api/analyses/api";
-import { ANALYSIS_KEYS } from "@/lib/api/analyses/constants";
+import { ANALYSES_FETCH_ALL_PAGE_SIZE, ANALYSIS_KEYS } from "@/lib/api/analyses/constants";
 import type {
   AnalysesListResponse,
   AnalysisDetail,
@@ -85,6 +85,27 @@ export function useAnalysesQuery(params: GetAnalysesParams = {}) {
     refetchOnWindowFocus: false,
     select: selectIndexedAnalyses,
   });
+}
+
+/**
+ * B4 (PR #196 review) — bridge for the OLD `/app/analyses` page
+ * (`AnalysesContent.tsx`). That page's Account/Platform/Status/keyword
+ * filters run client-side over whatever `useAnalysesQuery` returns; before
+ * ticket #144 that was every row (`getAnalysesList()` had no cap), so
+ * filtering searched the full corpus correctly. #144 capped the default
+ * response at `ANALYSES_PAGE_SIZE` (50) for server-side pagination, which
+ * silently made the old page's filters page-scoped — a filter whose only
+ * matches live on page 2+ now renders a false "no results" state once the
+ * corpus exceeds 50 rows.
+ *
+ * This requests `ANALYSES_FETCH_ALL_PAGE_SIZE` rows in one response,
+ * restoring the old page's original "search everything" behaviour without
+ * touching `useAnalysesQuery`'s own default (still `ANALYSES_PAGE_SIZE`)
+ * that #145's server-paginated 3C table depends on. Do NOT reach for this
+ * in new code — once #145 replaces the old page, this hook goes away.
+ */
+export function useAllAnalysesQuery() {
+  return useAnalysesQuery({ pageSize: ANALYSES_FETCH_ALL_PAGE_SIZE });
 }
 
 export function useAnalysisQuery(id: string) {
