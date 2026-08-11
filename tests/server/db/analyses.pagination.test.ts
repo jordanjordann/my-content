@@ -160,6 +160,20 @@ describe("getAnalysesList — pagination (50/page)", () => {
   });
 });
 
+describe("getAnalysesList — runtime sort-column guard (N1, PR #196 review)", () => {
+  it("throws on a sortBy value not present in SORT_COLUMN_EXPRESSIONS, e.g. a widened/bypassed 'constructor'", async () => {
+    await insertAnalysis(db, { username: "a" });
+
+    await expect(
+      dbModule.getAnalysesList({
+        // Simulates a caller that bypasses the route's own allow-list check.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        sortBy: "constructor" as any,
+      }),
+    ).rejects.toThrow(/Invalid sort field/);
+  });
+});
+
 describe("getAnalysesList — default sort (OR-8)", () => {
   it("defaults to posted descending — newest first — when no params given", async () => {
     const older = await insertAnalysis(db, { username: "a", postDate: "2026-01-01T00:00:00.000Z" });

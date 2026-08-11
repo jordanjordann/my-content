@@ -119,6 +119,13 @@ export interface GetAnalysesListParams {
  * sort column has duplicate values.
  */
 function buildOrderByClause(sortBy: AnalysesSortField, sortDir: SortDirection): string {
+  // Runtime guard (PR #196 review, N1): the route already allow-lists `sortBy` against
+  // `SORT_FIELDS` and 400s on anything else, but this DB layer must not depend on that —
+  // a future caller that bypasses the route, or an `as`-widened value, must not reach an
+  // unchecked property lookup. `hasOwnProperty`, not `in`, so `"constructor"` cannot pass.
+  if (!Object.prototype.hasOwnProperty.call(SORT_COLUMN_EXPRESSIONS, sortBy)) {
+    throw new Error(`Invalid sort field: ${String(sortBy)}`);
+  }
   const column = SORT_COLUMN_EXPRESSIONS[sortBy];
   const direction = sortDir === "asc" ? "ASC" : "DESC";
   return `ORDER BY ${column} IS NULL ASC, ${column} ${direction}, a.id ASC`;
