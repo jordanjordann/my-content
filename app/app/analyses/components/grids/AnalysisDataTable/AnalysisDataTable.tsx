@@ -1,259 +1,211 @@
 "use client";
 
-import { motion, type Variants } from "framer-motion";
-import { cn } from "@/lib/utils";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { useAnalysesQuery } from "@/lib/api/analyses";
+import type { AnalysesSortField, SortDirection } from "@/lib/api/analyses/types";
+import { AnalysisTableColumnHeaders } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/headers/AnalysisTableColumnHeaders";
+import { AnalysisTableRow } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/rows/AnalysisTableRow";
+import { AnalysisTableSkeletonRow } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/rows/AnalysisTableSkeletonRow";
+import { AnalysisTableEmptyState } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/states/AnalysisTableEmptyState";
+import { AnalysisTableErrorState } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/states/AnalysisTableErrorState";
+import { AnalysisSinkDivider } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/dividers/AnalysisSinkDivider";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { ExternalLink, MoreVertical, Trash2 } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import type { AnalysisListItemIndexed } from "@/lib/api/analyses/types";
-import { getScoreBgClass, getScoreColorClass } from "@/app/app/analyses/helpers";
-import { EngagementCount } from "@/app/app/analyses/components/counts/EngagementCount";
+  ANALYSES_TABLE_COLUMNS,
+  DEFAULT_SORT_DIR,
+  DEFAULT_SORT_FIELD,
+  SKELETON_ROW_COUNT,
+} from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
+import { groupAnalysisRows } from "@/app/app/analyses/components/grids/AnalysisDataTable/helpers";
+import type {
+  AnalysisDataTableProps,
+  AnalysisTableDensity,
+} from "@/app/app/analyses/components/grids/AnalysisDataTable/types";
 
-// --- TYPE DEFINITIONS ---
-interface AnalysisTableProps {
-  analyses: AnalysisListItemIndexed[];
-  onAnalysisClick: (id: string) => void;
-  onDelete?: (id: string) => void;
-  isDeleting?: boolean;
-}
-
-// Table column count, kept in sync with the empty-state row's `colSpan` below.
-const TABLE_COLUMN_COUNT = 14;
-
-// --- DIMENSION SCORE CELL ---
-// Threshold logic lives once, in `@/app/app/analyses/helpers`, shared with
-// `AnalysisScorecardSection` (TDD §8.2) — two independent copies of this
-// rule is exactly how it broke on the pre-redesign 1-10 scale.
-function DimensionScoreCell({ score }: { score: number | null }) {
-  return (
-    <span className={cn("text-sm font-semibold tabular-nums", getScoreColorClass(score))}>
-      {score ?? "—"}
-    </span>
-  );
-}
-
-// --- MAIN COMPONENT ---
-export const AnalysisDataTable = ({
-  analyses,
+/**
+ * Ticket #145 — the analyses table skeleton every cell ticket (#146/#147/#149) plugs
+ * into: 9 columns (OR-1), the shared `Scores` group header, two density modes (OR-7),
+ * server-side pagination and sort (OR-8), the sink group (R-S2), the four render states
+ * (design §7), and full table/`aria-sort`/keyboard semantics (design §8-§10).
+ *
+ * Self-fetching (owns `useAnalysesQuery`) rather than taking rows as a prop — server-side
+ * pagination/sort (OR-8) means the caller cannot own the row list without duplicating this
+ * component's page/sort state.
+ */
+export function AnalysisDataTable({
   onAnalysisClick,
-  onDelete,
-  isDeleting,
-}: AnalysisTableProps) => {
-  const rowVariants: Variants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: {
-        duration: 0.3,
-        ease: "easeInOut",
-      },
-    },
+  onNewAnalysis,
+  openAnalysisId,
+  hasActiveFilters = false,
+  onClearFilters,
+}: AnalysisDataTableProps) {
+  const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState<AnalysesSortField>(DEFAULT_SORT_FIELD);
+  const [sortDir, setSortDir] = useState<SortDirection>(DEFAULT_SORT_DIR);
+  // OR-5 / DESIGN-3C §6.3 (superseded 2026-08-09) — plain React state, no persistence of
+  // any kind. Comfortable is the owner-ruled default (OR-7).
+  const [density, setDensity] = useState<AnalysisTableDensity>("comfortable");
+
+  const { data, isPending, isError, error, refetch } = useAnalysesQuery({ page, sortBy, sortDir });
+
+  const rowRefs = useRef(new Map<string, HTMLTableRowElement>());
+  const lastOpenedIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (openAnalysisId) {
+      lastOpenedIdRef.current = openAnalysisId;
+      return;
+    }
+    // Transition from open -> closed: return focus to the row that opened it (design §8).
+    const lastId = lastOpenedIdRef.current;
+    if (lastId) {
+      rowRefs.current.get(lastId)?.focus();
+      lastOpenedIdRef.current = null;
+    }
+  }, [openAnalysisId]);
+
+  const handleSortChange = (field: AnalysesSortField) => {
+    if (field === sortBy) {
+      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      const column = ANALYSES_TABLE_COLUMNS.find((c) => c.sortField === field);
+      setSortBy(field);
+      setSortDir(column?.defaultSortDir ?? "desc");
+    }
+    setPage(1);
   };
+
+  const groups = useMemo(() => groupAnalysisRows(data?.analyses ?? []), [data?.analyses]);
+
+  const bodyContent = (() => {
+    if (isPending) {
+      return Array.from({ length: SKELETON_ROW_COUNT }, (_, index) => (
+        <AnalysisTableSkeletonRow key={index} />
+      ));
+    }
+
+    if (isError) {
+      return (
+        <AnalysisTableErrorState
+          message={error instanceof Error ? error.message : "Something went wrong."}
+          onRetry={() => refetch()}
+        />
+      );
+    }
+
+    if (!data || data.pagination.total === 0) {
+      return hasActiveFilters ? (
+        <AnalysisTableEmptyState variant="no-match" onClearFilters={onClearFilters ?? (() => {})} />
+      ) : (
+        <AnalysisTableEmptyState variant="nothing-analysed" onNewAnalysis={onNewAnalysis} />
+      );
+    }
+
+    const rowNode = (row: (typeof groups.scored)[number]) => (
+      <AnalysisTableRow
+        key={row.id}
+        row={row}
+        density={density}
+        onOpen={onAnalysisClick}
+        rowRef={(el) => {
+          if (el) rowRefs.current.set(row.id, el);
+          else rowRefs.current.delete(row.id);
+        }}
+      />
+    );
+
+    return (
+      <>
+        {groups.scored.map(rowNode)}
+        {groups.scoreless.length > 0 && (
+          <AnalysisSinkDivider
+            label={`${groups.scoreless.length} post${groups.scoreless.length === 1 ? "" : "s"} with no performance score — sorted separately`}
+          />
+        )}
+        {groups.scoreless.map(rowNode)}
+        {/* PR #198 review, blocker 5.1 — DESIGN-3C §3.3 says failed rows sit "under the same
+            divider as unscored rows, labelled separately" but never states that second label's
+            exact wording, and §6.1's one approved divider template is the scoreless-group
+            sentence above. Rather than compose new prose no design doc has signed off, this
+            renders the minimal non-prose count-plus-approved-word marker below (`Analysis
+            failed` is §3.3's own approved row-level string). Flagged for a design ruling on the
+            exact failed-group divider sentence before this ships as prose. */}
+        {groups.nonCompleted.length > 0 && (
+          <AnalysisSinkDivider label={`Analysis failed — ${groups.nonCompleted.length}`} />
+        )}
+        {groups.nonCompleted.map(rowNode)}
+      </>
+    );
+  })();
 
   return (
     <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
-      <div className="relative w-full overflow-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[48px]">Thumb</TableHead>
-              <TableHead className="w-[48px]">Platform</TableHead>
-              <TableHead>Title</TableHead>
-              <TableHead className="text-center">Score</TableHead>
-              <TableHead className="text-center">Hook</TableHead>
-              <TableHead className="text-center">Retention</TableHead>
-              <TableHead className="text-center">Visual</TableHead>
-              <TableHead className="text-center">CTA</TableHead>
-              <TableHead className="text-center">Message</TableHead>
-              <TableHead className="text-center">Original.</TableHead>
-              <TableHead className="text-center">Emotion</TableHead>
-              {/*
-                Views/Likes are headed columns, so the metric word is redundant on every
-                cell (unlike `AnalysisCard`, which has no column header and needs an
-                `sr-only` word for screen-reader users) — `showMetricWord` is left at its
-                default `false` below. `scope="col"` makes the header-to-cell association
-                explicit for screen readers rather than relying on default `<th>`
-                heuristics (TDD §5.4/§8, a11y note).
-
-                NOT sortable today (design's "non-numeric states sort to bottom" is a
-                forward-looking spec note for whoever adds column sorting later — do not
-                build a sort mechanism here).
-              */}
-              <TableHead scope="col" className="text-right">
-                Views
-              </TableHead>
-              <TableHead scope="col" className="text-right">
-                Likes
-              </TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {analyses.length > 0 ? (
-              analyses.map((analysis) => (
-                <motion.tr
-                  key={analysis.id}
-                  initial="hidden"
-                  animate="visible"
-                  variants={rowVariants}
-                  className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
-                >
-                  {/* Thumbnail */}
-                  <TableCell>
-                    <div
-                      className="flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded bg-muted"
-                      onClick={() => onAnalysisClick(analysis.id)}
-                    >
-                      {analysis.thumbnailUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={analysis.thumbnailUrl}
-                          alt="Thumbnail"
-                          className="h-full w-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </div>
-                  </TableCell>
-
-                  {/* Platform */}
-                  <TableCell>
-                    <span
-                      className={cn(
-                        "inline-flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold",
-                        analysis.platform === "youtube"
-                          ? "bg-red-500/10 text-red-600 dark:text-red-400"
-                          : "bg-pink-500/10 text-pink-600 dark:text-pink-400",
-                      )}
-                    >
-                      {analysis.platform === "youtube" ? "YT" : "IG"}
-                    </span>
-                  </TableCell>
-
-                  {/* Title */}
-                  <TableCell>
-                    <div
-                      className="cursor-pointer"
-                      onClick={() => onAnalysisClick(analysis.id)}
-                    >
-                      <p className="truncate text-sm font-medium">
-                        {analysis.title || analysis.caption || "No title"}
-                      </p>
-                    </div>
-                  </TableCell>
-
-                  {/* Overall Score */}
-                  <TableCell className="text-center">
-                    <div
-                      className={cn(
-                        "inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold",
-                        getScoreBgClass(analysis.overallScore),
-                        getScoreColorClass(analysis.overallScore),
-                      )}
-                    >
-                      {analysis.overallScore ?? "—"}
-                    </div>
-                  </TableCell>
-
-                  {/* Dimension Scores */}
-                  <TableCell className="text-center">
-                    <DimensionScoreCell
-                      score={analysis.scorecard?.hookStrength ?? null}
-                    />
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <DimensionScoreCell
-                      score={analysis.scorecard?.retentionFlow ?? null}
-                    />
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <DimensionScoreCell
-                      score={analysis.scorecard?.visualPolish ?? null}
-                    />
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <DimensionScoreCell
-                      score={analysis.scorecard?.ctaEffectiveness ?? null}
-                    />
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <DimensionScoreCell
-                      score={analysis.scorecard?.messageClarity ?? null}
-                    />
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <DimensionScoreCell
-                      score={analysis.scorecard?.originality ?? null}
-                    />
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <DimensionScoreCell
-                      score={analysis.scorecard?.emotionalResonance ?? null}
-                    />
-                  </TableCell>
-
-                  {/* Views / Likes */}
-                  <TableCell className="text-right">
-                    <EngagementCount metric="views" state={analysis.viewCountState} />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <EngagementCount metric="likes" state={analysis.likeCountState} />
-                  </TableCell>
-
-                  {/* Actions */}
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-white">
-                        <MoreVertical className="h-4 w-4" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          className="hover:!text-white"
-                          onClick={() => onAnalysisClick(analysis.id)}
-                        >
-                          <ExternalLink className="mr-2 h-4 w-4" />
-                          View details
-                        </DropdownMenuItem>
-                        {onDelete && (
-                          <DropdownMenuItem
-                            onClick={() => onDelete(analysis.id)}
-                            disabled={isDeleting}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </motion.tr>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={TABLE_COLUMN_COUNT} className="h-24 text-center">
-                  No results.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+      <div className="flex items-center justify-end gap-2 border-b p-2">
+        <span className="text-xs text-muted-foreground">Density</span>
+        <div className="inline-flex rounded-md border">
+          <Button
+            type="button"
+            variant={density === "comfortable" ? "secondary" : "ghost"}
+            size="sm"
+            className="rounded-r-none"
+            aria-pressed={density === "comfortable"}
+            onClick={() => setDensity("comfortable")}
+          >
+            Comfortable
+          </Button>
+          <Button
+            type="button"
+            variant={density === "compact" ? "secondary" : "ghost"}
+            size="sm"
+            className="rounded-l-none"
+            aria-pressed={density === "compact"}
+            onClick={() => setDensity("compact")}
+          >
+            Compact
+          </Button>
+        </div>
       </div>
+
+      <div className="relative max-h-[720px] w-full overflow-auto">
+        <table className="w-full caption-bottom text-sm">
+          <caption className="sr-only">
+            Analyses — every analysed post, its content and performance scores, and how it
+            compares against the creator&apos;s own past posts.
+          </caption>
+          <AnalysisTableColumnHeaders sortBy={sortBy} sortDir={sortDir} onSortChange={handleSortChange} />
+          <tbody>{bodyContent}</tbody>
+        </table>
+      </div>
+
+      {data && data.pagination.total > 0 && (
+        <div className="flex items-center justify-between border-t p-3 text-sm text-muted-foreground">
+          <span>
+            Page {data.pagination.page} of {data.pagination.totalPages} — {data.pagination.total}{" "}
+            analyses
+          </span>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={data.pagination.page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Previous
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={data.pagination.page >= data.pagination.totalPages}
+              onClick={() => setPage((p) => Math.min(data.pagination.totalPages, p + 1))}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
-};
+}

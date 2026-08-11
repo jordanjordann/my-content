@@ -1,5 +1,8 @@
 import { MATURITY_FLOOR_HOURS, BASELINE_MIN_SAMPLE } from "./constants";
-import { assertNever } from "./types";
+import {
+  renderUnavailableReasonShortForm,
+  type UnavailableReasonShortForm,
+} from "@/lib/analysis/performance/render";
 import type {
   AvailabilityState,
   BaselineResult,
@@ -125,36 +128,14 @@ export function resolveHiddenCountsUnavailableReason(params: {
  * accident (AGENTS.md/owner preference: illegal states unrepresentable,
  * not a doc comment) — the same discipline #169's narrower version used
  * for its two rows, extended to all seven.
+ *
+ * The implementation itself now lives in the isomorphic `lib/analysis/performance/render.ts`
+ * (ticket #145's PR #198 review) — this module re-exports it rather than keeping a second copy,
+ * so the client (the analyses table row) and the server import the exact same function instead
+ * of two renderers that can drift apart.
  */
-export type UnavailableReasonShortForm =
-  | "Creator hid the counts"
-  | "No view count published"
-  | "No performance data published"
-  | "No follower count available"
-  | "This post type doesn't report view counts."
-  | "Views are reported on later slides of this carousel, but the score reads the first slide only."
-  | null;
-
-export function renderUnavailableReasonShortForm(reason: UnavailableReason): UnavailableReasonShortForm {
-  switch (reason) {
-    case "REACH_HIDDEN":
-      return "Creator hid the counts";
-    case "REACH_UNKNOWN":
-      return "No view count published";
-    case "CAUSE_NOT_DETERMINABLE":
-      return "No performance data published";
-    case "NO_AUDIENCE_DATA":
-      return "No follower count available";
-    case "CONTENT_KIND_UNSUPPORTED":
-      return "This post type doesn't report view counts.";
-    case "REACH_NOT_ON_FIRST_SLIDE":
-      return "Views are reported on later slides of this carousel, but the score reads the first slide only.";
-    case "INSUFFICIENT_HISTORY":
-      return null;
-    default:
-      return assertNever(reason);
-  }
-}
+export type { UnavailableReasonShortForm };
+export { renderUnavailableReasonShortForm };
 
 /** `true` for the two states a numerator/denominator input can actually contribute — R-4.3.1's corroborated zero counts (AVAILABLE/ZERO), UNKNOWN/HIDDEN do not. */
 function isUsable(state: AvailabilityState): boolean {
