@@ -9,6 +9,8 @@ import type {
   AnalysisDetail,
   AnalysisDetailClassified,
   AnalysisListItemIndexed,
+  AnalysesPagination,
+  GetAnalysesParams,
 } from "@/lib/api/analyses/types";
 import {
   classifyLikeCount,
@@ -25,7 +27,7 @@ import {
  */
 function selectIndexedAnalyses(
   data: AnalysesListResponse,
-): { analyses: AnalysisListItemIndexed[]; accounts: string[] } {
+): { analyses: AnalysisListItemIndexed[]; accounts: string[]; pagination: AnalysesPagination } {
   return {
     analyses: data.analyses.map((analysis) => ({
       ...analysis,
@@ -44,6 +46,7 @@ function selectIndexedAnalyses(
       }),
     })),
     accounts: data.accounts,
+    pagination: data.pagination,
   };
 }
 
@@ -68,10 +71,15 @@ function selectProxiedAnalysisDetail(data: AnalysisDetail): AnalysisDetailClassi
   };
 }
 
-export function useAnalysesQuery() {
+/**
+ * Ticket #144 — `params` (page/sortBy/sortDir) is part of the query key so
+ * each page/sort combination caches independently, matching server-side
+ * pagination's stable-per-page contract.
+ */
+export function useAnalysesQuery(params: GetAnalysesParams = {}) {
   return useQuery({
-    queryKey: ANALYSIS_KEYS.lists(),
-    queryFn: getAnalyses,
+    queryKey: [...ANALYSIS_KEYS.lists(), params],
+    queryFn: () => getAnalyses(params),
     staleTime: 30_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,

@@ -3,6 +3,7 @@ import type {
   AnalysisDetail,
   AnalyzeResponse,
   DeleteResponse,
+  GetAnalysesParams,
 } from "./types";
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -16,8 +17,20 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
-export async function getAnalyses(): Promise<AnalysesListResponse> {
-  return fetchJson<AnalysesListResponse>("/api/analyses");
+/**
+ * AGENTS.md layering: returns the payload AS-IS, no transformation. Ticket
+ * #144's pagination/sort params are forwarded verbatim as query params;
+ * `lib/api/analyses/hooks.ts`'s `select` is the only place the response is
+ * ever reshaped.
+ */
+export async function getAnalyses(params: GetAnalysesParams = {}): Promise<AnalysesListResponse> {
+  const searchParams = new URLSearchParams();
+  if (params.page != null) searchParams.set("page", String(params.page));
+  if (params.sortBy != null) searchParams.set("sortBy", params.sortBy);
+  if (params.sortDir != null) searchParams.set("sortDir", params.sortDir);
+
+  const query = searchParams.toString();
+  return fetchJson<AnalysesListResponse>(`/api/analyses${query ? `?${query}` : ""}`);
 }
 
 export async function getAnalysis(id: string): Promise<AnalysisDetail> {

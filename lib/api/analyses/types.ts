@@ -42,6 +42,98 @@ export type CountState =
   | { kind: "count"; value: number }
   | { kind: "plays"; value: number };
 
+/**
+ * Ticket #144 (TDD §7, §9.6). Mirrors the server's
+ * `lib/server/analysis/performance/types.ts` union-for-union — R-12.3.5 is
+ * a type-level requirement carried all the way to the client: `Tier1Ratio`
+ * stays a discriminated union here too, never flattened into an optional
+ * `denominator` string. Dropping the discriminator is a `tsc` failure at
+ * every call site that constructs one, exactly as it is server-side.
+ */
+export type ReachKind = "PLAYS" | "VIEWS" | "UNKNOWN";
+export type ReachDerivedFrom = "TOP_LEVEL" | "CAROUSEL_FIRST_SLIDE" | "NONE";
+export type PerformanceAvailabilityState = "AVAILABLE" | "HIDDEN" | "UNKNOWN" | "ZERO";
+export type Denominator = "REACH" | "FOLLOWERS";
+
+export type Tier1Ratio =
+  | { denominator: "REACH"; ratio: number; reachKind: ReachKind }
+  | { denominator: "FOLLOWERS"; ratio: number };
+
+export type Tier = "CREATOR_BASELINE" | "REACH_ONLY" | "AUDIENCE_FALLBACK" | "UNAVAILABLE";
+export type Confidence = "HIGH" | "MEDIUM" | "LOW" | "NONE";
+export type ConfidenceReason = "CACHED_FOLLOWER_DENOMINATOR" | "CAROUSEL_FIRST_SLIDE" | "THIN_SAMPLE";
+export type UnavailableReason =
+  | "REACH_HIDDEN"
+  | "REACH_UNKNOWN"
+  | "CONTENT_KIND_UNSUPPORTED"
+  | "REACH_NOT_ON_FIRST_SLIDE"
+  | "NO_AUDIENCE_DATA"
+  | "INSUFFICIENT_HISTORY"
+  | "CAUSE_NOT_DETERMINABLE";
+
+export type PerformanceTier2 = {
+  /** `null` at Tier 2 cold start — no baseline exists yet. */
+  median: number | null;
+  sampleSize: number;
+  bucketKey: string;
+  /** `null` at cold start, or when a full baseline exists but this post's own metric didn't resolve against it. */
+  multiplier: number | null;
+};
+
+export type PerformanceComputed = {
+  reach: {
+    value: number | null;
+    kind: ReachKind | null;
+    derivedFrom: ReachDerivedFrom;
+    state: PerformanceAvailabilityState;
+  };
+  likes: { value: number | null; state: PerformanceAvailabilityState };
+  comments: { value: number | null; state: PerformanceAvailabilityState };
+  audience: { value: number | null; capturedAt: string; sourceFetchedAt: string | null };
+  postAgeHours: number | null;
+  tier1: Tier1Ratio | null;
+  tier2: PerformanceTier2 | null;
+  tier3: { reachPerFollower: number } | null;
+  tierUsed: Tier;
+  confidence: Confidence;
+  confidenceReason: ConfidenceReason | null;
+  provisional: boolean;
+  unavailableReason: UnavailableReason | null;
+};
+
+/** The model's judgement-layer output, lifted out of `result_content` the same way `overallScore`/`scorecard` already are. */
+export type PerformanceJudgement = {
+  performanceScore: number | null;
+  verdict: string;
+  drivers: string[];
+};
+
+/** `null` only for rows written before schema 3 (TDD §7) — post-012, none. */
+export type AnalysisPerformance = {
+  computed: PerformanceComputed;
+  judgement: PerformanceJudgement;
+} | null;
+
+/** Ticket #144 (TDD §9.6) — server-side sortable fields. */
+export type AnalysesSortField =
+  | "creator"
+  | "posted"
+  | "reach"
+  | "contentScore"
+  | "performanceScore"
+  | "multiplier"
+  | "engagementReach"
+  | "engagementFollowers";
+
+export type SortDirection = "asc" | "desc";
+
+export type AnalysesPagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
 export type AnalysisListItem = {
   id: string;
   prompt: string | null;
@@ -71,6 +163,8 @@ export type AnalysisListItem = {
   caption: string | null;
   title: string | null;
   createdAt: string;
+  /** Ticket #144 (TDD §7) — purely additive. `null` only for pre-schema-3 rows (none exist post-012). */
+  performance: AnalysisPerformance;
 };
 
 /**
@@ -160,6 +254,8 @@ export type AnalysisDetail = {
   durationSec: number | null;
   results: ContentAnalysis | null;
   createdAt: string;
+  /** Ticket #144 (TDD §7) — purely additive. `null` only for pre-schema-3 rows (none exist post-012). */
+  performance: AnalysisPerformance;
 };
 
 /** `AnalysisDetail` plus the classified `CountState` for views and likes (TDD §4.3). */
@@ -171,6 +267,13 @@ export type AnalysisDetailClassified = AnalysisDetail & {
 export type AnalysesListResponse = {
   analyses: AnalysisListItem[];
   accounts: string[];
+  pagination: AnalysesPagination;
+};
+
+export type GetAnalysesParams = {
+  page?: number;
+  sortBy?: AnalysesSortField;
+  sortDir?: SortDirection;
 };
 
 export type AnalyzeResponse = {
