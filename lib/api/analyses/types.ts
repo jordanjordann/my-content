@@ -122,6 +122,48 @@ export type AnalysisPerformance = {
   judgement: PerformanceJudgement;
 } | null;
 
+/**
+ * Ticket #145 (PR #198 review, blocker 8) — the analyses table's per-row state-matching /
+ * tier-phrase / bucket-noun *decisions*, precomputed once per row in `hooks.ts`'s `select`
+ * (AGENTS.md's data-transformation rule) instead of being re-derived on every render inside
+ * `AnalysisTableRow`. Cells still own pure number/string DISPLAY formatting (`toFixed`,
+ * `formatAbbrev`, template literals) — that is presentation, not derivation, and stays in the
+ * component per AGENTS.md's own carve-out.
+ */
+export type AnalysisTablePerformanceCell =
+  | {
+      kind: "score";
+      score: number;
+      tierPhrase: string | null;
+      isTier3: boolean;
+      confidenceWord: string | null;
+    }
+  | { kind: "reason"; text: string | null };
+
+export type AnalysisTableMultiplierCell =
+  | { kind: "measured"; multiplier: number; sampleSize: number; bucketNoun: string }
+  | { kind: "cold-start"; sampleSize: number; bucketNoun: string }
+  | { kind: "reason"; text: string | null }
+  | { kind: "dash" };
+
+export type AnalysisTableEngagementCell =
+  | { kind: "value"; ratio: number; denominator: "REACH"; reachKind: ReachKind; reachValue: number | null }
+  | { kind: "value"; ratio: number; denominator: "FOLLOWERS"; followersValue: number | null }
+  | { kind: "reason"; text: string }
+  | { kind: "dash" };
+
+/** Per-row precomputed table cell decisions (col 4/6/7/8/9) — `null` when `performance` is `null`. */
+export type AnalysisTableDerivedPerformance = {
+  /** Col 4 (Counts) — reach state sourced from `performance.computed.reach`, never the raw
+   * `viewCountState`/`likeCountState` (PR #198 review, blocker 4: those can be genuinely
+   * WRONG for a carousel/plays-only reel, not merely absent). */
+  reachCountState: CountState;
+  performanceCell: AnalysisTablePerformanceCell;
+  multiplierCell: AnalysisTableMultiplierCell;
+  engagementReachCell: AnalysisTableEngagementCell;
+  engagementFollowersCell: AnalysisTableEngagementCell;
+};
+
 /** Ticket #144 (TDD §9.6) — server-side sortable fields. */
 export type AnalysesSortField =
   | "creator"
@@ -183,6 +225,8 @@ export type AnalysisListItemIndexed = AnalysisListItem & {
   searchText: string;
   viewCountState: CountState;
   likeCountState: CountState;
+  /** `null` iff `performance` is `null` (failed/pending rows, or pre-schema-3). */
+  tableDerived: AnalysisTableDerivedPerformance | null;
 };
 
 /**

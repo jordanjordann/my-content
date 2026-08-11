@@ -5,17 +5,16 @@ import { EngagementCount } from "@/app/app/analyses/components/counts/Engagement
 import { MAX_SCORE } from "@/app/app/analyses/constants";
 import type { AnalysisListItemIndexed } from "@/lib/api/analyses/types";
 import type { AnalysisTableDensity } from "@/app/app/analyses/components/grids/AnalysisDataTable/types";
-import { ROW_HEIGHT_PX } from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
 import {
-  absentScoreReasonText,
-  confidenceWord,
-  engagementCellContent,
+  BASELINE_MIN_SAMPLE_DISPLAY,
+  ROW_HEIGHT_PX,
+} from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
+import {
   formatPostedAge,
   formatPostedDate,
   isNonCompletedRow,
-  multiplierCellContent,
-  tierPhrase,
 } from "@/app/app/analyses/components/grids/AnalysisDataTable/helpers";
+import { formatAbbrev } from "@/app/app/analyses/components/counts/EngagementCount/helpers";
 
 type AnalysisTableRowProps = {
   row: AnalysisListItemIndexed;
@@ -30,23 +29,39 @@ type AnalysisTableRowProps = {
  * Content/Creator layout), this renders the same underlying data through the simplest
  * honest treatment available today rather than inventing new UI — marked inline.
  *
+ * Per-cell state-matching/tier-phrase/bucket-noun *decisions* are precomputed once per row in
+ * `lib/api/analyses/hooks.ts`'s `select` (`row.tableDerived`, PR #198 review blocker 8) —
+ * this component only formats them into display strings, never re-derives them.
+ *
  * Failed/non-completed treatment (OR-4, design §3.3): 3px rose left edge, every metric
  * cell `—`, Performance cell `Not analysed` (never an absent-score reason — a failed
  * analysis has no verdict to explain). `{reason}` in `Analysis failed — {reason}` is
  * omitted here: `AnalysisListItem` carries no failure-reason field today, and rendering a
  * fabricated reason would be a confident-looking wrong answer — flagged in the PR body.
+ * `Queued` similarly omits the spec'd `· position {N}` — no queue-position field exists on
+ * this row shape today — also flagged in the PR body rather than guessed.
  */
 export function AnalysisTableRow({ row, density, onOpen, rowRef }: AnalysisTableRowProps) {
   const failed = isNonCompletedRow(row);
   const comfortable = density === "comfortable";
 
+  // A click anywhere in the row opens it — real clicks land on a `<td>`'s content, never on
+  // the bare `<tr>` itself, so `target !== currentTarget` (a check only a synthetic click
+  // fired directly on the row can satisfy) is not a usable guard. The two named exceptions
+  // (the explain affordance, #147's scope; the creator link, #149's scope) opt themselves out
+  // by carrying `data-row-exempt` once they exist — this row does not special-case them by
+  // name, so a descendant added later only needs the one attribute to keep working.
+  const isExemptTarget = (target: EventTarget | null): boolean => {
+    return target instanceof Element && target.closest("[data-row-exempt]") != null;
+  };
+
   const handleClick = (event: MouseEvent<HTMLTableRowElement>) => {
-    if (event.target !== event.currentTarget) return;
+    if (isExemptTarget(event.target)) return;
     onOpen(row.id);
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTableRowElement>) => {
-    if (event.target !== event.currentTarget) return;
+    if (isExemptTarget(event.target)) return;
     if (event.key === "Enter") {
       event.preventDefault();
       onOpen(row.id);
@@ -66,7 +81,9 @@ export function AnalysisTableRow({ row, density, onOpen, rowRef }: AnalysisTable
       )}
     >
       {/* 1. Content — thumbnail/title layout is #149's scope; this renders title/caption
-          text plus the OR-4 failed second line, which IS this ticket's scope. */}
+          text plus the OR-4 failed second line, which IS this ticket's scope. Line 2 is
+          never truncated — the column widens instead if the text doesn't fit (ticket rule,
+          PR #198 review blocker 7). */}
       <td className="p-3 align-middle">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 shrink-0 rounded bg-muted" aria-hidden="true" />
@@ -75,12 +92,12 @@ export function AnalysisTableRow({ row, density, onOpen, rowRef }: AnalysisTable
               {row.title || row.caption || "Untitled"}
             </p>
             {failed && (
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {row.status === "failed" ? "Analysis failed" : "Queued"}
               </p>
             )}
             {!failed && comfortable && row.caption && (
-              <p className="truncate text-xs text-muted-foreground">{row.caption}</p>
+              <p className="text-xs text-muted-foreground">{row.caption}</p>
             )}
           </div>
         </div>
@@ -112,14 +129,18 @@ export function AnalysisTableRow({ row, density, onOpen, rowRef }: AnalysisTable
         )}
       </td>
 
-      {/* 4. Counts — the shipped four-state treatment reused for the reach line (#146 owns
-          the full componentised Counts cell, incl. the three-case absent-count reason). */}
+      {/* 4. Counts — reach, sourced from `performance.computed.reach` (via `tableDerived`),
+          never the raw `viewCountState` (#146 owns the full componentised Counts cell, incl.
+          the three-case absent-count reason). Using the raw view count here could show a
+          genuinely WRONG number under a wrong kind word for a carousel or plays-only reel —
+          PR #198 review blocker 4 — so this renders the already-correct derived reach state,
+          or an honest `—` when no performance block exists at all. */}
       <td className="p-3 align-middle">
-        {failed ? (
+        {failed || row.tableDerived == null ? (
           <span className="text-sm text-muted-foreground">—</span>
         ) : (
           <>
-            <EngagementCount state={row.viewCountState} metric="views" />
+            <EngagementCount state={row.tableDerived.reachCountState} metric="views" />
             {comfortable && (
               <p className="text-xs text-muted-foreground">
                 <EngagementCount state={row.likeCountState} metric="likes" /> ·{" "}
@@ -141,9 +162,11 @@ export function AnalysisTableRow({ row, density, onOpen, rowRef }: AnalysisTable
 
       {/* 6. Performance — numeral + pips, tier phrase / confidence, or the absent reason.
           Not analysed for failed rows (a distinct string from any absent-score reason,
-          OR-4). Pip visuals/explain popover full behaviour are #147's scope. */}
+          OR-4). Pip visuals/explain popover full behaviour are #147's scope. The confidence
+          word renders unconditionally (DESIGN-3C §3.2's closed drop list for Compact density
+          does not include it — PR #198 review blocker 6). */}
       <td className="p-3 align-middle">
-        <PerformanceCell row={row} failed={failed} comfortable={comfortable} />
+        <PerformanceCell row={row} failed={failed} />
       </td>
 
       {/* 7. vs their usual — multiplier + sample size, or the bucket-scoped cold-start
@@ -195,70 +218,64 @@ function ScorePips({ score, tone }: { score: number | null; tone: "content" | "p
   );
 }
 
-function PerformanceCell({
-  row,
-  failed,
-  comfortable,
-}: {
-  row: AnalysisListItemIndexed;
-  failed: boolean;
-  comfortable: boolean;
-}) {
+function PerformanceCell({ row, failed }: { row: AnalysisListItemIndexed; failed: boolean }) {
   if (failed) {
     return <span className="text-sm text-muted-foreground">Not analysed</span>;
   }
 
-  const performance = row.performance;
-  const score = performance?.judgement.performanceScore ?? null;
+  const cell = row.tableDerived?.performanceCell;
 
-  if (score == null) {
-    const reasonText = performance
-      ? absentScoreReasonText(performance.computed)
-      : "No performance data published";
+  if (cell == null || cell.kind === "reason") {
+    const reasonText = cell?.text ?? "No performance data published";
     return <p className="text-xs text-muted-foreground">{reasonText}</p>;
   }
 
-  const computed = performance!.computed;
-  const phrase = tierPhrase(computed.tierUsed, computed.tier1?.denominator ?? null);
-  const isTier3 = computed.tierUsed === "AUDIENCE_FALLBACK";
-  const word = confidenceWord(computed.confidence);
-
   return (
     <div>
-      <ScorePips score={score} tone="performance" />
-      {phrase && (
-        <p className={cn("text-xs text-muted-foreground", isTier3 && "italic")}>{phrase}</p>
+      <ScorePips score={cell.score} tone="performance" />
+      {cell.tierPhrase && (
+        <p className={cn("text-xs text-muted-foreground", cell.isTier3 && "italic")}>
+          {cell.tierPhrase}
+        </p>
       )}
-      {comfortable && word && <p className="text-xs text-muted-foreground">{word}</p>}
+      {cell.confidenceWord && <p className="text-xs text-muted-foreground">{cell.confidenceWord}</p>}
     </div>
   );
 }
 
 function MultiplierCell({ row, failed }: { row: AnalysisListItemIndexed; failed: boolean }) {
-  if (failed) {
+  if (failed || row.tableDerived == null) {
     return <span className="text-sm text-muted-foreground">—</span>;
   }
 
-  const content = multiplierCellContent(row.performance, failed);
+  const content = row.tableDerived.multiplierCell;
 
   if (content.kind === "dash") {
     return <span className="text-sm text-muted-foreground">—</span>;
   }
   if (content.kind === "reason") {
-    return <p className="text-xs text-muted-foreground">{content.text}</p>;
+    return content.text != null ? (
+      <p className="text-xs text-muted-foreground">{content.text}</p>
+    ) : (
+      <span className="text-sm text-muted-foreground">—</span>
+    );
   }
   if (content.kind === "cold-start") {
     return (
       <div>
-        <p className="text-xs text-muted-foreground">{content.progressLabel}</p>
-        <p className="text-xs text-muted-foreground">{content.reassuranceLabel}</p>
+        <p className="text-xs text-muted-foreground">
+          {content.sampleSize} of {BASELINE_MIN_SAMPLE_DISPLAY} {content.bucketNoun}
+        </p>
+        <p className="text-xs text-muted-foreground">builds as you analyse more</p>
       </div>
     );
   }
   return (
     <div>
-      <p className="text-sm font-medium tabular-nums">{content.multiplierLabel}</p>
-      <p className="text-xs text-muted-foreground">{content.sampleLabel}</p>
+      <p className="text-sm font-medium tabular-nums">{content.multiplier.toFixed(1)}×</p>
+      <p className="text-xs text-muted-foreground">
+        based on {content.sampleSize} {content.bucketNoun}
+      </p>
     </div>
   );
 }
@@ -272,11 +289,12 @@ function EngagementRatioCell({
   failed: boolean;
   denominator: "REACH" | "FOLLOWERS";
 }) {
-  if (failed) {
+  if (failed || row.tableDerived == null) {
     return <span className="text-sm text-muted-foreground">—</span>;
   }
 
-  const content = engagementCellContent(row.performance, failed, denominator);
+  const content =
+    denominator === "REACH" ? row.tableDerived.engagementReachCell : row.tableDerived.engagementFollowersCell;
 
   if (content.kind === "dash") {
     return <span className="text-sm text-muted-foreground">—</span>;
@@ -284,6 +302,16 @@ function EngagementRatioCell({
   if (content.kind === "reason") {
     return <p className="text-xs text-muted-foreground">{content.text}</p>;
   }
+
+  const valueLabel = `${(content.ratio * 100).toFixed(1)}%`;
+  const qualifierLabel =
+    content.denominator === "REACH"
+      ? `of ${content.reachValue != null ? formatAbbrev(content.reachValue) : "—"} ${
+          content.reachKind === "PLAYS" ? "plays" : "views"
+        }`
+      : `of ${content.followersValue != null ? formatAbbrev(content.followersValue) : "—"} followers`;
+  const approx = content.denominator === "FOLLOWERS";
+
   return (
     <div>
       <p
@@ -292,9 +320,9 @@ function EngagementRatioCell({
           denominator === "REACH" ? "text-accent" : "text-teal-500",
         )}
       >
-        {content.approx ? `≈${content.valueLabel}` : content.valueLabel}
+        {approx ? `≈${valueLabel}` : valueLabel}
       </p>
-      <p className="text-xs text-muted-foreground">{content.qualifierLabel}</p>
+      <p className="text-xs text-muted-foreground">{qualifierLabel}</p>
     </div>
   );
 }

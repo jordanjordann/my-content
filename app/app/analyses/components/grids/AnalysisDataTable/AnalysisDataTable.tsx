@@ -124,10 +124,15 @@ export function AnalysisDataTable({
           />
         )}
         {groups.scoreless.map(rowNode)}
+        {/* PR #198 review, blocker 5.1 — DESIGN-3C §3.3 says failed rows sit "under the same
+            divider as unscored rows, labelled separately" but never states that second label's
+            exact wording, and §6.1's one approved divider template is the scoreless-group
+            sentence above. Rather than compose new prose no design doc has signed off, this
+            renders the minimal non-prose count-plus-approved-word marker below (`Analysis
+            failed` is §3.3's own approved row-level string). Flagged for a design ruling on the
+            exact failed-group divider sentence before this ships as prose. */}
         {groups.nonCompleted.length > 0 && (
-          <AnalysisSinkDivider
-            label={`${groups.nonCompleted.length} analys${groups.nonCompleted.length === 1 ? "is" : "es"} failed — sorted separately`}
-          />
+          <AnalysisSinkDivider label={`Analysis failed — ${groups.nonCompleted.length}`} />
         )}
         {groups.nonCompleted.map(rowNode)}
       </>

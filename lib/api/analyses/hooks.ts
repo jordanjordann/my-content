@@ -15,6 +15,7 @@ import type {
 import {
   classifyLikeCount,
   classifyViewCount,
+  deriveAnalysisTablePerformance,
   normalize,
   toProxiedThumbnail,
 } from "@/lib/api/analyses/helpers";
@@ -44,6 +45,7 @@ function selectIndexedAnalyses(
         likeCount: analysis.likeCount,
         likeAndViewCountsDisabled: analysis.likeAndViewCountsDisabled,
       }),
+      tableDerived: deriveAnalysisTablePerformance(analysis.performance),
     })),
     accounts: data.accounts,
     pagination: data.pagination,
