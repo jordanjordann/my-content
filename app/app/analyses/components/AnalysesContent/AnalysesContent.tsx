@@ -5,13 +5,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { useAllAnalysesQuery, useAnalyzeContentMutation, useDeleteAnalysisMutation } from "@/lib/api/analyses";
+import { useAllAnalysesQuery, useAnalyzeContentMutation } from "@/lib/api/analyses";
 import type { ProgressState } from "@/app/app/analyses/components/progress/AnalysisProgressPanel/types";
 import { AnalysisDataTable } from "@/app/app/analyses/components/grids/AnalysisDataTable";
-import { AnalysisGridSkeleton } from "@/app/app/analyses/components/grids/AnalysisGridSkeleton";
 import { AnalysisFilterSection } from "@/app/app/analyses/components/sections/AnalysisFilterSection";
-import { AnalysisEmptySection } from "@/app/app/analyses/components/sections/AnalysisEmptySection";
-import { AnalysisNoResultsSection } from "@/app/app/analyses/components/sections/AnalysisNoResultsSection";
 import { NewAnalysisModal } from "@/app/app/analyses/components/modals/NewAnalysisModal";
 import { AnalysisProgressPanel } from "@/app/app/analyses/components/progress/AnalysisProgressPanel";
 import { AnalysisDetailModal } from "@/app/app/analyses/components/modals/AnalysisDetailModal";
@@ -29,7 +26,6 @@ export function AnalysesContent() {
   // `useAllAnalysesQuery` for why; #145 replaces this page with server-side filtering.
   const { data, isPending } = useAllAnalysesQuery();
   const { mutate: startAnalysis, isPending: isAnalyzing } = useAnalyzeContentMutation();
-  const { mutate: removeAnalysis, isPending: isDeleting } = useDeleteAnalysisMutation();
   const [modalOpen, setModalOpen] = useState(false);
   const [progress, setProgress] = useState<ProgressState | null>(null);
 
@@ -137,17 +133,6 @@ export function AnalysesContent() {
     );
   };
 
-  const handleDelete = (id: string) => {
-    removeAnalysis(id, {
-      onSuccess: () => {
-        toast.success("Analysis deleted");
-      },
-      onError: () => {
-        toast.error("Failed to delete analysis");
-      },
-    });
-  };
-
   return (
     <>
       <div className="flex flex-col p-6">
@@ -177,20 +162,19 @@ export function AnalysesContent() {
           </div>
         )}
 
-        {isPending ? (
-          <AnalysisGridSkeleton />
-        ) : analyses.length === 0 ? (
-          <AnalysisEmptySection onNewAnalysis={() => setModalOpen(true)} />
-        ) : filtered.length === 0 ? (
-          <AnalysisNoResultsSection onClearFilters={clearAll} />
-        ) : (
-          <AnalysisDataTable
-            analyses={filtered}
-            onAnalysisClick={handleOpenDetail}
-            onDelete={handleDelete}
-            isDeleting={isDeleting}
-          />
-        )}
+        {/* Ticket #145 — the table now owns its own fetch (server-side pagination/sort,
+            OR-8) and renders all four states (loading/empty/error) inside its own frame
+            with the header intact (design §7), so it is rendered unconditionally here.
+            `hasActiveFilters`/`onClearFilters` bridge this page's existing client-side
+            filter bar (above) into the table's two distinct empty states; wiring real
+            filters into the table's own server-side query is ticket #149's scope. */}
+        <AnalysisDataTable
+          onAnalysisClick={handleOpenDetail}
+          onNewAnalysis={() => setModalOpen(true)}
+          openAnalysisId={detailId}
+          hasActiveFilters={anyActive}
+          onClearFilters={clearAll}
+        />
 
         <NewAnalysisModal
           open={modalOpen}
