@@ -186,6 +186,13 @@ export type AnalysisTableDerivedPerformance = {
   multiplierCell: AnalysisTableMultiplierCell;
   engagementReachCell: AnalysisTableEngagementCell;
   engagementFollowersCell: AnalysisTableEngagementCell;
+  /**
+   * Ticket #147 / TDD §9.4 point 4, DESIGN-3B §3.1 — the score-explain popover's
+   * deterministic "these disagree" line, `null` when the score and the multiplier point the
+   * same way (or either is absent). Computed once here, in the `select` derivation layer,
+   * not in the popover component — same rule PR #198 established for the tier phrase.
+   */
+  disagreementLine: string | null;
 };
 
 /** Ticket #144 (TDD §9.6) — server-side sortable fields. */

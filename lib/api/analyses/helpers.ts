@@ -11,6 +11,7 @@ import type {
   Confidence,
   CountState,
   PerformanceComputed,
+  PerformanceTier2,
   Tier,
   UnavailableReason,
 } from "@/lib/api/analyses/types";
@@ -198,6 +199,51 @@ function bucketNoun(bucketKey: string): string {
   return "posts";
 }
 
+/**
+ * Ticket #147 / DESIGN-3B §3.1.1 (amendment B5, 2026-08-12) — the score-explain popover's
+ * deterministic "these disagree" line. Compares the 1-5 judgement against the Tier 2
+ * multiplier (not Tier 1 against Tier 2 — the Tier 1 ratio has no stored creator-relative
+ * reference, so that comparison needs a schema change and is set aside per B5).
+ *
+ * Thresholds, per §3.1.1's truth table:
+ * - score: `4-5` high, `3` neutral (the score side's own deadband — a rater-chosen
+ *   "middling" value, not a boundary), `1-2` low.
+ * - multiplier: `m >= 1.15` high, `m < 0.85` low, deadband `0.85 <= m < 1.15` (the bracket
+ *   is asymmetric on purpose — it matches the one-decimal precision the multiplier already
+ *   renders at, so nothing displaying as `0.9x`/`1.0x`/`1.1x` is ever called high or low).
+ *
+ * Only two of §3.1.1's copy variants render — D1 (score high, multiplier low) and D2 (score
+ * low, multiplier high). The two agreement variants (`Strong on both...` / `Weak on both
+ * readings.`) are retired by B5 and must not be implemented: with a deadband, "agreement" is
+ * no longer the clean complement of "disagreement" — the neutral zone renders nothing, on
+ * purpose. `null` whenever either side is missing, when both sides are in the deadband, or
+ * when the two readings don't clear both thresholds in opposite directions.
+ */
+function computeScoreMultiplierDisagreement(
+  score: number | null,
+  tier2: PerformanceTier2 | null,
+): string | null {
+  if (score == null || tier2?.multiplier == null) {
+    return null;
+  }
+
+  const multiplier = tier2.multiplier;
+  const scoreHigh = score >= 4;
+  const scoreLow = score <= 2;
+  const multiplierHigh = multiplier >= 1.15;
+  const multiplierLow = multiplier < 0.85;
+
+  if (scoreHigh && multiplierLow) {
+    return "The 1–5 reads this more favourably than the measured comparison does — it came in under this creator's usual for this kind of post. The measured figures above are the ones to quote.";
+  }
+
+  if (scoreLow && multiplierHigh) {
+    return "The 1–5 reads this less favourably than the measured comparison does — it came in over this creator's usual for this kind of post. The measured figures above are the ones to quote.";
+  }
+
+  return null;
+}
+
 /** Col 6 (Performance) — score + tier phrase/confidence, or the absent-score reason. */
 function derivePerformanceCell(
   computed: PerformanceComputed,
@@ -351,5 +397,6 @@ export function deriveAnalysisTablePerformance(
     multiplierCell: deriveMultiplierCell(computed),
     engagementReachCell: deriveEngagementCell(computed, "REACH", mediaType),
     engagementFollowersCell: deriveEngagementCell(computed, "FOLLOWERS", mediaType),
+    disagreementLine: computeScoreMultiplierDisagreement(judgement.performanceScore, computed.tier2),
   };
 }

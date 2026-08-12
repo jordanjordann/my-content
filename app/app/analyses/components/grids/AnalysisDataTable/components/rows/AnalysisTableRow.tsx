@@ -1,7 +1,7 @@
 import type { KeyboardEvent, MouseEvent } from "react";
 
 import { cn } from "@/lib/utils";
-import { MAX_SCORE } from "@/app/app/analyses/constants";
+import { AnalysisScoreCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisScoreCell";
 import type { AnalysisListItemIndexed } from "@/lib/api/analyses/types";
 import type { AnalysisTableDensity } from "@/app/app/analyses/components/grids/AnalysisDataTable/types";
 import {
@@ -150,10 +150,10 @@ export function AnalysisTableRow({ row, density, onOpen, rowRef }: AnalysisTable
 
       {/* 5. Content score — numeral + pips, `Scores` group, never a second line. */}
       <td className="p-3 align-middle text-center">
-        {failed ? (
+        {failed || row.overallScore == null ? (
           <span className="text-sm text-muted-foreground">—</span>
         ) : (
-          <ScorePips score={row.overallScore} tone="content" />
+          <AnalysisScoreCell variant="content" score={row.overallScore} />
         )}
       </td>
 
@@ -196,34 +196,6 @@ function platformWord(platform: AnalysisListItemIndexed["platform"]): string {
   return platform === "youtube" ? "YouTube" : "Instagram";
 }
 
-/** DESIGN-3C §5 — five discrete square pips, `aria-hidden`, plus the accessible numeral text. */
-function ScorePips({ score, tone }: { score: number | null; tone: "content" | "performance" }) {
-  if (score == null) {
-    return <span className="text-sm text-muted-foreground">—</span>;
-  }
-  return (
-    <span className="inline-flex items-center gap-1.5 text-sm">
-      <span className="tabular-nums font-medium">{score}</span>
-      <span aria-hidden="true" className="inline-flex gap-0.5">
-        {Array.from({ length: MAX_SCORE }, (_, index) => (
-          <span
-            key={index}
-            className={cn(
-              "size-1.5 rounded-[1px]",
-              index < score
-                ? tone === "content"
-                  ? "bg-muted-foreground"
-                  : "bg-primary"
-                : "bg-muted-foreground/30",
-            )}
-          />
-        ))}
-      </span>
-      <span className="sr-only">{`${score} out of ${MAX_SCORE}`}</span>
-    </span>
-  );
-}
-
 function PerformanceCell({ row, failed }: { row: AnalysisListItemIndexed; failed: boolean }) {
   if (failed) {
     return <span className="text-sm text-muted-foreground">Not analysed</span>;
@@ -236,7 +208,7 @@ function PerformanceCell({ row, failed }: { row: AnalysisListItemIndexed; failed
     // copy exists for it, DESIGN-3B §5.2 — `resolveUnavailableReasonCopy` returns `null`
     // on purpose) and `row.tableDerived == null` (a pre-schema-3 row). Neither state may
     // borrow another row's sentence (PR #198 review, round 3, blocker 2) — the same muted
-    // "—" this table already uses for every other absent metric (`ScorePips`,
+    // "—" this table already uses for every other absent metric (`AnalysisScoreCell`,
     // `MultiplierCell`'s `dash` kind) is the honest placeholder here too.
     if (cell?.text != null) {
       return <p className="text-xs text-muted-foreground">{cell.text}</p>;
@@ -245,15 +217,14 @@ function PerformanceCell({ row, failed }: { row: AnalysisListItemIndexed; failed
   }
 
   return (
-    <div>
-      <ScorePips score={cell.score} tone="performance" />
-      {cell.tierPhrase && (
-        <p className={cn("text-xs text-muted-foreground", cell.isTier3 && "italic")}>
-          {cell.tierPhrase}
-        </p>
-      )}
-      {cell.confidenceWord && <p className="text-xs text-muted-foreground">{cell.confidenceWord}</p>}
-    </div>
+    <AnalysisScoreCell
+      variant="performance"
+      score={cell.score}
+      tierPhrase={cell.tierPhrase}
+      isTier3={cell.isTier3}
+      confidenceWord={cell.confidenceWord}
+      row={row}
+    />
   );
 }
 
