@@ -58,7 +58,7 @@ function buildRow(performance: AnalysisPerformance): AnalysisListItemIndexed {
     searchText: "",
     viewCountState: { kind: "count", value: 482_100 },
     likeCountState: { kind: "count", value: 31_412 },
-    tableDerived: deriveAnalysisTablePerformance(performance, "reel"),
+    tableDerived: deriveAnalysisTablePerformance(performance, "reel", null),
   };
 }
 
@@ -71,14 +71,24 @@ describe("AnalysisScoreCell — content variant (DESIGN-3C §5, TDD §9.3)", () 
     const group = screen.getByRole("group", { name: "Content 4 out of 5" });
     expect(within(group).getByText("4")).toBeInTheDocument();
 
-    const pipTrack = group.querySelector('[aria-hidden="true"]');
-    expect(pipTrack).not.toBeNull();
+    // N1's fix made the numeral text ALSO `aria-hidden`, so it is no longer safe to grab the
+    // first `[aria-hidden="true"]` match — the pip track is specifically the one with
+    // discrete pip children, so select on that shape rather than on `aria-hidden` alone.
+    const pipTrack = Array.from(group.querySelectorAll('[aria-hidden="true"]')).find(
+      (el) => el.querySelectorAll("span").length === 5,
+    );
+    expect(pipTrack).not.toBeUndefined();
     expect(pipTrack?.querySelectorAll("span")).toHaveLength(5);
   });
 
   it("never renders a second line — structurally, not just visually empty", () => {
     render(<AnalysisScoreCell variant="content" score={4} />);
     expect(screen.queryByTestId("performance-score-second-line")).not.toBeInTheDocument();
+  });
+
+  it("hides the numeral text from the accessibility tree — the group label already carries it (N1)", () => {
+    render(<AnalysisScoreCell variant="content" score={4} />);
+    expect(screen.getByText("4")).toHaveAttribute("aria-hidden", "true");
   });
 
   it("uses the muted-foreground pip fill, distinct from the performance axis (D7)", () => {
@@ -104,6 +114,33 @@ describe("AnalysisScoreCell — performance variant (DESIGN-3C §5.1, TDD §9.3)
     expect(
       screen.getByRole("group", { name: "Performance 4 out of 5, compared to their usual, high confidence" }),
     ).toBeInTheDocument();
+  });
+
+  it("hides the duplicate text descendants from the accessibility tree, so the group label is the only thing announced for them (PR #201 review, N1)", () => {
+    render(
+      <AnalysisScoreCell
+        variant="performance"
+        score={4}
+        tierPhrase="vs their usual"
+        isTier3={false}
+        confidenceWord="high confidence"
+        row={ROW}
+      />,
+    );
+
+    const numeral = screen.getByText("4");
+    expect(numeral).toHaveAttribute("aria-hidden", "true");
+
+    const tierPhrase = screen.getByText("vs their usual");
+    expect(tierPhrase).toHaveAttribute("aria-hidden", "true");
+
+    const confidence = screen.getByText("high confidence");
+    expect(confidence).toHaveAttribute("aria-hidden", "true");
+
+    // The trigger itself must stay OUT of the hidden scope — it is a real interactive
+    // element with its own accessible name, not duplicate judgement text.
+    const trigger = screen.getByRole("button", { name: "How was this score worked out?" });
+    expect(trigger).not.toHaveAttribute("aria-hidden");
   });
 
   it("AC-26 — renders numeral, tier phrase and confidence with no interaction", () => {
@@ -149,7 +186,9 @@ describe("AnalysisScoreCell — performance variant (DESIGN-3C §5.1, TDD §9.3)
         row={ROW}
       />,
     );
-    expect(screen.getByText("rough — vs audience size")).toHaveClass("italic");
+    // N1's fix wraps the tier-phrase text in its own `aria-hidden` span; the `italic` class
+    // lives on the enclosing `<p>`, which is what actually renders the style.
+    expect(screen.getByText("rough — vs audience size").closest("p")).toHaveClass("italic");
   });
 
   it("ALWAYS renders the second-line wrapper — a Performance cell with no second line is a bug (design §5)", () => {

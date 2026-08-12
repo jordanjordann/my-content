@@ -41,7 +41,7 @@ function buildRow(performance: AnalysisPerformance, overrides: Partial<AnalysisL
     searchText: "",
     viewCountState: { kind: "count", value: 482_100 },
     likeCountState: { kind: "count", value: 31_412 },
-    tableDerived: deriveAnalysisTablePerformance(performance, "reel"),
+    tableDerived: deriveAnalysisTablePerformance(performance, "reel", null),
     ...overrides,
   };
 }
@@ -66,11 +66,14 @@ const AGREEING_PERFORMANCE: AnalysisPerformance = {
   judgement: { performanceScore: 4, verdict: "Strong hook.", drivers: ["Hook kuat sejak detik pertama."] },
 };
 
-/** Score 2 (low), multiplier 3.2 (high) — the ticket's own disagreement example. */
+/** Score 2 (low), multiplier 3.2 (high) — the canonical OR-6 disagreement example, D2. */
 const DISAGREEING_PERFORMANCE: AnalysisPerformance = {
   ...AGREEING_PERFORMANCE,
   judgement: { performanceScore: 2, verdict: "Weak content, strong reach.", drivers: ["Konten kurang kuat."] },
 };
+
+const D2_TEXT =
+  "The 1–5 reads this less favourably than the measured comparison does — it came in over this creator's usual for this kind of post. The measured figures above are the ones to quote.";
 
 function openPopover(row: AnalysisListItemIndexed) {
   render(<AnalysisScoreExplainPopover row={row} />);
@@ -86,7 +89,7 @@ describe("AnalysisScoreExplainPopover — content order (TDD §9.4 / DESIGN-3B �
     const iIntro = text.indexOf("The 1–5 is a judgement of the numbers below");
     const iMeasured = text.indexOf("of the people who saw it engaged");
     const iOperands = text.indexOf("What went into this");
-    const iDisagreement = text.indexOf("It travelled, but the people who saw it didn't engage much.");
+    const iDisagreement = text.indexOf(D2_TEXT);
     const iDrivers = text.indexOf("Why it did what it did");
     const iFooter = text.indexOf("Measured 12 Jul 2026");
 
@@ -106,18 +109,16 @@ describe("AnalysisScoreExplainPopover — content order (TDD §9.4 / DESIGN-3B �
   });
 });
 
-describe("AnalysisScoreExplainPopover — the disagreement line (OR-6, TDD §9.4 point 4, DESIGN-3B §3.1)", () => {
-  it("fires on a score-2 / multiplier-3.2× row", () => {
+describe("AnalysisScoreExplainPopover — the disagreement line (OR-6, DESIGN-3B §3.1.1 amendment B5)", () => {
+  it("fires D2 on the canonical OR-6 row — score 2 / multiplier 3.2×", () => {
     const popup = openPopover(buildRow(DISAGREEING_PERFORMANCE));
-    expect(popup.textContent).toContain(
-      "It travelled, but the people who saw it didn't engage much.",
-    );
+    expect(popup.textContent).toContain(D2_TEXT);
   });
 
   it("does NOT fire when score and multiplier agree", () => {
     const popup = openPopover(buildRow(AGREEING_PERFORMANCE));
-    expect(popup.textContent).not.toContain("It travelled, but the people who saw it didn't engage much.");
-    expect(popup.textContent).not.toContain("didn't travel far");
+    expect(popup.textContent).not.toContain(D2_TEXT);
+    expect(popup.textContent).not.toContain("came in under this creator's usual");
   });
 });
 
@@ -158,8 +159,15 @@ describe("AnalysisScoreExplainPopover — numeral allow-list (R-13.3.4)", () => 
     const digitRuns = text.match(/\d+/g) ?? [];
 
     // Every digit-run present in the fixture's computed block (likes, comments, reach,
-    // audience, tier2 median/sampleSize/multiplier, tier1 ratio-as-percent, the judgement
-    // score) or in the footer date (day/year) — nothing else is permitted to appear.
+    // audience, tier2 median/sampleSize/multiplier, tier1 ratio-as-percent) or in the footer
+    // date (day/year) — nothing else is permitted to appear. Reviewer N4: this is a
+    // hand-verified allow-list, not derived from the fixture object at runtime — deriving it
+    // would require re-implementing the popover's own formatting (percent rounding, K-abbrev,
+    // date locale) in the test, which risks the test and the component agreeing by
+    // construction rather than by assertion. Every entry below is traced to a real rendered
+    // string in this describe block's fixture; `performanceScore` (4) is NOT included because
+    // the score numeral is not rendered anywhere in the popover body (it lives in the cell,
+    // not here) — an untraceable entry was removed per N4 rather than kept "for resilience".
     const allowed = new Set([
       "1", "5", // the "1–5" in the approved judgement-intro sentence (DESIGN-3B §7 point 1)
       "31", "412", // likes (31,412 — comma splits the regex match into two runs)
@@ -169,7 +177,6 @@ describe("AnalysisScoreExplainPopover — numeral allow-list (R-13.3.4)", () => 
       "7", // tier2 sampleSize
       "3", "2", // tier2 multiplier (3.2×)
       "6", "8", // tier1 ratio as a percent (0.068 -> 6.8%)
-      "4", // performanceScore (not currently rendered, kept for resilience)
       "12", "2026", // footer date (12 Jul 2026)
       "0", // decimal-formatting artifact (e.g. formatAbbrev's "151.0K")
     ]);
@@ -181,38 +188,59 @@ describe("AnalysisScoreExplainPopover — numeral allow-list (R-13.3.4)", () => 
 });
 
 describe("AnalysisScoreExplainPopover — R-13.4.4 has teeth (AC-29, banned phrasings)", () => {
-  it("the copy source contains no hour count and none of the four banned phrasings", () => {
+  const bannedPhrasings = [
+    "posts settle after 72 hours",
+    "the standard settling window",
+    "research shows",
+    "typically stabilises within",
+  ];
+
+  it("the copy source, INCLUDING lib/api/analyses/helpers.ts where the disagreement strings live, contains no hour count and none of the four banned phrasings", () => {
     const moduleDir = path.join(
       process.cwd(),
       "app/app/analyses/components/grids/AnalysisDataTable/components/popovers/AnalysisScoreExplainPopover",
     );
-    const sourceFiles = ["constants.ts", "helpers.ts", "AnalysisScoreExplainPopover.tsx"];
-    const combinedSource = sourceFiles
-      .map((file) => fs.readFileSync(path.join(moduleDir, file), "utf8"))
-      .join("\n");
+    // PR #201 review, blocking item 4 (AC-29 coverage hole) — this PR placed the two D1/D2
+    // disagreement strings, and the comment describing them, in `lib/api/analyses/helpers.ts`
+    // (the `select`-layer derivation, outside the popover module). The original scan covered
+    // only the three popover-module files and missed it entirely.
+    const sourceFiles = [
+      path.join(moduleDir, "constants.ts"),
+      path.join(moduleDir, "helpers.ts"),
+      path.join(moduleDir, "AnalysisScoreExplainPopover.tsx"),
+      path.join(process.cwd(), "lib/api/analyses/helpers.ts"),
+    ];
+    const combinedSource = sourceFiles.map((file) => fs.readFileSync(file, "utf8")).join("\n");
 
     // No literal hour count anywhere in the copy source ("72 hours", "3 days", "after 72h").
     expect(combinedSource).not.toMatch(/\d+\s*(hours?|h\b|days?)/i);
 
-    const bannedPhrasings = [
-      "posts settle after 72 hours",
-      "the standard settling window",
-      "research shows",
-      "typically stabilises within",
-    ];
     for (const phrase of bannedPhrasings) {
       expect(combinedSource.toLowerCase()).not.toContain(phrase.toLowerCase());
     }
   });
 
-  it("the rendered popover text contains no hour count and none of the four banned phrasings", () => {
+  it("the rendered popover text contains no hour count and none of the four banned phrasings (agreeing fixture)", () => {
     const popup = openPopover(buildRow(AGREEING_PERFORMANCE));
     const text = (popup.textContent ?? "").toLowerCase();
 
     expect(text).not.toMatch(/\d+\s*(hours?|h\b|days?)/i);
-    expect(text).not.toContain("posts settle after 72 hours");
-    expect(text).not.toContain("the standard settling window");
-    expect(text).not.toContain("research shows");
-    expect(text).not.toContain("typically stabilises within");
+    for (const phrase of bannedPhrasings) {
+      expect(text).not.toContain(phrase.toLowerCase());
+    }
+  });
+
+  it("the rendered popover text contains no hour count and none of the four banned phrasings, run against a DISAGREEING fixture so the D1/D2 copy is actually exercised", () => {
+    // PR #201 review, blocking item 4 — the agreeing fixture never renders a disagreement
+    // line by construction, so it can never fail this scan even if D1/D2 were non-compliant.
+    // This fixture triggers D2 (score 2, multiplier 3.2× — see DISAGREEING_PERFORMANCE above).
+    const popup = openPopover(buildRow(DISAGREEING_PERFORMANCE));
+    const text = (popup.textContent ?? "").toLowerCase();
+
+    expect(text).toContain(D2_TEXT.toLowerCase());
+    expect(text).not.toMatch(/\d+\s*(hours?|h\b|days?)/i);
+    for (const phrase of bannedPhrasings) {
+      expect(text).not.toContain(phrase.toLowerCase());
+    }
   });
 });

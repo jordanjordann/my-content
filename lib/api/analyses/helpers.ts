@@ -200,16 +200,24 @@ function bucketNoun(bucketKey: string): string {
 }
 
 /**
- * Ticket #147 / TDD §9.4 point 4 — the score-explain popover's deterministic "these
- * disagree" line, DESIGN-3B §3.1's four variants (verbatim). Selected by sign comparison:
- * the multiplier's sign against the bucket median is free (a `PerformanceTier2.multiplier`
- * IS the post's metric divided by the bucket median, so `>= 1` already means "at or above
- * the bucket median" — no second median is needed for that side). The 1-5 judgement has no
- * stored median of its own to compare against (flagged as an open question in DESIGN-3B
- * §3.1 — "high"/"low" needs a threshold and the doc does not supply one for the score), so
- * this uses the scale's own midpoint (3 of 5) as the only defensible split without
- * inventing a number that isn't in the computed block. `null` whenever either side is
- * missing, or when both sides point the same way (agreement needs no explaining).
+ * Ticket #147 / DESIGN-3B §3.1.1 (amendment B5, 2026-08-12) — the score-explain popover's
+ * deterministic "these disagree" line. Compares the 1-5 judgement against the Tier 2
+ * multiplier (not Tier 1 against Tier 2 — the Tier 1 ratio has no stored creator-relative
+ * reference, so that comparison needs a schema change and is set aside per B5).
+ *
+ * Thresholds, per §3.1.1's truth table:
+ * - score: `4-5` high, `3` neutral (the score side's own deadband — a rater-chosen
+ *   "middling" value, not a boundary), `1-2` low.
+ * - multiplier: `m >= 1.15` high, `m < 0.85` low, deadband `0.85 <= m < 1.15` (the bracket
+ *   is asymmetric on purpose — it matches the one-decimal precision the multiplier already
+ *   renders at, so nothing displaying as `0.9x`/`1.0x`/`1.1x` is ever called high or low).
+ *
+ * Only two of §3.1.1's copy variants render — D1 (score high, multiplier low) and D2 (score
+ * low, multiplier high). The two agreement variants (`Strong on both...` / `Weak on both
+ * readings.`) are retired by B5 and must not be implemented: with a deadband, "agreement" is
+ * no longer the clean complement of "disagreement" — the neutral zone renders nothing, on
+ * purpose. `null` whenever either side is missing, when both sides are in the deadband, or
+ * when the two readings don't clear both thresholds in opposite directions.
  */
 function computeScoreMultiplierDisagreement(
   score: number | null,
@@ -219,16 +227,21 @@ function computeScoreMultiplierDisagreement(
     return null;
   }
 
-  const scoreHigh = score >= 3;
-  const multiplierHigh = tier2.multiplier >= 1;
+  const multiplier = tier2.multiplier;
+  const scoreHigh = score >= 4;
+  const scoreLow = score <= 2;
+  const multiplierHigh = multiplier >= 1.15;
+  const multiplierLow = multiplier < 0.85;
 
-  if (scoreHigh === multiplierHigh) {
-    return null;
+  if (scoreHigh && multiplierLow) {
+    return "The 1–5 reads this more favourably than the measured comparison does — it came in under this creator's usual for this kind of post. The measured figures above are the ones to quote.";
   }
 
-  return scoreHigh
-    ? "The people who saw it engaged, but it didn't travel far. Worth re-cutting the hook and re-posting."
-    : "It travelled, but the people who saw it didn't engage much.";
+  if (scoreLow && multiplierHigh) {
+    return "The 1–5 reads this less favourably than the measured comparison does — it came in over this creator's usual for this kind of post. The measured figures above are the ones to quote.";
+  }
+
+  return null;
 }
 
 /** Col 6 (Performance) — score + tier phrase/confidence, or the absent-score reason. */

@@ -13,10 +13,15 @@ import type { AnalysisScoreCellProps } from "@/app/app/analyses/components/grids
 /**
  * DESIGN-3C §5 / TDD §9.3 — five discrete square pips + the numeral (`4 ▪▪▪▪▫`), never a
  * bar (a bar reads as a percentage; discrete pips are countable and cannot be misread as a
- * continuous proportion). Pips are `aria-hidden` and decorative (exempt from WCAG 1.4.11);
- * the numeral carries the information, and the whole cell exposes ONE combined accessible
- * name via `role="group"`/`aria-label` so a screen reader hears the full judgement in one
- * utterance rather than three separately-announced fragments.
+ * continuous proportion). Pips are `aria-hidden` and decorative (exempt from WCAG 1.4.11).
+ *
+ * The group carries the combined accessible name (`role="group"` + `aria-label`), but
+ * `role="group"`'s name is announced IN ADDITION TO its descendants, not instead of them —
+ * so every visible text descendant that duplicates information already in the label
+ * (the numeral, the tier phrase, the confidence word) is itself `aria-hidden`, leaving the
+ * group label as the only thing a screen reader announces for those fragments. The `ⓘ`
+ * trigger is deliberately NOT inside that hidden scope — it is a real interactive element
+ * with its own `aria-label`, unrelated to the judgement text (PR #201 review, N1).
  *
  * Structurally enforced (design §5, "a Performance cell with no second line is a bug"): the
  * `content` branch has no JSX path that can render a second line at all; the `performance`
@@ -31,7 +36,7 @@ export function AnalysisScoreCell(props: AnalysisScoreCellProps) {
     const accessibleLabel = buildScoreAccessibleLabel({ variant: "content", score: props.score });
     return (
       <span role="group" aria-label={accessibleLabel} className="inline-flex items-center gap-1.5 text-sm">
-        <span className="tabular-nums font-medium">{props.score}</span>
+        <span aria-hidden="true" className="tabular-nums font-medium">{props.score}</span>
         <ScorePipTrack score={props.score} fillClassName={pipFill} />
       </span>
     );
@@ -47,13 +52,13 @@ export function AnalysisScoreCell(props: AnalysisScoreCellProps) {
   return (
     <div role="group" aria-label={accessibleLabel}>
       <span className="inline-flex items-center gap-1.5 text-sm">
-        <span className="tabular-nums font-medium">{props.score}</span>
+        <span aria-hidden="true" className="tabular-nums font-medium">{props.score}</span>
         <ScorePipTrack score={props.score} fillClassName={pipFill} />
       </span>
       <div data-testid="performance-score-second-line">
         {props.tierPhrase != null && (
           <p className={cn("text-xs text-muted-foreground", props.isTier3 && "italic")}>
-            {props.tierPhrase}
+            <span aria-hidden="true">{props.tierPhrase}</span>
             {" "}
             <AnalysisScoreExplainPopover row={props.row} />
           </p>
@@ -67,7 +72,7 @@ export function AnalysisScoreCell(props: AnalysisScoreCellProps) {
           </p>
         )}
         {props.confidenceWord != null && (
-          <p className="text-xs text-muted-foreground">{props.confidenceWord}</p>
+          <p aria-hidden="true" className="text-xs text-muted-foreground">{props.confidenceWord}</p>
         )}
       </div>
     </div>

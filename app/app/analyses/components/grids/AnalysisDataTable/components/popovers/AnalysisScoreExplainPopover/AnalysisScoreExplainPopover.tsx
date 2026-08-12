@@ -34,6 +34,15 @@ import type { AnalysisScoreExplainPopoverProps } from "@/app/app/analyses/compon
  * handler explicitly skips any descendant carrying it (PR #198). Without it, clicking `ⓘ`
  * would both open this popover AND open the row detail modal underneath it.
  *
+ * Note (PR #201 review, N2): this trigger's own `event.stopPropagation()` below ALSO
+ * prevents the click from ever reaching the row's handler, so on this specific element the
+ * two mechanisms overlap — `data-row-exempt` is defense-in-depth here, not the sole
+ * safeguard. It stays required regardless: it is the general, name-agnostic contract
+ * `AnalysisTableRow` documents for ANY exempt descendant, including a future one that does
+ * not call `stopPropagation()` itself (e.g. #149's creator link). The guard's own
+ * behaviour, independent of `stopPropagation`, is exercised directly in
+ * `Analysis147ScoreCellIntegration.dom.test.tsx`.
+ *
  * Content order is the ticket's exact sequence (TDD §9.4 / DESIGN-3B §7, "order is itself an
  * argument about which number to trust"):
  *   1. the judgement disclaimer, 2. the measured figures, 3. the operand list (no worked

@@ -186,7 +186,7 @@ describe("classifyViewCount — real fixture trap case (ig_reel_1_zero_view_coun
 });
 
 /**
- * Ticket #147 / TDD §9.4 point 4, DESIGN-3B §3.1 — the score-explain popover's deterministic
+ * Ticket #147 / DESIGN-3B §3.1.1 (amendment B5) — the score-explain popover's deterministic
  * "these disagree" line, the one remaining derivation this ticket owns in the `select` layer
  * (`deriveAnalysisTablePerformance`, called from `hooks.ts`'s `select`). Exercises the REAL
  * function end to end, not a re-implementation.
@@ -215,38 +215,103 @@ function performanceWith(score: number | null, multiplier: number | null): Analy
   };
 }
 
-describe("deriveAnalysisTablePerformance — disagreementLine (ticket #147)", () => {
-  it("fires on a score-2 / multiplier-3.2× row (low score, high multiplier)", () => {
-    const derived = deriveAnalysisTablePerformance(performanceWith(2, 3.2), "reel");
-    expect(derived?.disagreementLine).toBe(
-      "It travelled, but the people who saw it didn't engage much.",
-    );
+/**
+ * A genuine Tier 2 cold start (§5.3) — `tier2` is present but `multiplier`/`median` are
+ * `null` because the bucket hasn't reached `BASELINE_MIN_SAMPLE` yet. This is distinct from
+ * `tier2 === null` (no Tier 2 at all): only this shape reaches `deriveMultiplierCell`'s
+ * `kind: "cold-start"` branch. Reviewer N5 — the prior fixture (`performanceWith(score,
+ * null)`) set `tier2` to `null` outright, which never exercised a cold start.
+ */
+function coldStartPerformanceWith(score: number | null): AnalysisPerformance {
+  const base = performanceWith(score, 3.2);
+  if (base == null) {
+    throw new Error("performanceWith never returns null in this fixture");
+  }
+  return {
+    ...base,
+    computed: {
+      ...base.computed,
+      tier2: { median: null, sampleSize: 3, bucketKey: "instagram:reel:full_video", multiplier: null },
+    },
+  };
+}
+
+describe("deriveAnalysisTablePerformance — disagreementLine (ticket #147, DESIGN-3B §3.1.1 amendment B5)", () => {
+  const D1 =
+    "The 1–5 reads this more favourably than the measured comparison does — it came in under this creator's usual for this kind of post. The measured figures above are the ones to quote.";
+  const D2 =
+    "The 1–5 reads this less favourably than the measured comparison does — it came in over this creator's usual for this kind of post. The measured figures above are the ones to quote.";
+
+  it("fires D2 on the canonical OR-6 row — score 2 / multiplier 3.2× (low score, high multiplier)", () => {
+    const derived = deriveAnalysisTablePerformance(performanceWith(2, 3.2), "reel", null);
+    expect(derived?.disagreementLine).toBe(D2);
   });
 
-  it("fires the opposite variant on a high score / low multiplier row", () => {
-    const derived = deriveAnalysisTablePerformance(performanceWith(4, 0.6), "reel");
-    expect(derived?.disagreementLine).toBe(
-      "The people who saw it engaged, but it didn't travel far. Worth re-cutting the hook and re-posting.",
-    );
+  it("fires D1 on a high score / low multiplier row", () => {
+    const derived = deriveAnalysisTablePerformance(performanceWith(4, 0.6), "reel", null);
+    expect(derived?.disagreementLine).toBe(D1);
   });
 
   it("does NOT fire when score and multiplier agree (both high)", () => {
-    const derived = deriveAnalysisTablePerformance(performanceWith(4, 3.2), "reel");
+    const derived = deriveAnalysisTablePerformance(performanceWith(4, 3.2), "reel", null);
     expect(derived?.disagreementLine).toBeNull();
   });
 
   it("does NOT fire when score and multiplier agree (both low)", () => {
-    const derived = deriveAnalysisTablePerformance(performanceWith(2, 0.6), "reel");
+    const derived = deriveAnalysisTablePerformance(performanceWith(2, 0.6), "reel", null);
     expect(derived?.disagreementLine).toBeNull();
   });
 
   it("is null when there is no score", () => {
-    const derived = deriveAnalysisTablePerformance(performanceWith(null, 3.2), "reel");
+    const derived = deriveAnalysisTablePerformance(performanceWith(null, 3.2), "reel", null);
     expect(derived?.disagreementLine).toBeNull();
   });
 
-  it("is null at Tier 2 cold start (multiplier not yet measured)", () => {
-    const derived = deriveAnalysisTablePerformance(performanceWith(4, null), "reel");
+  it("is null at a genuine Tier 2 cold start (tier2 present, multiplier not yet measured)", () => {
+    const derived = deriveAnalysisTablePerformance(coldStartPerformanceWith(4), "reel", null);
     expect(derived?.disagreementLine).toBeNull();
+  });
+
+  it("is null when there is no Tier 2 at all", () => {
+    const derived = deriveAnalysisTablePerformance(performanceWith(4, null), "reel", null);
+    expect(derived?.disagreementLine).toBeNull();
+  });
+
+  describe("B5 deadband boundaries — the worked case that prompted the amendment (score 3 / multiplier 0.98) and its exact edges", () => {
+    it("score === 3 (the score side's own deadband) never fires, at any multiplier", () => {
+      expect(deriveAnalysisTablePerformance(performanceWith(3, 0.5), "reel", null)?.disagreementLine).toBeNull();
+      expect(deriveAnalysisTablePerformance(performanceWith(3, 5), "reel", null)?.disagreementLine).toBeNull();
+      expect(deriveAnalysisTablePerformance(performanceWith(3, 0.98), "reel", null)?.disagreementLine).toBeNull();
+    });
+
+    it("multiplier === 0.85 is INSIDE the deadband (B5's `<=` on the low side) — no line, even with a low score", () => {
+      const derived = deriveAnalysisTablePerformance(performanceWith(2, 0.85), "reel", null);
+      expect(derived?.disagreementLine).toBeNull();
+    });
+
+    it("multiplier just under 0.85 is low — D1 fires with a high score", () => {
+      const derived = deriveAnalysisTablePerformance(performanceWith(4, 0.849), "reel", null);
+      expect(derived?.disagreementLine).toBe(D1);
+    });
+
+    it("multiplier === 1.15 is OUTSIDE the deadband (B5's `<` on the high side, i.e. `>= 1.15` is high) — D2 fires with a low score", () => {
+      const derived = deriveAnalysisTablePerformance(performanceWith(2, 1.15), "reel", null);
+      expect(derived?.disagreementLine).toBe(D2);
+    });
+
+    it("multiplier just under 1.15 is INSIDE the deadband — no line, even with a low score", () => {
+      const derived = deriveAnalysisTablePerformance(performanceWith(2, 1.149), "reel", null);
+      expect(derived?.disagreementLine).toBeNull();
+    });
+
+    it("the worked case that prompted amendment B5 — score 3 / multiplier 0.98 — renders nothing", () => {
+      const derived = deriveAnalysisTablePerformance(performanceWith(3, 0.98), "reel", null);
+      expect(derived?.disagreementLine).toBeNull();
+    });
+
+    it("the mirror case — score 2 / multiplier 1.02 — renders nothing (multiplier in the deadband)", () => {
+      const derived = deriveAnalysisTablePerformance(performanceWith(2, 1.02), "reel", null);
+      expect(derived?.disagreementLine).toBeNull();
+    });
   });
 });

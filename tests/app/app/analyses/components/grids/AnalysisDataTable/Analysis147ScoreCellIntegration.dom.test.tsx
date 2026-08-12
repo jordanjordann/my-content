@@ -247,6 +247,37 @@ describe("Ticket #147 — the ⓘ trigger carries data-row-exempt and does not o
     fireEvent.click(within(row).getByText("Nasi Goreng Kampung"));
     expect(onAnalysisClick).toHaveBeenCalledWith("row-scored");
   });
+
+  /**
+   * PR #201 review, N2 — the test above cannot distinguish the `data-row-exempt` guard from
+   * the trigger's own `event.stopPropagation()`: the trigger's click handler stops native
+   * propagation before the row's `onClick` ever runs, so deleting the attribute does not fail
+   * that test. `AnalysisTableRow`'s own comment documents the guard as general — "a
+   * descendant added later only needs the one attribute to keep working" — independent of
+   * whether that descendant also calls `stopPropagation()`. This test exercises exactly that
+   * general contract: a bare element carrying `data-row-exempt`, with NO `stopPropagation`
+   * of its own, so the click bubbles to the row's real handler with propagation intact. Only
+   * `AnalysisTableRow`'s `isExemptTarget` guard — not any interaction with `stopPropagation`
+   * — can be preventing `onOpen` from firing here.
+   */
+  it("a bare data-row-exempt descendant with no stopPropagation of its own still blocks the row click (isolates the guard from the trigger's stopPropagation)", async () => {
+    const { onAnalysisClick } = renderTable([ROW_SCORED]);
+    const row = (await screen.findByText("Nasi Goreng Kampung")).closest("tr") as HTMLElement;
+
+    const exemptProbe = document.createElement("span");
+    exemptProbe.textContent = "exempt probe";
+    exemptProbe.setAttribute("data-row-exempt", "true");
+    row.appendChild(exemptProbe);
+
+    fireEvent.click(exemptProbe);
+    expect(onAnalysisClick).not.toHaveBeenCalled();
+
+    // Same probe, attribute removed: an identical click, same lack of stopPropagation, now
+    // DOES reach `onOpen` — isolating `data-row-exempt` itself as the load-bearing mechanism.
+    exemptProbe.removeAttribute("data-row-exempt");
+    fireEvent.click(exemptProbe);
+    expect(onAnalysisClick).toHaveBeenCalledWith("row-scored");
+  });
 });
 
 describe("Ticket #147 — the Performance cell always carries a second line (design §5, enforced)", () => {

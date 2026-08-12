@@ -1,9 +1,10 @@
 /**
  * DESIGN-3B §3-§7 is the only approved home for user-facing score-explainability copy.
- * Every string below is quoted from there verbatim (or, where the design gives a worked
- * example rather than a literal template — the four disagreement variants — from TDD
- * §9.4 point 4 citing DESIGN-3B §3.1). Nothing here is invented; do not add new copy
- * without a doc citation.
+ * Every string below is quoted from there verbatim. The disagreement line's two live
+ * variants (D1/D2, DESIGN-3B §3.1.1, amendment B5) live in `lib/api/analyses/helpers.ts`
+ * rather than here, because they are computed in the `select` derivation layer, not
+ * rendered as static copy. Nothing here is invented; do not add new copy without a doc
+ * citation.
  */
 
 /** DESIGN-3B §7 point 1 — the popover's heading. */
