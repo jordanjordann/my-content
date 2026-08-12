@@ -45,7 +45,11 @@ function selectIndexedAnalyses(
         likeCount: analysis.likeCount,
         likeAndViewCountsDisabled: analysis.likeAndViewCountsDisabled,
       }),
-      tableDerived: deriveAnalysisTablePerformance(analysis.performance, analysis.mediaType),
+      tableDerived: deriveAnalysisTablePerformance(
+        analysis.performance,
+        analysis.mediaType,
+        analysis.likeAndViewCountsDisabled,
+      ),
     })),
     accounts: data.accounts,
     pagination: data.pagination,

@@ -319,6 +319,13 @@ describe("AnalysisDataTable — default render (OR-1, OR-7, OR-8)", () => {
     expect(capturedUrls.every((u) => !u.includes("pageSize"))).toBe(true);
   });
 
+  it("R-D1 — the footer states there is no totals row, exactly as specified, with no interaction", async () => {
+    renderTable();
+    expect(
+      await screen.findByText("No totals — these posts are measured against different things."),
+    ).toBeInTheDocument();
+  });
+
   it("renders the shared Scores group header spanning columns 5-6, with Content/Performance sub-labels", async () => {
     renderTable();
     const groupHeader = await screen.findByRole("columnheader", { name: "Scores" });

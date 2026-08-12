@@ -180,6 +180,10 @@ export function AnalysisDataTable({
 
       {data && data.pagination.total > 0 && (
         <div className="flex items-center justify-between border-t p-3 text-sm text-muted-foreground">
+          {/* R-D1 (TDD §9.2, DESIGN-3C §4.1) — no aggregate/total/"typical engagement" row
+              exists anywhere in this table (R-12.3.3). Where a user might reasonably expect
+              one, the footer says so in words, exactly as specified. */}
+          <span className="text-xs">No totals — these posts are measured against different things.</span>
           <span>
             Page {data.pagination.page} of {data.pagination.totalPages} — {data.pagination.total}{" "}
             analyses

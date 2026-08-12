@@ -1,3 +1,5 @@
+import type { AbsentCountReason } from "@/lib/api/analyses/types";
+
 export const ANALYSIS_KEYS = {
   all: ["analyses"] as const,
   lists: () => [...ANALYSIS_KEYS.all, "list"] as const,
@@ -15,3 +17,15 @@ export const ANALYSIS_KEYS = {
  * constant (and `useAllAnalysesQuery`) goes away.
  */
 export const ANALYSES_FETCH_ALL_PAGE_SIZE = 5000;
+
+/**
+ * Ticket #146 / OR-11 (TDD §9.5) — the three-case absent-count reason's copy, verbatim from
+ * the TDD's own table. Case 3 (`NOT_AVAILABLE`) is the mandatory default for anything that
+ * isn't a verified creator setting or a structurally-image-only post; do not paraphrase or
+ * add a fourth case without a design ruling (R-13.5.2).
+ */
+export const ABSENT_COUNT_REASON_COPY: Record<AbsentCountReason, string> = {
+  CREATOR_DISABLED: "Creator turned off counts",
+  TYPE_NOT_REPORTED: "This post type doesn't report counts",
+  NOT_AVAILABLE: "Counts weren't available",
+};

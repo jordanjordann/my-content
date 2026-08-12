@@ -147,10 +147,30 @@ export type AnalysisTableMultiplierCell =
   | { kind: "dash" };
 
 export type AnalysisTableEngagementCell =
-  | { kind: "value"; ratio: number; denominator: "REACH"; reachKind: ReachKind; reachValue: number | null }
+  | {
+      kind: "value";
+      ratio: number;
+      denominator: "REACH";
+      reachKind: ReachKind;
+      reachValue: number | null;
+      /** R-D3 (TDD §9.2, DESIGN-3C §4.1) — reach was derived from the carousel's first slide
+       * only (D4), never a per-post figure. The cell must append `· first slide only` to its
+       * qualifier when this is `true`; the confidence penalty itself is already carried on
+       * `computed.confidence`/`confidenceReason`, so this field exists purely to drive the
+       * qualifier string, not to re-derive confidence. */
+      firstSlideOnly: boolean;
+    }
   | { kind: "value"; ratio: number; denominator: "FOLLOWERS"; followersValue: number | null }
   | { kind: "reason"; text: string }
   | { kind: "dash" };
+
+/**
+ * Ticket #146 / OR-11 (TDD §9.5) — the three-case reason a Counts-cell figure is absent.
+ * Derived, never stored: `deriveAbsentCountReason` in `lib/api/analyses/helpers.ts`. Case 3
+ * (`NOT_AVAILABLE`) is the mandatory non-fallback default — fetch failures, private accounts
+ * and unseen payload shapes must never be diagnosed as case 1 (Decision 6, R-13.5.2).
+ */
+export type AbsentCountReason = "CREATOR_DISABLED" | "TYPE_NOT_REPORTED" | "NOT_AVAILABLE";
 
 /** Per-row precomputed table cell decisions (col 4/6/7/8/9) — `null` when `performance` is `null`. */
 export type AnalysisTableDerivedPerformance = {
@@ -158,6 +178,10 @@ export type AnalysisTableDerivedPerformance = {
    * `viewCountState`/`likeCountState` (PR #198 review, blocker 4: those can be genuinely
    * WRONG for a carousel/plays-only reel, not merely absent). */
   reachCountState: CountState;
+  /** Col 4 (Counts) — OR-11's three-case reason (TDD §9.5). Always computed; the Counts cell
+   * only renders it when `reachCountState.kind` is `"unknown"` (case 1 always yields `"hidden"`
+   * instead, which already carries its own explanation via `EngagementCount`'s tooltip). */
+  absentCountReason: AbsentCountReason;
   performanceCell: AnalysisTablePerformanceCell;
   multiplierCell: AnalysisTableMultiplierCell;
   engagementReachCell: AnalysisTableEngagementCell;
