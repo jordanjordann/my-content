@@ -1,7 +1,35 @@
 import { formatAbbrev } from "@/app/app/analyses/components/counts/EngagementCount/helpers";
-import type { AnalysisTableEngagementCell } from "@/lib/api/analyses/types";
+import type { AnalysisTableEngagementCell, ReachKind } from "@/lib/api/analyses/types";
 
 type ValueCell = Extract<AnalysisTableEngagementCell, { kind: "value" }>;
+
+/** Exhaustiveness helper, mirroring the server-side `assertNever` convention. */
+function assertNever(value: never): never {
+  throw new Error(`assertNever: unreachable ReachKind ${JSON.stringify(value)}`);
+}
+
+/**
+ * AC-16 / PR #200 review, blocker B2 — the exhaustive form. `ReachKind` is a THREE-member
+ * union (`"PLAYS" | "VIEWS" | "UNKNOWN"`); a binary ternary silently rendered "views" for
+ * `UNKNOWN`, which is a confident, specific, WRONG word. `UNKNOWN` must never reach this
+ * function — `AnalysisEngagementCell` filters it to the honest `—` placeholder before calling
+ * any of the label formatters below, exactly as it already does for `cell.kind === "dash"`.
+ * This throws rather than guessing so a caller that skips that guard fails loudly, not quietly.
+ */
+function reachKindWord(kind: ReachKind): "views" | "plays" {
+  switch (kind) {
+    case "PLAYS":
+      return "plays";
+    case "VIEWS":
+      return "views";
+    case "UNKNOWN":
+      throw new Error(
+        "reachKindWord: UNKNOWN must be filtered to the absent state before formatting — never guessed as 'views'/'plays'.",
+      );
+    default:
+      return assertNever(kind);
+  }
+}
 
 /** `4.1%` — the visible value line, formatted to one decimal place. */
 export function formatEngagementValueLabel(cell: ValueCell): string {
@@ -19,7 +47,7 @@ export function formatEngagementValueLabel(cell: ValueCell): string {
 export function formatEngagementQualifierLabel(cell: ValueCell): string {
   if (cell.denominator === "REACH") {
     const value = cell.reachValue != null ? formatAbbrev(cell.reachValue) : "—";
-    const kindWord = cell.reachKind === "PLAYS" ? "plays" : "views";
+    const kindWord = reachKindWord(cell.reachKind);
     // R-D3 — a video-bearing carousel's reach is derived from the first slide only (D4); the
     // qualifier says so explicitly rather than reading as an unqualified per-post reach.
     return cell.firstSlideOnly ? `of ${value} ${kindWord} · first slide only` : `of ${value} ${kindWord}`;
@@ -40,7 +68,7 @@ export function formatEngagementAccessiblePhrase(cell: ValueCell): string {
 
   if (cell.denominator === "REACH") {
     const value = cell.reachValue != null ? cell.reachValue.toLocaleString() : "an unknown number of";
-    const kindWord = cell.reachKind === "PLAYS" ? "plays" : "views";
+    const kindWord = reachKindWord(cell.reachKind);
     const suffix = cell.firstSlideOnly ? ", first slide only" : "";
     return `${percentWords} of ${value} ${kindWord}${suffix}`;
   }

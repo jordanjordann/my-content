@@ -8,23 +8,26 @@ import { ABSENT_COUNT_REASON_COPY } from "@/lib/api/analyses/constants";
  * `deriveAbsentCountReason` exported from `lib/api/analyses/helpers.ts` directly — nothing
  * under test is mocked. Case 3 (`NOT_AVAILABLE`) is the mandatory non-fallback default; a
  * negative assertion (never "turned off") is required, not just presence.
+ *
+ * PR #200 review, blocker B1 — case 2 is gated on `unavailableReason ===
+ * "CONTENT_KIND_UNSUPPORTED"` (OR-26, `docs/TDD-3A-3B-3C-phase-3.md:126`), never on the
+ * overloaded `mediaType === "carousel" && reach.derivedFrom === "NONE"` combination that also
+ * matches a mixed image+video carousel.
  */
 describe("deriveAbsentCountReason", () => {
-  it("case 1 — likeAndViewCountsDisabled === true (explicitly) is CREATOR_DISABLED, even on a carousel with NONE reach", () => {
+  it("case 1 — likeAndViewCountsDisabled === true (explicitly) is CREATOR_DISABLED, even when the reason is CONTENT_KIND_UNSUPPORTED", () => {
     expect(
       deriveAbsentCountReason({
-        mediaType: "carousel",
-        reachDerivedFrom: "NONE",
+        unavailableReason: "CONTENT_KIND_UNSUPPORTED",
         likeAndViewCountsDisabled: true,
       }),
     ).toBe("CREATOR_DISABLED");
   });
 
-  it("case 2 — an all-image carousel (carousel + reach derivedFrom NONE) with the flag not true is TYPE_NOT_REPORTED", () => {
+  it("case 2 — unavailableReason CONTENT_KIND_UNSUPPORTED (an all-image carousel/single-image post) with the flag not true is TYPE_NOT_REPORTED", () => {
     expect(
       deriveAbsentCountReason({
-        mediaType: "carousel",
-        reachDerivedFrom: "NONE",
+        unavailableReason: "CONTENT_KIND_UNSUPPORTED",
         likeAndViewCountsDisabled: false,
       }),
     ).toBe("TYPE_NOT_REPORTED");
@@ -33,28 +36,25 @@ describe("deriveAbsentCountReason", () => {
   it("case 2 also fires when the flag is null (unknown/never fetched), not just false", () => {
     expect(
       deriveAbsentCountReason({
-        mediaType: "carousel",
-        reachDerivedFrom: "NONE",
+        unavailableReason: "CONTENT_KIND_UNSUPPORTED",
         likeAndViewCountsDisabled: null,
       }),
     ).toBe("TYPE_NOT_REPORTED");
   });
 
-  it("case 3 — a reel with derivedFrom NONE (not an all-image carousel) and the flag false is NOT_AVAILABLE, never TYPE_NOT_REPORTED", () => {
+  it("case 3 — a mixed image+video carousel (unavailableReason REACH_NOT_ON_FIRST_SLIDE) is NOT_AVAILABLE, never TYPE_NOT_REPORTED — the post DOES contain video and DOES report counts (B1, OR-26)", () => {
     expect(
       deriveAbsentCountReason({
-        mediaType: "reel",
-        reachDerivedFrom: "NONE",
+        unavailableReason: "REACH_NOT_ON_FIRST_SLIDE",
         likeAndViewCountsDisabled: false,
       }),
     ).toBe("NOT_AVAILABLE");
   });
 
-  it("case 3 — a carousel whose reach resolved (TOP_LEVEL) is NOT_AVAILABLE-eligible territory too: it is not an all-image carousel by this signal", () => {
+  it("case 3 — unavailableReason null (reach resolved, or no reason recorded) is NOT_AVAILABLE-eligible territory too: it is not CONTENT_KIND_UNSUPPORTED", () => {
     expect(
       deriveAbsentCountReason({
-        mediaType: "carousel",
-        reachDerivedFrom: "TOP_LEVEL",
+        unavailableReason: null,
         likeAndViewCountsDisabled: false,
       }),
     ).toBe("NOT_AVAILABLE");
@@ -62,8 +62,7 @@ describe("deriveAbsentCountReason", () => {
 
   it("case 3 is the mandatory non-fallback default — a row with likeAndViewCountsDisabled === false never lands in case 1", () => {
     const result = deriveAbsentCountReason({
-      mediaType: "post",
-      reachDerivedFrom: "NONE",
+      unavailableReason: "REACH_HIDDEN",
       likeAndViewCountsDisabled: false,
     });
     expect(result).not.toBe("CREATOR_DISABLED");

@@ -12,6 +12,7 @@ import type {
   CountState,
   PerformanceComputed,
   Tier,
+  UnavailableReason,
 } from "@/lib/api/analyses/types";
 
 /**
@@ -102,40 +103,32 @@ export function classifyLikeCount(input: {
 }
 
 /**
- * All-image carousel, TDD §9.5's case 2 condition. The client has no `analysisMode` field
- * (server-only, `lib/server/analysis/pipeline/index.ts`) so this uses the same in-hand signal
- * `deriveEngagementCell` already uses for the same distinction (helpers.ts's own doc above
- * `VIDEO_MEDIA_TYPES`): `computed.reach.derivedFrom === "NONE"` on a `carousel` row means no
- * slide, first or later, carries a reach field — a genuinely image-only carousel, never a
- * video-bearing one whose reach merely failed to resolve (a reel/short with `derivedFrom:
- * "NONE"` is NOT this case — see `deriveAbsentCountReason`'s own guard).
- */
-function isAllImageCarousel(input: {
-  mediaType: AnalysisListItem["mediaType"];
-  reachDerivedFrom: PerformanceComputed["reach"]["derivedFrom"];
-}): boolean {
-  return input.mediaType === "carousel" && input.reachDerivedFrom === "NONE";
-}
-
-/**
  * OR-11 (TDD §9.5) — the three-case absent-count reason. Derived, never stored, verified
  * viable in TDD §1.6 (`like_and_view_counts_disabled` reaches the client as a genuine
  * tri-state `true`/`false`/`null`). Ordering is load-bearing and there is **no fallback to
  * case 1**:
  *
  * 1. `likeAndViewCountsDisabled === true` — a verified creator setting, not an inference.
- * 2. An all-image carousel — a structural fact about the post type, not the creator's choice.
+ * 2. `unavailableReason === "CONTENT_KIND_UNSUPPORTED"` — an all-image carousel/single-image
+ *    post, a structural fact about the post type, not the creator's choice. This is the
+ *    server-computed, non-overloaded signal (OR-26, `docs/TDD-3A-3B-3C-phase-3.md:126`) —
+ *    NOT `mediaType === "carousel" && reach.derivedFrom === "NONE"`. That combination is
+ *    overloaded: it is also true for a mixed image+video carousel whose cover slide is an
+ *    image but a later slide carries real reach (`unavailableReason:
+ *    "REACH_NOT_ON_FIRST_SLIDE"` in that case, which correctly falls through to case 3
+ *    below, never case 2) — using `derivedFrom` here would fabricate "this post type
+ *    doesn't report counts" on a post that DOES contain video (R-13.5.3a).
  * 3. Anything else, INCLUDING `likeAndViewCountsDisabled === false` — fetch failures, private
- *    accounts and unseen payload shapes must never be diagnosed as case 1 or case 2 by
- *    inference (Decision 6, R-13.5.2). This is the mandatory, non-fallback default.
+ *    accounts, `REACH_NOT_ON_FIRST_SLIDE`, and unseen payload shapes must never be diagnosed
+ *    as case 1 or case 2 by inference (Decision 6, R-13.5.2). This is the mandatory,
+ *    non-fallback default.
  */
 export function deriveAbsentCountReason(input: {
-  mediaType: AnalysisListItem["mediaType"];
-  reachDerivedFrom: PerformanceComputed["reach"]["derivedFrom"];
+  unavailableReason: UnavailableReason | null;
   likeAndViewCountsDisabled: boolean | null;
 }): AbsentCountReason {
   if (input.likeAndViewCountsDisabled === true) return "CREATOR_DISABLED";
-  if (isAllImageCarousel(input)) return "TYPE_NOT_REPORTED";
+  if (input.unavailableReason === "CONTENT_KIND_UNSUPPORTED") return "TYPE_NOT_REPORTED";
   return "NOT_AVAILABLE";
 }
 
@@ -351,8 +344,7 @@ export function deriveAnalysisTablePerformance(
   return {
     reachCountState: classifyReachCountState(computed.reach),
     absentCountReason: deriveAbsentCountReason({
-      mediaType,
-      reachDerivedFrom: computed.reach.derivedFrom,
+      unavailableReason: computed.unavailableReason,
       likeAndViewCountsDisabled,
     }),
     performanceCell: derivePerformanceCell(computed, judgement.performanceScore),

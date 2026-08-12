@@ -50,6 +50,20 @@ const REASON_CELL: AnalysisTableEngagementCell = {
   text: "not published for image posts",
 };
 
+/**
+ * PR #200 review, blocker B2 — `readModel.ts:153` coalesces a null `perf_reach_kind` column to
+ * `"UNKNOWN"` on a row that nonetheless has a resolved tier-1 REACH ratio. The reach VALUE and
+ * RATIO are real; only the kind word (views vs plays) is unknown.
+ */
+const UNKNOWN_KIND_REACH_CELL: AnalysisTableEngagementCell = {
+  kind: "value",
+  ratio: 0.03,
+  denominator: "REACH",
+  reachKind: "UNKNOWN",
+  reachValue: 50_000,
+  firstSlideOnly: false,
+};
+
 describe("AnalysisEngagementCell — Direction A value rendering (AC-21, AC-25, no interaction)", () => {
   it("a reach-denominated value shows its qualifier with no hover/focus needed, amber colour, no ≈ prefix", () => {
     render(<AnalysisEngagementCell cell={REEL_REACH_CELL} denominator="REACH" />);
@@ -85,6 +99,13 @@ describe("AnalysisEngagementCell — AC-16, the reach kind word is mandatory and
     const { container } = render(<AnalysisEngagementCell cell={REEL_REACH_CELL} denominator="REACH" />);
     expect(screen.getByText("of 482.1K views")).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/plays/i);
+  });
+
+  it("an UNKNOWN reachKind row never fabricates 'views' or 'plays' — renders the honest absent dash instead", () => {
+    const { container } = render(<AnalysisEngagementCell cell={UNKNOWN_KIND_REACH_CELL} denominator="REACH" />);
+    expect(container.textContent).not.toMatch(/views/i);
+    expect(container.textContent).not.toMatch(/plays/i);
+    expect(screen.getByText("—")).toBeInTheDocument();
   });
 });
 

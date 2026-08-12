@@ -32,6 +32,15 @@ export function AnalysisEngagementCell({ cell, denominator }: AnalysisEngagement
     return <p className="text-xs text-muted-foreground">{cell.text}</p>;
   }
 
+  // AC-16 / PR #200 review, blocker B2 — `ReachKind` is a three-member union
+  // (`"PLAYS" | "VIEWS" | "UNKNOWN"`); a stored kind of `UNKNOWN` means the server itself
+  // could not say whether this figure is views or plays. Rendering either word would be a
+  // confident, specific, WRONG attribution (R-4.3.1). Reuse the same honest `—` this
+  // component already renders for `cell.kind === "dash"`, rather than guessing.
+  if (cell.kind === "value" && cell.denominator === "REACH" && cell.reachKind === "UNKNOWN") {
+    return <span className="text-sm text-muted-foreground">—</span>;
+  }
+
   const valueLabel = formatEngagementValueLabel(cell);
   const qualifierLabel = formatEngagementQualifierLabel(cell);
   const accessiblePhrase = formatEngagementAccessiblePhrase(cell);
