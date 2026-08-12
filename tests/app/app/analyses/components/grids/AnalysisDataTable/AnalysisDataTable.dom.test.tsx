@@ -256,6 +256,72 @@ const ROW_I_REEL_NO_RESULT_REACH = baseRow({
   },
 });
 
+/**
+ * Row J — PR #200 review, blocker B1 (OR-26, `docs/TDD-3A-3B-3C-phase-3.md:126`). A MIXED
+ * image+video carousel: the cover slide (slide 0) carries no reach field, but a later slide
+ * does — the server-computed `unavailableReason: "REACH_NOT_ON_FIRST_SLIDE"` is the real,
+ * non-overloaded signal for this. This post genuinely DOES contain video and DOES publish
+ * counts (just not on the first slide) — the Counts cell must NOT read the all-image-carousel
+ * sentence ("This post type doesn't report counts"), which would be a fabricated diagnosis
+ * (R-13.5.3a). `mediaType: "carousel"` + `reach.derivedFrom: "NONE"` alone is indistinguishable
+ * from a genuine all-image carousel (Row B) — only `unavailableReason` disambiguates.
+ */
+const ROW_J_MIXED_CAROUSEL = baseRow({
+  id: "row-j-mixed-carousel",
+  mediaType: "carousel",
+  title: "Mixed image and video carousel",
+  likeAndViewCountsDisabled: false,
+  performance: {
+    computed: {
+      reach: { value: null, kind: null, derivedFrom: "NONE", state: "UNKNOWN" },
+      likes: { value: 200, state: "AVAILABLE" },
+      comments: { value: 3, state: "AVAILABLE" },
+      audience: { value: null, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
+      postAgeHours: 40,
+      tier1: null,
+      tier2: null,
+      tier3: null,
+      tierUsed: "UNAVAILABLE",
+      confidence: "NONE",
+      confidenceReason: null,
+      provisional: false,
+      unavailableReason: "REACH_NOT_ON_FIRST_SLIDE",
+    },
+    judgement: { performanceScore: null, verdict: null, drivers: [] },
+  },
+});
+
+/**
+ * Row K — a genuine all-image carousel (no video anywhere, no usable like/comment numerator
+ * either — PRD §12.6's true collapse case): `unavailableReason: "CONTENT_KIND_UNSUPPORTED"`,
+ * exactly what `judgement.ts`'s `resolveUnavailableReason` sets for this real shape. This is
+ * the one fixture where the Counts cell's `TYPE_NOT_REPORTED` case genuinely applies.
+ */
+const ROW_K_ALL_IMAGE_CAROUSEL = baseRow({
+  id: "row-k-all-image-carousel",
+  mediaType: "carousel",
+  title: "All-image carousel",
+  likeAndViewCountsDisabled: false,
+  performance: {
+    computed: {
+      reach: { value: null, kind: null, derivedFrom: "NONE", state: "UNKNOWN" },
+      likes: { value: null, state: "UNKNOWN" },
+      comments: { value: null, state: "UNKNOWN" },
+      audience: { value: null, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
+      postAgeHours: 60,
+      tier1: null,
+      tier2: null,
+      tier3: null,
+      tierUsed: "UNAVAILABLE",
+      confidence: "NONE",
+      confidenceReason: null,
+      provisional: false,
+      unavailableReason: "CONTENT_KIND_UNSUPPORTED",
+    },
+    judgement: { performanceScore: null, verdict: null, drivers: [] },
+  },
+});
+
 const ALL_ROWS = [ROW_A_SCORED, ROW_B_COLD_START, ROW_C_SCORELESS, ROW_D_FAILED];
 
 function buildFetchMock(rows: AnalysisListItem[], capturedUrls: string[]) {
@@ -317,6 +383,13 @@ describe("AnalysisDataTable — default render (OR-1, OR-7, OR-8)", () => {
     // OR-8: no explicit `pageSize` override — relies on the server's default (50).
     expect(capturedUrls.some((u) => u.includes("/api/analyses"))).toBe(true);
     expect(capturedUrls.every((u) => !u.includes("pageSize"))).toBe(true);
+  });
+
+  it("R-D1 — the footer states there is no totals row, exactly as specified, with no interaction", async () => {
+    renderTable();
+    expect(
+      await screen.findByText("No totals — these posts are measured against different things."),
+    ).toBeInTheDocument();
   });
 
   it("renders the shared Scores group header spanning columns 5-6, with Content/Performance sub-labels", async () => {
@@ -449,6 +522,30 @@ describe("AnalysisDataTable — Eng. / reach reason text does not collapse reel 
     const row = (await screen.findByText("Reel with hidden reach")).closest("tr") as HTMLElement;
     expect(within(row).getByText("no post-level reach")).toBeInTheDocument();
     expect(within(row).queryByText("not published for image posts")).not.toBeInTheDocument();
+  });
+});
+
+describe("AnalysisDataTable — Eng. / followers 'no follower measure here' (PR #200 review, S4 coverage gap)", () => {
+  it("a reel whose Tier 1 resolved against REACH (not FOLLOWERS) reads 'no follower measure here' in the Eng. / followers column", async () => {
+    renderTable([ROW_A_SCORED]);
+    const row = (await screen.findByText("Nasi Goreng Kampung")).closest("tr") as HTMLElement;
+    expect(within(row).getByText("no follower measure here")).toBeInTheDocument();
+  });
+});
+
+describe("AnalysisDataTable — absent-count reason keys off unavailableReason, not the overloaded reach.derivedFrom (PR #200 review, blocker B1)", () => {
+  it("a mixed image+video carousel (unavailableReason REACH_NOT_ON_FIRST_SLIDE) reads 'Counts weren't available', never the all-image-carousel sentence", async () => {
+    renderTable([ROW_J_MIXED_CAROUSEL]);
+    const row = (await screen.findByText("Mixed image and video carousel")).closest("tr") as HTMLElement;
+    expect(within(row).getByText("Counts weren't available")).toBeInTheDocument();
+    expect(within(row).queryByText("This post type doesn't report counts")).not.toBeInTheDocument();
+  });
+
+  it("a genuine all-image carousel (unavailableReason CONTENT_KIND_UNSUPPORTED) still reads the all-image-carousel sentence", async () => {
+    renderTable([ROW_K_ALL_IMAGE_CAROUSEL]);
+    const row = (await screen.findByText("All-image carousel")).closest("tr") as HTMLElement;
+    expect(within(row).getByText("This post type doesn't report counts")).toBeInTheDocument();
+    expect(within(row).queryByText("Counts weren't available")).not.toBeInTheDocument();
   });
 });
 

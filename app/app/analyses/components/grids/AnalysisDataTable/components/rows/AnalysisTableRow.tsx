@@ -1,7 +1,6 @@
 import type { KeyboardEvent, MouseEvent } from "react";
 
 import { cn } from "@/lib/utils";
-import { EngagementCount } from "@/app/app/analyses/components/counts/EngagementCount";
 import { MAX_SCORE } from "@/app/app/analyses/constants";
 import type { AnalysisListItemIndexed } from "@/lib/api/analyses/types";
 import type { AnalysisTableDensity } from "@/app/app/analyses/components/grids/AnalysisDataTable/types";
@@ -14,7 +13,8 @@ import {
   formatPostedDate,
   isNonCompletedRow,
 } from "@/app/app/analyses/components/grids/AnalysisDataTable/helpers";
-import { formatAbbrev } from "@/app/app/analyses/components/counts/EngagementCount/helpers";
+import { AnalysisCountsCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisCountsCell";
+import { AnalysisEngagementCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisEngagementCell";
 
 type AnalysisTableRowProps = {
   row: AnalysisListItemIndexed;
@@ -130,24 +130,21 @@ export function AnalysisTableRow({ row, density, onOpen, rowRef }: AnalysisTable
       </td>
 
       {/* 4. Counts — reach, sourced from `performance.computed.reach` (via `tableDerived`),
-          never the raw `viewCountState` (#146 owns the full componentised Counts cell, incl.
-          the three-case absent-count reason). Using the raw view count here could show a
-          genuinely WRONG number under a wrong kind word for a carousel or plays-only reel —
-          PR #198 review blocker 4 — so this renders the already-correct derived reach state,
-          or an honest `—` when no performance block exists at all. */}
+          never the raw `viewCountState`. Using the raw view count here could show a genuinely
+          WRONG number under a wrong kind word for a carousel or plays-only reel — PR #198
+          review blocker 4 — so this renders the already-correct derived reach state, plus
+          OR-11's three-case absent-count reason, or an honest `—` when no performance block
+          exists at all. */}
       <td className="p-3 align-middle">
         {failed || row.tableDerived == null ? (
           <span className="text-sm text-muted-foreground">—</span>
         ) : (
-          <>
-            <EngagementCount state={row.tableDerived.reachCountState} metric="views" />
-            {comfortable && (
-              <p className="text-xs text-muted-foreground">
-                <EngagementCount state={row.likeCountState} metric="likes" /> ·{" "}
-                <span aria-hidden="true">—</span>
-              </p>
-            )}
-          </>
+          <AnalysisCountsCell
+            reachCountState={row.tableDerived.reachCountState}
+            likeCountState={row.likeCountState}
+            absentCountReason={row.tableDerived.absentCountReason}
+            comfortable={comfortable}
+          />
         )}
       </td>
 
@@ -175,12 +172,21 @@ export function AnalysisTableRow({ row, density, onOpen, rowRef }: AnalysisTable
         <MultiplierCell row={row} failed={failed} />
       </td>
 
-      {/* 8/9. Eng. / reach, Eng. / followers — Direction A, two dedicated columns. */}
+      {/* 8/9. Eng. / reach, Eng. / followers — Direction A, two dedicated columns, never one
+          (OR-3 / R-12.3.4). */}
       <td className="p-3 align-middle">
-        <EngagementRatioCell row={row} failed={failed} denominator="REACH" />
+        {failed || row.tableDerived == null ? (
+          <span className="text-sm text-muted-foreground">—</span>
+        ) : (
+          <AnalysisEngagementCell cell={row.tableDerived.engagementReachCell} denominator="REACH" />
+        )}
       </td>
       <td className="p-3 align-middle">
-        <EngagementRatioCell row={row} failed={failed} denominator="FOLLOWERS" />
+        {failed || row.tableDerived == null ? (
+          <span className="text-sm text-muted-foreground">—</span>
+        ) : (
+          <AnalysisEngagementCell cell={row.tableDerived.engagementFollowersCell} denominator="FOLLOWERS" />
+        )}
       </td>
     </tr>
   );
@@ -284,53 +290,6 @@ function MultiplierCell({ row, failed }: { row: AnalysisListItemIndexed; failed:
       <p className="text-xs text-muted-foreground">
         based on {content.sampleSize} {content.bucketNoun}
       </p>
-    </div>
-  );
-}
-
-function EngagementRatioCell({
-  row,
-  failed,
-  denominator,
-}: {
-  row: AnalysisListItemIndexed;
-  failed: boolean;
-  denominator: "REACH" | "FOLLOWERS";
-}) {
-  if (failed || row.tableDerived == null) {
-    return <span className="text-sm text-muted-foreground">—</span>;
-  }
-
-  const content =
-    denominator === "REACH" ? row.tableDerived.engagementReachCell : row.tableDerived.engagementFollowersCell;
-
-  if (content.kind === "dash") {
-    return <span className="text-sm text-muted-foreground">—</span>;
-  }
-  if (content.kind === "reason") {
-    return <p className="text-xs text-muted-foreground">{content.text}</p>;
-  }
-
-  const valueLabel = `${(content.ratio * 100).toFixed(1)}%`;
-  const qualifierLabel =
-    content.denominator === "REACH"
-      ? `of ${content.reachValue != null ? formatAbbrev(content.reachValue) : "—"} ${
-          content.reachKind === "PLAYS" ? "plays" : "views"
-        }`
-      : `of ${content.followersValue != null ? formatAbbrev(content.followersValue) : "—"} followers`;
-  const approx = content.denominator === "FOLLOWERS";
-
-  return (
-    <div>
-      <p
-        className={cn(
-          "text-sm font-medium tabular-nums",
-          denominator === "REACH" ? "text-accent" : "text-teal-500",
-        )}
-      >
-        {approx ? `≈${valueLabel}` : valueLabel}
-      </p>
-      <p className="text-xs text-muted-foreground">{qualifierLabel}</p>
     </div>
   );
 }

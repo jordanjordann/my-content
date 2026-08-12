@@ -1,5 +1,6 @@
 import { resolveUnavailableReasonCopy } from "@/lib/analysis/performance/render";
 import type {
+  AbsentCountReason,
   AnalysisListItem,
   AnalysisPerformance,
   AnalysisPlatform,
@@ -11,6 +12,7 @@ import type {
   CountState,
   PerformanceComputed,
   Tier,
+  UnavailableReason,
 } from "@/lib/api/analyses/types";
 
 /**
@@ -98,6 +100,36 @@ export function classifyLikeCount(input: {
   if (input.likeCount == null) return { kind: "unknown" };
   if (input.likeCount === 0) return { kind: "zero" };
   return { kind: "count", value: input.likeCount };
+}
+
+/**
+ * OR-11 (TDD §9.5) — the three-case absent-count reason. Derived, never stored, verified
+ * viable in TDD §1.6 (`like_and_view_counts_disabled` reaches the client as a genuine
+ * tri-state `true`/`false`/`null`). Ordering is load-bearing and there is **no fallback to
+ * case 1**:
+ *
+ * 1. `likeAndViewCountsDisabled === true` — a verified creator setting, not an inference.
+ * 2. `unavailableReason === "CONTENT_KIND_UNSUPPORTED"` — an all-image carousel/single-image
+ *    post, a structural fact about the post type, not the creator's choice. This is the
+ *    server-computed, non-overloaded signal (OR-26, `docs/TDD-3A-3B-3C-phase-3.md:126`) —
+ *    NOT `mediaType === "carousel" && reach.derivedFrom === "NONE"`. That combination is
+ *    overloaded: it is also true for a mixed image+video carousel whose cover slide is an
+ *    image but a later slide carries real reach (`unavailableReason:
+ *    "REACH_NOT_ON_FIRST_SLIDE"` in that case, which correctly falls through to case 3
+ *    below, never case 2) — using `derivedFrom` here would fabricate "this post type
+ *    doesn't report counts" on a post that DOES contain video (R-13.5.3a).
+ * 3. Anything else, INCLUDING `likeAndViewCountsDisabled === false` — fetch failures, private
+ *    accounts, `REACH_NOT_ON_FIRST_SLIDE`, and unseen payload shapes must never be diagnosed
+ *    as case 1 or case 2 by inference (Decision 6, R-13.5.2). This is the mandatory,
+ *    non-fallback default.
+ */
+export function deriveAbsentCountReason(input: {
+  unavailableReason: UnavailableReason | null;
+  likeAndViewCountsDisabled: boolean | null;
+}): AbsentCountReason {
+  if (input.likeAndViewCountsDisabled === true) return "CREATOR_DISABLED";
+  if (input.unavailableReason === "CONTENT_KIND_UNSUPPORTED") return "TYPE_NOT_REPORTED";
+  return "NOT_AVAILABLE";
 }
 
 /**
@@ -235,7 +267,17 @@ function deriveEngagementCell(
 
   if (tier1?.denominator === denominator) {
     if (tier1.denominator === "REACH") {
-      return { kind: "value", ratio: tier1.ratio, denominator: "REACH", reachKind: tier1.reachKind, reachValue: reach.value };
+      return {
+        kind: "value",
+        ratio: tier1.ratio,
+        denominator: "REACH",
+        reachKind: tier1.reachKind,
+        reachValue: reach.value,
+        // R-D3 — a video-bearing carousel's reach is first-slide-derived (D4), never a
+        // per-post figure; the confidence penalty is already carried on `computed.confidence`
+        // (`judgement.ts`), this field only drives the qualifier's `· first slide only` suffix.
+        firstSlideOnly: reach.derivedFrom === "CAROUSEL_FIRST_SLIDE",
+      };
     }
     return { kind: "value", ratio: tier1.ratio, denominator: "FOLLOWERS", followersValue: audience.value };
   }
@@ -291,6 +333,7 @@ export function resolveAbsentScoreReasonText(computed: PerformanceComputed): str
 export function deriveAnalysisTablePerformance(
   performance: AnalysisPerformance,
   mediaType: AnalysisListItem["mediaType"],
+  likeAndViewCountsDisabled: boolean | null,
 ): AnalysisTableDerivedPerformance | null {
   if (performance == null) {
     return null;
@@ -300,6 +343,10 @@ export function deriveAnalysisTablePerformance(
 
   return {
     reachCountState: classifyReachCountState(computed.reach),
+    absentCountReason: deriveAbsentCountReason({
+      unavailableReason: computed.unavailableReason,
+      likeAndViewCountsDisabled,
+    }),
     performanceCell: derivePerformanceCell(computed, judgement.performanceScore),
     multiplierCell: deriveMultiplierCell(computed),
     engagementReachCell: deriveEngagementCell(computed, "REACH", mediaType),
