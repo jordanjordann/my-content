@@ -3,7 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { classifyLikeCount, classifyViewCount } from "@/lib/api/analyses/helpers";
+import { classifyLikeCount, classifyViewCount, deriveAnalysisTablePerformance } from "@/lib/api/analyses/helpers";
+import type { AnalysisPerformance } from "@/lib/api/analyses/types";
 
 /**
  * Ticket #101 — table-driven tests for the two pure `CountState` classifiers
@@ -181,5 +182,71 @@ describe("classifyViewCount — real fixture trap case (ig_reel_1_zero_view_coun
     });
 
     expect(state).toEqual({ kind: "plays", value: 116_333 });
+  });
+});
+
+/**
+ * Ticket #147 / TDD §9.4 point 4, DESIGN-3B §3.1 — the score-explain popover's deterministic
+ * "these disagree" line, the one remaining derivation this ticket owns in the `select` layer
+ * (`deriveAnalysisTablePerformance`, called from `hooks.ts`'s `select`). Exercises the REAL
+ * function end to end, not a re-implementation.
+ */
+function performanceWith(score: number | null, multiplier: number | null): AnalysisPerformance {
+  return {
+    computed: {
+      reach: { value: 482_100, kind: "VIEWS", derivedFrom: "TOP_LEVEL", state: "AVAILABLE" },
+      likes: { value: 31_412, state: "AVAILABLE" },
+      comments: { value: 1_204, state: "AVAILABLE" },
+      audience: { value: 10_000, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
+      postAgeHours: 240,
+      tier1: { denominator: "REACH", ratio: 0.068, reachKind: "VIEWS" },
+      tier2:
+        multiplier == null
+          ? null
+          : { median: 151_000, sampleSize: 7, bucketKey: "instagram:reel:full_video", multiplier },
+      tier3: null,
+      tierUsed: "CREATOR_BASELINE",
+      confidence: "HIGH",
+      confidenceReason: null,
+      provisional: false,
+      unavailableReason: null,
+    },
+    judgement: { performanceScore: score, verdict: "n/a", drivers: [] },
+  };
+}
+
+describe("deriveAnalysisTablePerformance — disagreementLine (ticket #147)", () => {
+  it("fires on a score-2 / multiplier-3.2× row (low score, high multiplier)", () => {
+    const derived = deriveAnalysisTablePerformance(performanceWith(2, 3.2), "reel");
+    expect(derived?.disagreementLine).toBe(
+      "It travelled, but the people who saw it didn't engage much.",
+    );
+  });
+
+  it("fires the opposite variant on a high score / low multiplier row", () => {
+    const derived = deriveAnalysisTablePerformance(performanceWith(4, 0.6), "reel");
+    expect(derived?.disagreementLine).toBe(
+      "The people who saw it engaged, but it didn't travel far. Worth re-cutting the hook and re-posting.",
+    );
+  });
+
+  it("does NOT fire when score and multiplier agree (both high)", () => {
+    const derived = deriveAnalysisTablePerformance(performanceWith(4, 3.2), "reel");
+    expect(derived?.disagreementLine).toBeNull();
+  });
+
+  it("does NOT fire when score and multiplier agree (both low)", () => {
+    const derived = deriveAnalysisTablePerformance(performanceWith(2, 0.6), "reel");
+    expect(derived?.disagreementLine).toBeNull();
+  });
+
+  it("is null when there is no score", () => {
+    const derived = deriveAnalysisTablePerformance(performanceWith(null, 3.2), "reel");
+    expect(derived?.disagreementLine).toBeNull();
+  });
+
+  it("is null at Tier 2 cold start (multiplier not yet measured)", () => {
+    const derived = deriveAnalysisTablePerformance(performanceWith(4, null), "reel");
+    expect(derived?.disagreementLine).toBeNull();
   });
 });

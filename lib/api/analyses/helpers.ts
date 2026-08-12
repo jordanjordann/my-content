@@ -11,6 +11,7 @@ import type {
   Confidence,
   CountState,
   PerformanceComputed,
+  PerformanceTier2,
   Tier,
   UnavailableReason,
 } from "@/lib/api/analyses/types";
@@ -198,6 +199,38 @@ function bucketNoun(bucketKey: string): string {
   return "posts";
 }
 
+/**
+ * Ticket #147 / TDD §9.4 point 4 — the score-explain popover's deterministic "these
+ * disagree" line, DESIGN-3B §3.1's four variants (verbatim). Selected by sign comparison:
+ * the multiplier's sign against the bucket median is free (a `PerformanceTier2.multiplier`
+ * IS the post's metric divided by the bucket median, so `>= 1` already means "at or above
+ * the bucket median" — no second median is needed for that side). The 1-5 judgement has no
+ * stored median of its own to compare against (flagged as an open question in DESIGN-3B
+ * §3.1 — "high"/"low" needs a threshold and the doc does not supply one for the score), so
+ * this uses the scale's own midpoint (3 of 5) as the only defensible split without
+ * inventing a number that isn't in the computed block. `null` whenever either side is
+ * missing, or when both sides point the same way (agreement needs no explaining).
+ */
+function computeScoreMultiplierDisagreement(
+  score: number | null,
+  tier2: PerformanceTier2 | null,
+): string | null {
+  if (score == null || tier2?.multiplier == null) {
+    return null;
+  }
+
+  const scoreHigh = score >= 3;
+  const multiplierHigh = tier2.multiplier >= 1;
+
+  if (scoreHigh === multiplierHigh) {
+    return null;
+  }
+
+  return scoreHigh
+    ? "The people who saw it engaged, but it didn't travel far. Worth re-cutting the hook and re-posting."
+    : "It travelled, but the people who saw it didn't engage much.";
+}
+
 /** Col 6 (Performance) — score + tier phrase/confidence, or the absent-score reason. */
 function derivePerformanceCell(
   computed: PerformanceComputed,
@@ -351,5 +384,6 @@ export function deriveAnalysisTablePerformance(
     multiplierCell: deriveMultiplierCell(computed),
     engagementReachCell: deriveEngagementCell(computed, "REACH", mediaType),
     engagementFollowersCell: deriveEngagementCell(computed, "FOLLOWERS", mediaType),
+    disagreementLine: computeScoreMultiplierDisagreement(judgement.performanceScore, computed.tier2),
   };
 }
