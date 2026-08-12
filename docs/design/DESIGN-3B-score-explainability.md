@@ -20,6 +20,8 @@
 
 | **B4** | 2026-08-11 | **§5 gains row 3b, and row 3's trigger condition is restated. Copy and trigger wording only.** `CAUSE_NOT_DETERMINABLE` is reached by two different routes, and row 3's copy is **false** on the second one. New **row 3b** carries its own L1 **`Engagement data incomplete`** and its own L2 (*"Instagram published part of this post's engagement, but not all of it…"*). **Row 3's trigger is restated** as *the hidden-counts flag absent **and** neither the like nor the comment count usable* — **zero** usable engagement inputs — so it can no longer be read as covering a partially-published post. New **§5.4** gives the deciding matrix over *(follower count known?, `likeState`, `commentState`)*, and the `All seven`/`All eight` count under the table is corrected. **Row numbers 1–7 are unchanged**, so every existing *"string 3"* / *"case 3"* reference here, in `DESIGN-3C`, in the PRD and in the ACs still points at the same row. | **R-13.5.3a** — *two different facts must not render one sentence.* The state exists in code today: PR #191's own fixture is a post with **32,313 likes**, an unknown comment count and a **10,000 follower count**, which resolves to `CAUSE_NOT_DETERMINABLE` because `hasComputableEngagementNumerator` refuses to sum a partial numerator. Row 3's L1 *"No performance data published"* and L2 *"Instagram published no view, like or comment data for this post"* are both untrue of it. `renderHiddenCountsReasonShortForm` has **no production call site yet**, so nothing user-facing is wrong today — this lands **before #145** renders these strings, so #145 has a truthful string instead of inventing one. **The stored value is untouched and stays `CAUSE_NOT_DETERMINABLE`** (owner-ruled, `TDD` §5.3); `PERFORMANCE_DATA_ABSENT` stays dead per **B3**. Row 3's `We can't tell` clause is **not edited** (R-13.5.3b, §10 sign-off). **No stored enum value, colour value, component, layout, density or interaction changes.** *(Issue [#192](https://github.com/jordanjordann/my-content/issues/192); PR #191 review round 3, item N2 — [comment](https://github.com/jordanjordann/my-content/pull/191#issuecomment-5248477069).)* |
 
+| **B5** | 2026-08-12 | **§3.1 gains §3.1.1 — the disagreement line's comparison, thresholds, deadband and copy are specified. §9 item 5 is marked ruled.** The line **compares the 1–5 judgement against the Tier 2 multiplier**, not Tier 1 against Tier 2 as §3.1's four-variant table framed it; that table and its *"Open"* note are marked superseded and preserved verbatim. **Score split: `4–5` high, `3` neutral, `1–2` low** — `3` is a value a rater chooses and means *middling*, so it is the score side's deadband, and `>= 3` is wrong. **Multiplier split: `m >= 1.15` high, `m < 0.85` low, with a deadband of `0.85 <= m < 1.15`** — the band is set by the precision the user is shown (the multiplier renders to one decimal, so anything displaying as `0.9×`/`1.0×`/`1.1×` reads as *about usual* and must not be called high or low). **Both disagreement strings are restated** — `it travelled` / `it didn't travel far` withdrawn as untrue on image buckets, and `Worth re-cutting the hook and re-posting.` withdrawn as unsupportable from a judgement. **The two agreement variants are retired**, recorded, and are not rendered. **No stored value, colour value, component, layout, density or interaction changes**, and §7 is untouched — its point 4 already defers the comparison to §3.1. | §9 item 5 asked that this threshold *"be a stated product decision, not an implementation accident"*, and it became one: **PR #201** shipped a bare `score >= 3` against `multiplier >= 1` with **no deadband**, so a score `3` with a multiplier of `0.98` — a 2% margin — rendered `Worth re-cutting the hook and re-posting.` A near-tie producing a prescriptive command is the *"confident-looking wrong judgement"* the reliability-over-coverage preference exists to forbid. The mechanism needed deciding too, not just the number: §3.1's variants compared two **measured** readings, PR #201 substituted the **judgement** for the Tier 1 side, and nobody had reconciled the two. Reverting to Tier 1 vs Tier 2 does **not** work — `perf_baseline_median` is the median of the Tier 2 metric, not of the Tier 1 ratio, and `computeBaseline()` never reads `perf_tier1_ratio`, so "high Tier 1" has no stored reference and would need a schema change; and it would leave the `2` beside `3.2× their usual` row unexplained, which **§7/OR-6 calls non-compliant**. So the judgement stays in the comparison and the *judgement-vs-measured* objection is answered in the copy, which now names which figure to quote. *(Ticket [#147](https://github.com/jordanjordann/my-content/issues/147) step 5.4; PR [#201](https://github.com/jordanjordann/my-content/pull/201); review [comment](https://github.com/jordanjordann/my-content/pull/201#issuecomment-5261667478), "Score-threshold recommendation".)* |
+
 **B1 reopens no settled decision.** It is a copy correction consequent on rules ruled on *after* this document was written, and it brings this document into line with wording already merged in the companion spec's §5.3. No colour value, component, layout, density or interaction changes.
 
 ---
@@ -85,6 +87,81 @@ The third line is a **template selected by the sign of each reading**, not model
 | low | low | `Weak on both readings.` |
 
 **Open:** "high" and "low" need a threshold, and the PRD deliberately rejected universal benchmarks (§3.4). The only defensible split is **against this creator's own bucket median** — which means these sentences are only available when Tier 2 exists. Flagged in §9.
+
+> **SUPERSEDED 2026-08-12 by amendment B5 — the block from *"The third line is a template…"* to the end of the *"Open"* note above is preserved verbatim, because it is what #147 and PR #201 were built from and deleting it would make both unreadable. It no longer describes what ships.** The four-variant table above compares **two measured readings** (Tier 1 against Tier 2); the shipped line does not, and the "Open" note is not a licence to pick a numeric split for the 1–5. **§3.1.1 below is the specification.**
+
+#### 3.1.1 The disagreement line — mechanism, thresholds, deadband, copy *(amendment B5, 2026-08-12)*
+
+This is the line §7 point 4 makes **REQUIRED** under OR-6. Everything a developer needs to implement it without a judgement call is in this sub-section; nothing here is deferred.
+
+**Mechanism — it compares the 1–5 judgement against the Tier 2 multiplier.** Not Tier 1 against Tier 2. Three reasons, in order of weight:
+
+1. **Only that comparison answers the question the line exists to answer.** OR-6 made this line mandatory as the *sole* remaining mitigation for one specific thing a user sees: a row showing `2` beside `3.2× their usual` (§7). A line that reconciles the engagement percentage with the multiplier leaves that row exactly as confusing as it was, and §7 calls such a row non-compliant. The 1–5 has to be on one side of the comparison or the line does not do its job.
+2. **The Tier 1 side has no reference point, and inventing one is the failure this amendment exists to prevent.** The multiplier is already normalised against this creator's own bucket median, so `1.0` is a real, stored, creator-relative reference. The Tier 1 ratio has no equivalent anywhere in the data: `perf_baseline_median` is the median of the **Tier 2 metric** (reach on `full_video` buckets, `likes + comments` elsewhere — `denominatorForBucket()`), *not* the median of the Tier 1 ratio, and `computeBaseline()` does not read `perf_tier1_ratio` at all. So "high Tier 1" would require either a new stored per-bucket median of the engagement ratio — a schema change, out of 3B scope — or exactly the invented numeric split §9 item 5 forbids. **Option (b) does not escape the threshold problem; it relocates it to a column we do not have.**
+3. **It is the more useful reading for the person the table is for.** The strategist's risk is quoting the `4` in a client meeting when the measured comparison says the post came in under this creator's usual. The line's job is to stop that, and it can only stop it by naming the 1–5.
+
+**The judgement/measured objection is real and is answered in the copy, not in the mechanism.** The popover's own opening sentence says the 1–5 is *"not a number we measured"*, so this line must never read as *two measurements disagreeing*. The variants below therefore say which reading to quote, and the previous copy's prescriptive clause is withdrawn (see D1/D2 notes).
+
+**The Tier 1 vs Tier 2 line is not designed and must not be built.** It is recorded here as considered and set aside — it needs a stored bucket median of the Tier 1 ratio first. Do not re-derive it from what happens to be on screen.
+
+**Where the line renders.** It is **its own element after the operand list**, not the third line of the *"Both readings, side by side"* block quoted above. Reading order is fixed by §7 point 2: the measured figures first, then what went into them, then the reconciliation. The quoted block keeps only its two measured lines.
+
+##### Trigger — the complete truth table
+
+Preconditions, all required before any threshold is evaluated. If any fails, **no line renders** (never a placeholder, never an em-dash):
+
+- the 1–5 score is present (a non-null integer 1–5), **and**
+- Tier 2 exists with a **measured, non-null multiplier** — the cold-start and not-comparable states have no multiplier and therefore no line.
+
+Then, with `s` = the 1–5 score and `m` = the multiplier:
+
+| Condition | Renders |
+|---|---|
+| `s >= 4` **and** `m < 0.85` | **D1** |
+| `s <= 2` **and** `m >= 1.15` | **D2** |
+| anything else — including every case where `s === 3`, and every case where `0.85 <= m < 1.15` | **nothing** |
+
+That is the whole rule. There is no third branch and no default sentence.
+
+##### The score threshold: `1–2` is low, `3` is neither, `4–5` is high
+
+**The scale's own midpoint is not the split, and `>= 3` is wrong.** `3` on a five-point ordinal scale is a value the rater can actually choose, and it means *middling* — it is a position, not a boundary. Reading a deliberate "middling" as "high" is precisely the misread that turns a shrug into a disagreement. Because the score is an integer, an odd-length ordinal scale gives a symmetric split with a neutral centre for free: **`4–5` high, `3` neutral, `1–2` low.** `3` is the score side's deadband, it is exact, and it needs no tolerance arithmetic.
+
+##### The multiplier threshold and its deadband: the line never contradicts the figure on screen
+
+The multiplier's reference point is `1.0` — the creator's own bucket median, per the "Open" note above, which was right about the denominator. What it lacked is a tolerance. The tolerance is set by **the precision the user is shown**: the multiplier renders to one decimal place (`3.2×`), so a post whose multiplier displays as `0.9×`, `1.0×` or `1.1×` is a post the row itself is telling the user is *about usual*. The explanation must not call that post's travel high or low.
+
+- **high:** `m >= 1.15` — displays as `1.2×` or more.
+- **low:** `m < 0.85` — displays as `0.8×` or less.
+- **deadband:** `0.85 <= m < 1.15` — displays as `0.9×`, `1.0×` or `1.1×`. **No line.**
+
+The asymmetric bracket is deliberate and follows round-half-up: `0.85` displays as `0.9×` and so sits inside the band; `1.15` displays as `1.2×` and so sits outside it. A ±0.15 band is also the right order of magnitude for the data underneath — a bucket median can be built from as few as `BASELINE_MIN_SAMPLE` posts (§5.3), and a median that thin moves by more than 15% on one atypical post.
+
+**Worked check, the case that prompted this amendment:** score `3`, multiplier `0.98`. Both sides land in the deadband, so **no line renders** — instead of the prescriptive instruction the previous `>= 3` / `>= 1` split produced off a 2% margin. Mirror case, score `2` / multiplier `1.02`: multiplier in the deadband, **no line**. The canonical OR-6 row, score `2` / multiplier `3.2×`, still fires **D2**.
+
+**Provisional rows are not suppressed.** An `Early` row still gets the line if it clears the thresholds. The `Early` badge already carries the provisionality (§6), the copy below is no longer prescriptive, and suppressing the line on exactly the young rows where the two readings diverge most visibly would reintroduce the OR-6 gap on the rows that need it most.
+
+##### The two copy variants — corrected, and why
+
+Both strings below are **canonical and verbatim**. §7 point 4's sentence (*"This scored lower than the reach multiplier suggests…"*) and the ticket's restatement of it are **illustrative prose, not copy**; where they differ from this table, this table wins.
+
+| # | Condition | String |
+|---|---|---|
+| **D1** | score high, multiplier low | `The 1–5 reads this more favourably than the measured comparison does — it came in under this creator's usual for this kind of post. The measured figures above are the ones to quote.` |
+| **D2** | score low, multiplier high | `The 1–5 reads this less favourably than the measured comparison does — it came in over this creator's usual for this kind of post. The measured figures above are the ones to quote.` |
+
+Two corrections to the strings the four-variant table carried, both forced by the change of mechanism:
+
+- **`it didn't travel far` / `it travelled` are withdrawn as factually wrong on half the buckets.** The multiplier is *reach* vs usual only on `full_video` buckets; on image buckets it is `likes + comments` vs usual (`denominatorForBucket()`, AC-23). "It didn't travel far" is simply untrue of a carousel whose multiplier is an engagement-count ratio. `came in under/over this creator's usual for this kind of post` is true on both denominators and matches the `vs their usual` column header the user is already reading.
+- **`Worth re-cutting the hook and re-posting.` is withdrawn.** Under the old mechanism it was a defensible inference — *measured* strong engagement plus *measured* weak reach is a distribution problem, and re-posting is the response. Under this mechanism the "strong" side is a model judgement, and a prescriptive instruction to re-shoot is not supportable from a judgement plus one ratio. The line reconciles two readings; it does not issue instructions. The second sentence does the useful work instead by telling the user which figure to quote.
+
+##### The two agreement variants are retired — recorded, not dropped
+
+`Strong on both — the content held attention and the algorithm pushed it.` and `Weak on both readings.` are **withdrawn from this design and are not rendered anywhere.** PR #201 not implementing them was correct. Stated explicitly so nobody restores them as a "missing" case:
+
+- They are **agreement** lines. The line exists under OR-6 to explain a *divergence*; when the two readings agree there is nothing to reconcile and a sentence saying so is the restatement R-13.1.2 bans.
+- Under this mechanism *"both"* would mean the judgement and the multiplier, and `Strong on both` would assert the 1–5 as a reading of the post — flatly contradicting the popover's opening sentence.
+- With the deadband, "agreement" is no longer even a clean complement of "disagreement": most rows fall in neither, and a sentence would have to be invented for the neutral zone. **The neutral zone renders nothing, on purpose.**
 
 ### 3.2 L2/L3 — why this metric (R-13.2.2, R-13.2.3)
 
@@ -327,6 +404,8 @@ Flagged rather than designed around.
    > **RULED — twice over; no ruling is outstanding on this item.** The words *"I propose labelling it as a judgement. Needs a ruling."* are preserved verbatim and are **superseded**. (a) The §9 positions, this one included, were **approved by the owner at the 2026-08-07 sign-off** (§10), so labelling the 1–5 as a judgement stopped being a proposal then. (b) **Q4 was ruled the same day** — the score **stays in the table** — which removed the last conditional hanging over it: §7 is no longer an argument feeding an open question but the **governing treatment**, and its point 4 (the deterministic *"these disagree because…"* line) is **REQUIRED per OR-6**. The observation that the 1–5 cannot be derived from stored operands still stands as a description of the score; what is settled is what the design does about it. See the status note at the head of §7 and PRD **§15.1**.
 4. **`confidence` and `tierUsed` overlap** (§4.3). Showing both at L1 may read as two independent judgements when it is largely one. I would keep the tier phrase at L1 and demote the confidence word to L2. Needs a ruling.
 5. **The "both readings" sentence (§3.1) needs a high/low threshold** that §3.4 forbids sourcing from an industry benchmark. The only defensible source is the creator's own bucket median — which means the sentence is unavailable pre-Tier-2. Acceptable, but it should be a stated product decision, not an implementation accident.
+
+   > **RULED 2026-08-12 — amendment B5; the decision is stated, and it lives in §3.1.1.** The item above is preserved verbatim because it was accurate when written and it correctly predicted what went wrong. **It is superseded, and its last sentence is now satisfied rather than outstanding.** What §3.1.1 states: the line compares **the 1–5 judgement against the Tier 2 multiplier** (not Tier 1 against Tier 2 — the Tier 1 ratio has no stored creator-relative reference, so that route needs a schema change and is set aside); the score split is **`4–5` high, `3` neutral, `1–2` low**; the multiplier split is **`m >= 1.15` high, `m < 0.85` low**, with a **deadband of `0.85 <= m < 1.15`** in which no line renders; the two disagreement strings are restated; the two agreement strings are retired. **This item is no longer a blocker on any ticket and the threshold is not the implementer's call.** The failure mode it warned about did occur in the meantime — PR #201 shipped a bare `score >= 3` with no deadband, which fired a prescriptive instruction on a score `3` / multiplier `0.98` near-tie. That is fixed by §3.1.1's deadband, not by loosening the rule. *(Ticket [#147](https://github.com/jordanjordann/my-content/issues/147) step 5.4; PR [#201](https://github.com/jordanjordann/my-content/pull/201) review, "Score-threshold recommendation".)*
 6. **R-13.5.3a's new stored reason does not exist yet.** Without it the app will render string 1 where string 3 is required, and AC-30's negative assertion will fail. This is a schema requirement produced by a design need, and it should be routed to the tech lead before 3B tickets are cut.
 
    > **RESOLVED 2026-08-09 — the value exists; nothing here is open.** The item above is preserved verbatim because it was accurate when written, and it is **superseded**: it was routed to the tech lead, it was ruled, and it shipped. **The stored reason is `CAUSE_NOT_DETERMINABLE`**, live in the `perf_unavailable_reason` `CHECK` constraint from **migration `012` (merged)** and carried into `013` (`TDD` §5.2 / §5.3). **The name `PERFORMANCE_DATA_ABSENT` proposed in §5.1 was ruled against and must not be re-proposed** — `CAUSE_NOT_DETERMINABLE` names the *epistemic* state rather than the data state (`TDD` §5.3). String 3 is renderable, string 1 is not rendered in its place, and **AC-30's negative assertion has a distinct value to assert against**. This item is no longer a reason to hold any 3B ticket. *(Issue #169 step 4; PR #179.)*
