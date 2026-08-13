@@ -24,6 +24,10 @@
 
 | **A7** | 2026-08-13 | **PROPOSED — awaiting owner sign-off; nothing in it may be built until the owner approves it.** **New §4.3 — the Counts column tooltip, and a ruling that the comments slot has no `hidden` state.** (a) A **single header trigger on the `Counts` column**, reusing the shipped ticket-#70 contract, **adding zero glyphs per row** and one to the whole table; its copy is the companion's new **§4.7** (`T3` / `T3-compact`). New rules **R-D12…R-D16**. (b) **The comments slot renders `AVAILABLE` / `ZERO` / `UNKNOWN` only** — the companion verified in code that `HIDDEN` is unreachable for a comment count — so the invented trigger `Why is the comment count hidden?` is withdrawn, and the shipped `Hidden` per-cell `ⓘ` stays scoped to the two metrics `like_and_view_counts_disabled` governs. (c) **Mockup correction:** row 5's Counts cell drew `Hidden · Hidden`, a state that cannot occur — on the one captured counts-disabled payload the comment count came through anyway — so it now draws a real comment figure beside the hidden reach and likes. | **PR [#210](https://github.com/jordanjordann/my-content/pull/210) review, note N1.** A developer wiring the real comment count into this cell needed a label for a comment count with no number, found no approved copy, and invented one — pointed at the views/likes sentence, so the app would have answered a question about comments with a fact about views. **§5.1's one-`ⓘ`-per-row ruling is respected, not excepted:** that ruling is about per-row glyph density, and the fact being explained is a property of the **column** — identical on every row — so a per-cell trigger would repeat one sentence on every row, which is the same waste in a different place. **§2.2 is untouched:** no column, width, order, colour, density, sort or filter behaviour changes, no new component and no second tooltip mechanism. **R-13.3.4 checked and not engaged** — the Counts column divides nothing and the tooltip shows no figure. *(PR #210 review note N1; owner request, 2026-08-13 session.)* |
 
+| **A8** | 2026-08-13 | **Three owner rulings from the fidelity audit's Content-column addendum, written into the spec. No column, width, order, colour, sort or filter behaviour changes, and no user-facing word is added, removed or altered.** (a) **R-D17 is APPROVED — Option B, two lines** — and the word *snippet*, which has carried this requirement unwritten since 2026-08-06, is **given its definition in the new §2.2.1**, beside the word. (b) **The audit's M10 is REJECTED: the thumbnail stays 40 × 40px square.** §3.1's wireframe and the mockup both drew a 44 × 56px portrait tile; the **mockup is the stale artefact** and has been redrawn to the shipped square. (c) **§3.1's truncation rule is scoped to qualifiers** (§3.1, new note), and **§3.1's `68px` row figure is re-derived** from the ruled inputs and found unreachable — a **replacement figure is PROPOSED there, not applied**. | (a) `AUDIT-3C-table-fidelity.md` **M9**: the caption shipped unclamped, and on 3 of 6 rows of the owner's capture the Content cell was strictly the tallest cell in its row. The owner accepted the recommendation — **column 1 is the identification column, and a one-line clamp reduces some real captions to text that identifies nothing**. (b) **Owner ruling, 2026-08-13, explicit: he likes the shipped square thumbnail and it stays.** M10's own arithmetic already cut this way — the 56px tile exceeded §3.1's row figure before a line of text was laid out. **This is settled and is not to be reopened**; anyone proposing a portrait tile is proposing to overturn a ruling, not to fix a drift. (c) The developer applied §3.1's *"line 2 is never truncated"* — a rule written for **denominator qualifiers** — to **unbounded user caption text**, and said so in a code comment. That reading was defensible, which makes the ambiguity the root cause. Scoping the rule at its source is the fix; R-D17 alone would have left the collision live. *(Audit M8, M9, M10; owner rulings, 2026-08-13 session.)* |
+
+| **A8-note** | 2026-08-13 | **Two audit items were considered and DROPPED by the owner — recorded here so they do not resurface as findings.** (i) **L1**, the Counts column's absent-reason string: the shipped `Counts weren't available` stands, the mockup's `not published for image posts` on that cell is stale, and **neither is being changed**. (ii) **L4**, the failed-group divider sentence: **no sentence is written and none is owed**. Both were raised as owner rulings needed; the owner has ruled that **no fix is wanted in either direction, and neither gets a ticket**. | Both are cases where the **mockup**, not the implementation, had drifted, and in both the shipped behaviour is already the non-fabricating one — L1's `Counts weren't available` asserts no cause (R-13.5.3a-safe), and L4's failed-group label is unverifiable until a failed row can be captured. Closing them as "no action" is a decision, and an undocumented no-action decision is indistinguishable from an oversight to the next reader. **Nothing in this row licenses a change to either string.** |
+
 **Neither amendment reopens a settled decision.** The column set, density, sort behaviour and the Direction A engagement split are unchanged. Both are copy/state corrections consequent on rules ruled on *after* the mockup review, and §5.3 largely brings this document into line with what the mockup already drew.
 
 **That sentence was written of A1 and A2 and holds for all three.** **A3 reopens nothing and changes nothing** — it records two owner rulings that ratify proposals this document already made, so the column set, widths, order, density, sort behaviour, strings, colours and the Direction A engagement split are all untouched by it.
@@ -82,7 +86,7 @@ Left to right, at a 1440px viewport:
 
 | # | Column | Width | Sortable | Carries |
 |---|---|---|---|---|
-| 1 | **Content** | 300px | no | Thumbnail (with kind + slide-count overlay), title/caption snippet, mode chip when not `full_video`, failure reason when failed |
+| 1 | **Content** | 300px | no | Thumbnail — **40 × 40px square** (§3.1) — with kind + slide-count overlay; title/caption **snippet — *snippet* is defined in §2.2.1: the caption is clamped to two lines (R-D17)**; mode chip when not `full_video`; failure reason when failed |
 | 2 | **Creator** | 140px | yes (A–Z) | `@username`, platform glyph + word |
 | 3 | **Posted** | 108px | yes (default: desc) | `12 Jul` / `25d ago`, plus the `Early` provisional badge |
 | 4 | **Counts** | 132px | yes (by reach) | Reach + its kind word (`plays` / `views`) using the shipped four states; likes · comments on line 2 |
@@ -104,6 +108,26 @@ Total ≈ **1,288px** + 24px gutters ≈ **1,312px**. Fits 1360 with slack. With
 > **There is no Status column, and nothing replaces it in the grid.** Row affordances and hierarchy are **unchanged** by the cut: no column widens, no column moves, the group header spans the same two columns, and the sort set of §6.1 is unchanged. Status surfaces only as the **row-level failed treatment** (§3.3) and the **Status filter chip** (§6.2), both already specified.
 >
 > **Width is unchanged too.** Both rulings ratify what this section already drew, so the total stands at **≈1,312px** default (fits 1360 with slack) and **≈1,462px** with Style toggled on. **Neither ruling makes the table narrower than the figures above** — the 1,312px total never included Status and never included Style. If a later reader has been told the table "ships materially narrower than §2.2 describes", that is a misreading of the rulings: they **confirmed** this layout rather than trimming it.
+
+### 2.2.1 What *"snippet"* means — the caption clamp *(R-D17, APPROVED 2026-08-13)*
+
+**Status: APPROVED by the owner, 2026-08-13.** `R-D17` was raised in `AUDIT-3C-table-fidelity.md` **M9** as `NEW — PROPOSED 2026-08-13, NOT APPROVED`, with two options for the line count. **The owner ruled Option B — two lines.** This section is the approved rule and the layout authority for it; the audit's copy of R-D17 is marked approved and cross-referenced here.
+
+**Why this section exists.** §2.2's column 1 has asked for a *"title/caption snippet"* since **2026-08-06**, and this document then never defined *snippet* — no line count, no character limit, no ellipsis rule, anywhere. One word carried a layout requirement silently, and the caption shipped unclamped because **there was no rule to build against**. That was a spec gap. The definition belongs here, beside the word, because this is where the next reader will look.
+
+**R-D17 — the Content column's caption snippet is line-clamped. Nothing else in this table is.**
+
+- **Comfortable: the caption renders at most TWO lines**, and the second line is CSS-ellipsised at the point it clips (`line-clamp-2`). Two, not one: column 1 is the **identification** column (§2.2's column-order rationale), and at 300px minus the thumbnail one 11px line is roughly 30–35 characters — often less than one clause of a real caption, which makes the snippet decorative rather than identifying.
+- **When the caption is shorter than the clamp, nothing happens.** It renders on one line at its natural height, with **no ellipsis, no padding out to a two-line box, and no reserved blank line**. The clamp is a **ceiling, never a floor**. A short caption yields a shorter cell, and that is correct — it is not a ragged bug to be "fixed" with a fixed-height caption slot.
+- **When there is no caption, the line is not rendered at all.** Unchanged from what ships.
+- **Compact: the caption is not rendered.** Unchanged — §3.2 already drops it, and the binding list of what no density mode may drop does not include the caption.
+- **The title is untouched by this rule.** It stays a **single** truncated line with an ellipsis, which is what ships today. R-D17 must not be read as touching the title.
+- **CSS clamp only.** The full caption **stays in the DOM**, so a screen reader reads it whole and §10's semantics are unchanged. A JS substring, which would delete text from the accessibility tree, is out of bounds.
+- **No native `title` attribute, no tooltip, no popover, no hover-reveal of the clipped tail.** §8 forbids a native `title`; **R-8.4.7 / R-13.6.2** forbid hover-gating. The clipped tail is simply not shown in the table.
+- **Scope, stated so it can never be widened.** R-D17 binds **the Content column's caption and nothing else** — see §3.1's scoping note. Every denominator qualifier, tier phrase, confidence word, `based on N …`, cold-start figure with its format noun, and every absent-score reason and any figure it cites remains **unclamped and untruncatable**.
+- **No new copy.** A clamp and an ellipsis are **layout**, not words. This rule adds no user-facing string, and none may be added under it — an ellipsis is not licence for a `Show more` control, a `…read more` link, or any label.
+- **Why no information rule breaks.** A caption is **identification material**, not an explanation: it is not a denominator, a tier, a sample size or an absent-score reason. Clamping at Comfortable is strictly **less** lossy than the total suppression §3.2 already approves at Compact.
+- **R-13.5.3a and R-13.3.4 checked and not engaged.** A clamped caption states no facts, shares no sentence with a second fact, and shows no division. **#147's one-`ⓘ`-per-row ruling is untouched** — this rule adds no affordance anywhere.
 
 **Column-order rationale.** Identification (1–3) → raw evidence (4) → judgement (5–6) → the quotable comparison (7) → the two ratios (8–9). The two axes the PRD insists must never merge (D7) sit **adjacent under a shared "Scores" group header**, which is the clearest way to say "these are two different things about the same post" without implying either is a component of the other. The engagement ratios sit at the **far right, after** the multiplier, deliberately: §12.4 warns against burying Tier 2 beneath a weaker follower-denominated percentage, and reading order does the burying.
 
@@ -131,8 +155,60 @@ Two density modes. **Comfortable is the default** because §13.7's requirements 
 ```
 
 - **Line 1** is the number. **Line 2** is the qualifier that §13.7 requires. Line 2 is never optional and never truncated to nothing — if it does not fit, the *column* is too narrow and gets widened, not the text shortened.
+
+> **SCOPED 2026-08-13 (amendment A8c) — the rule above governs QUALIFIERS, and only qualifiers. It has never governed the Content column's caption.** The sentence is preserved above **verbatim and unchanged in force**; what follows says what it applies to, because it was read wider than it was written and that reading shipped.
+>
+> **It binds:** every denominator qualifier (`of 482.1K views`, `of 284K followers`), every tier phrase, every confidence word, every `based on N …`, every cold-start figure **with its format noun** (§5.3), every absent-score reason and **any figure that reason cites** (§5.4), and the R-D1 footer (R-D11). For all of these the answer when the text does not fit is **widen the column** — never shorten, never clamp, never ellipsise.
+>
+> **It does not bind the Content column's caption**, which is **unbounded user-authored text** and is clamped to two lines by **R-D17 (§2.2.1)**. The two rules do not conflict and never did: this one is about **system-authored explanation text of known, bounded length**, whose whole purpose is to stop a number being misread; R-D17 is about **arbitrary-length text whose purpose is identification**. Widening a 300px column is a real answer for a six-word qualifier and no answer at all for a caption that may run to 2,200 characters.
+>
+> **Why this note exists rather than a bug report.** The implementation applied this rule to the caption and left a comment citing it (`AnalysisContentCell.tsx`, PR #198 review blocker 7). **That reading was defensible on the text as written, and the developer was right to write down which rule he was following.** The ambiguity is the defect, and it is fixed here at its source. **No qualifier's treatment changes.** *(Audit M9; owner ruling, 2026-08-13.)*
+
 - Line 2 uses `--muted-foreground` at full opacity (**no `/70`, no `/80`** — see §9.2; that opacity class is the exact thing that shipped non-compliant twice).
 - Row hover raises the row to the hover surface and reveals nothing new. **No information is hover-gated anywhere in this table** (R-8.4.7, R-13.6.2).
+
+#### The thumbnail is 40 × 40px, square — RULED 2026-08-13, and not reopenable *(amendment A8b)*
+
+**The shipped thumbnail is `h-10 w-10` — 40 × 40px, square, `object-cover` — and it stays exactly that.** The audit's **M10** proposed restoring the mockup's 44 × 56px portrait tile; **the owner rejected that, explicitly, because he likes the square thumbnail as shipped.** That is the ruling, and it is recorded here with its reasoning so it is not reopened:
+
+1. **It is the owner's stated preference on his own product**, given after looking at the real table. That alone settles it.
+2. **M10's own arithmetic already cut this way.** The mockup's `py-3` + a 56px tile is a **80px** floor on every row before one line of text is laid out — over this section's own row figure, on rows with nothing in them. The 40px square is the only reason short rows come anywhere near it.
+3. **The identification cost M10 raised is real and is accepted knowingly.** A square `object-cover` crop of 9:16 or 4:5 source does discard more of the frame than a portrait tile would. The owner has weighed that against the row height it buys and chosen the square. **It is a trade that was made, not one that was missed.**
+
+**Consequences, so no one has to re-derive them:**
+
+- **The mockup was the stale artefact on this point and has been redrawn**, not the code: all seven `w-11 h-14` tiles in `3c-analyses-table-mockup.html` are now `w-10 h-10`. **Code was not changed to match a mockup, and the mockup no longer proposes a tile the owner has rejected.**
+- **§3.1's ASCII wireframe above is schematic.** Its `▓▓▓` block is drawn on all three text lines of each row because ASCII has no half-height glyph — **it depicts a thumbnail, not a portrait tile, and it never specified one.** Do not read a tile aspect ratio out of it; §2.2 and this note are the authority.
+- **The kind badge sits on a 40px tile and must work there.** The audit's **M11** — a badge tinted for four surface tokens it never sits on, over an arbitrary photograph, with `Carousel` already spanning the tile edge to edge — is **still open and now unavoidable**, because M11's third part was *"if the owner keeps the square tile, the badge needs its own answer."* He has. **This document does not rule on it here**; see the open list at the end of §3.1.
+
+#### Row height — what governs it now the caption is clamped *(amendment A8c)*
+
+**With R-D17 in force the Content cell stops being the thing that sets row height.** On the owner's six-row capture the caption ran to **2, 2, 4, 4, 3, 2** lines and the Content cell was **strictly the tallest cell on 3 of those 6 rows**. Clamped to two, no caption exceeds two, and the Content cell ties but never exceeds on any row in that capture.
+
+**What governs row height instead, stated as a rule:** **the tallest cell in the row governs, and Comfortable has a floor rather than a fixed height.** No cell is clamped, squeezed or middle-aligned to hit a target row height; if a row is tall it is because a cell in it has three real lines, and the fix for that is never to shorten a qualifier (see the scoping note above). `height` set on a `<tr>` is a **minimum in CSS, not a height** — treating it as a height is the defect the audit's **M8** found.
+
+**Re-deriving the 68px figure, with the thumbnail ruled at 40px square.** Content cell, Comfortable, at today's shipped tokens (`p-3` = 12px top + 12px bottom; title `text-sm` = 14px/20px; caption `text-xs` = 12px/16px):
+
+| Row shape | Padding | Thumbnail column | Text column | Cell height |
+|---|---|---|---|---|
+| Title, no caption | 24 | 40 | 20 | 24 + 40 = **64px** |
+| Title + 1-line caption | 24 | 40 | 20 + 16 = 36 | 24 + 40 = **64px** |
+| **Title + 2-line caption (the clamp ceiling)** | 24 | 40 | 20 + 32 = 52 | 24 + 52 = **76px** |
+| Title + mode chip + 2-line caption | 24 | 40 | 20 + ~17 + 32 = ~69 | 24 + ~69 = **~93px** |
+
+**So: 68px is reachable only on rows that carry no caption, and is unreachable on any row that carries one.** The 40px square buys back the 16px the portrait tile would have cost — it lifts the thumbnail out of the governing position on every row shape above — but the **text column, not the thumbnail, is what exceeds 68px**, and a two-line caption clears it by 8px. Under the mockup's type scale that M8 proposes (12.5px title / 11px caption) the same sum gives **~71px**, still over. **The clamp did not rescue 68px, and no legal combination of the ruled inputs reaches it.**
+
+> **PROPOSED, not applied — this figure needs the owner's sign-off before it changes.** I am not editing `68px` out of this section's heading on my own authority; the audit's M8 said the number should move *"with the owner's agreement"*, and that agreement has not been given.
+>
+> **My proposal: replace the single `68px` figure with a `64px` minimum and a content-driven height** — heading to read *"Comfortable — 64px minimum, height set by the tallest cell"*. 64px is the real floor (padding + the ruled thumbnail), it is a number the layout can actually honour, and it stops the spec asserting a height that CSS was only ever treating as a minimum. **Typical rows land at 76px today**, or ~71px if the §9 type pass (M8) lands at the mockup's scale.
+>
+> **The chipped-row figure (~93px) is arithmetic, not a proposal.** Whether the mode chip stacks above the caption or takes its line **instead** is the audit's **L7**, still unruled, and it is the one input that moves this number materially. I am not deciding it here.
+
+**Still open in this section, for the owner — listed, not decided:**
+
+1. **M11 — the kind badge's backing over a photograph.** See above. What I need in order to rule is stated in the audit's open list.
+2. **L7 — mode chip stacking**, which sets whether chipped rows are ~93px or ~76px.
+3. **The `68px` → `64px` replacement above.**
 
 ### 3.2 Compact — 40px rows (opt-in)
 

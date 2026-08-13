@@ -36,7 +36,20 @@
 <style>
   body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
   .num { font-variant-numeric: tabular-nums; }
+  /* Thumbnail — 40 x 40px SQUARE, matching what ships. The mockup previously drew a
+     44 x 56px portrait tile; the audit's M10 proposed restoring it and the OWNER REJECTED
+     that on 2026-08-13 — he likes the shipped square. The mockup was the stale artefact,
+     so the mockup moved. See DESIGN-3C 3.1 "The thumbnail is 40 x 40px, square". */
   .thumb { background: linear-gradient(140deg,#1b2740,#0d1626); }
+  /* Caption clamp — R-D17, APPROVED 2026-08-13 at TWO lines (DESIGN-3C 2.2.1).
+     A REAL clamp, not a hand-typed ellipsis: the captions below are full-length, and the
+     browser does the clipping, so this file DEMONSTRATES the rule instead of faking it.
+     Written as plain CSS rather than a utility class so it does not depend on the CDN
+     build shipping line-clamp. The full text stays in the DOM — a screen reader reads it
+     whole (DESIGN-3C 10). The clamp is a CEILING, never a floor: a short caption renders
+     at its natural height with no ellipsis and no padding to a two-line box. */
+  .clamp2 { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
+            line-clamp:2; overflow:hidden; }
   .pip { display:inline-block; width:7px; height:7px; border-radius:2px; background:#5c6c86; margin-right:2px; }
   .pip.on { background:#8092e7; }
   .pip.onm { background:#94a3b8; }
@@ -93,6 +106,29 @@
     </div>
   </div>
   <p class="text-[11px] text-mutedfg mt-3">Separated on <b class="text-fg">four</b> channels: different column · different header · different always-visible qualifier text · <b class="text-fg">&asymp;</b> prefix. Colour is a redundant fifth channel only — this table loses nothing in greyscale (WCAG 1.4.1).</p>
+</section>
+
+<!-- ============ WHAT CHANGED, AND WHAT IS STILL OPEN — review note, not part of the app ============ -->
+<section class="rounded-xl border border-border bg-card p-5">
+  <h2 class="text-sm font-semibold">Updated 2026-08-13 &mdash; two owner rulings, and three things still open</h2>
+  <p class="text-xs text-mutedfg mt-1 max-w-4xl"><b class="text-fg">This mockup was the stale artefact on both rulings, so this file moved &mdash; the shipped code did not.</b></p>
+  <div class="grid grid-cols-2 gap-4 mt-4">
+    <div class="rounded-lg border border-border p-4">
+      <div class="text-[10px] uppercase tracking-wider text-primary font-semibold">Ruled &mdash; do not re-argue</div>
+      <ul class="text-[11px] text-mutedfg mt-2 space-y-1.5">
+        <li><b class="text-fg">Caption clamp: two lines (R-D17, approved).</b> Rows 1 and 3 carry full-length captions and the <i>browser</i> clips them &mdash; the old hand-typed <b class="text-fg">&hellip;</b> is gone, so this file now demonstrates the rule instead of faking it. Rows 4, 5 and 7 are short and render at their natural height: the clamp is a ceiling, never a floor. Authority: <b class="text-fg">DESIGN-3C &sect;2.2.1</b>.</li>
+        <li><b class="text-fg">Thumbnail: 40 &times; 40px square.</b> The owner likes the shipped square and it stays. The 44 &times; 56px portrait tile this file used to draw is <b class="text-fg">rejected</b>, not deferred.</li>
+      </ul>
+    </div>
+    <div class="rounded-lg border border-border p-4">
+      <div class="text-[10px] uppercase tracking-wider text-accent font-semibold">Still open &mdash; owner ruling needed</div>
+      <ul class="text-[11px] text-mutedfg mt-2 space-y-1.5">
+        <li><b class="text-fg">The <span class="num">&times;10</span> in the kind badge (L6).</b> This file draws a slide count the #144 payload does not carry. It is <b class="text-fg">deliberately left drawn</b> so the owner can rule: add the field, or drop the count and keep the bare kind word. Nothing was guessed into the code.</li>
+        <li><b class="text-fg">The kind badge over a photograph (M11).</b> It sits on an image, not on a surface token, and now on a 40px tile <span class="num">Carousel &times;10</span> visibly overruns it. WCAG defines no ratio against arbitrary photography, so this needs a backing decision, not a re-measurement.</li>
+        <li><b class="text-fg">The failed row&rsquo;s reason-text colour (L9).</b> Drawn <span class="text-rose">rose</span> below; &sect;3.3 puts rose on the left edge and says nothing about the text.</li>
+      </ul>
+    </div>
+  </div>
 </section>
 
 <!-- ============ FILTER BAR ============ -->
@@ -153,12 +189,14 @@
       <tr>
         <td class="px-3 py-3">
           <div class="flex gap-2.5">
-            <div class="thumb w-11 h-14 rounded shrink-0 relative">
+            <div class="thumb w-10 h-10 rounded shrink-0 relative">
               <span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Reel</span>
             </div>
             <div class="min-w-0">
               <div class="font-medium truncate">Nasi Goreng Kampung 5 Menit</div>
-              <div class="text-[11px] text-mutedfg truncate" data-l2>resep andalan anak kos, cuma 5 bahan…</div>
+              <!-- LONG caption, clamped by CSS to 2 lines (R-D17). No ellipsis is typed into
+                   this string — the browser adds it. This row demonstrates the clip. -->
+              <div class="text-[11px] text-mutedfg clamp2" data-l2>resep andalan anak kos, cuma 5 bahan dan semuanya ada di warung sebelah. gw masak ini tiap minggu dari jaman kuliah, ga pernah gagal, dan yang paling penting murah banget</div>
             </div>
           </div>
         </td>
@@ -197,7 +235,7 @@
       <tr>
         <td class="px-3 py-3">
           <div class="flex gap-2.5">
-            <div class="thumb w-11 h-14 rounded shrink-0 relative">
+            <div class="thumb w-10 h-10 rounded shrink-0 relative">
               <span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Carousel &times;10</span>
             </div>
             <div class="min-w-0">
@@ -239,11 +277,12 @@
       <tr>
         <td class="px-3 py-3">
           <div class="flex gap-2.5">
-            <div class="thumb w-11 h-14 rounded shrink-0 relative">
+            <div class="thumb w-10 h-10 rounded shrink-0 relative">
               <span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Carousel &times;10</span>
             </div>
             <div class="min-w-0"><div class="font-medium truncate">Tutorial Sambal Matah &mdash; 3 versi</div>
-            <div class="text-[11px] text-mutedfg truncate" data-l2>slide 1 video, sisanya foto step-by-step</div></div>
+            <!-- Second LONG caption — the clamp holds on a chipless row too. -->
+            <div class="text-[11px] text-mutedfg clamp2" data-l2>slide 1 video, sisanya foto step-by-step biar gampang diikutin. share ke temen kalian yang lagi belajar masak ya, dan jangan lupa disimpen biar ga ilang di feed</div></div>
           </div>
         </td>
         <td class="px-3 py-3"><div class="truncate">@warungmbaksri</div><div class="text-[11px] text-mutedfg" data-l2>Instagram</div></td>
@@ -277,9 +316,12 @@
       <tr>
         <td class="px-3 py-3">
           <div class="flex gap-2.5">
-            <div class="thumb w-11 h-14 rounded shrink-0 relative"><span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Reel</span></div>
+            <div class="thumb w-10 h-10 rounded shrink-0 relative"><span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Reel</span></div>
             <div class="min-w-0"><div class="font-medium truncate">POV: Anak Kos Gajian</div>
-            <div class="text-[11px] text-mutedfg truncate" data-l2>trend audio, 9 detik</div></div>
+            <!-- SHORT caption, same clamp class. Renders on one line at its natural height,
+                 with no ellipsis and no padding out to a two-line box — the clamp is a
+                 ceiling, never a floor (DESIGN-3C 2.2.1). -->
+            <div class="text-[11px] text-mutedfg clamp2" data-l2>trend audio, 9 detik</div></div>
           </div>
         </td>
         <td class="px-3 py-3"><div class="truncate">@dapurbunda</div><div class="text-[11px] text-mutedfg" data-l2>Instagram</div></td>
@@ -317,9 +359,9 @@
       <tr>
         <td class="px-3 py-3">
           <div class="flex gap-2.5">
-            <div class="thumb w-11 h-14 rounded shrink-0 relative"><span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Reel</span></div>
+            <div class="thumb w-10 h-10 rounded shrink-0 relative"><span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Reel</span></div>
             <div class="min-w-0"><div class="font-medium truncate">Kolaborasi Brand X</div>
-            <div class="text-[11px] text-mutedfg truncate" data-l2>paid partnership</div></div>
+            <div class="text-[11px] text-mutedfg clamp2" data-l2>paid partnership</div></div>
           </div>
         </td>
         <td class="px-3 py-3"><div class="truncate">@kulinerjakarta</div><div class="text-[11px] text-mutedfg" data-l2>Instagram</div></td>
@@ -348,7 +390,7 @@
       <tr>
         <td class="px-3 py-3">
           <div class="flex gap-2.5">
-            <div class="thumb w-11 h-14 rounded shrink-0 relative"><span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Carousel &times;10</span></div>
+            <div class="thumb w-10 h-10 rounded shrink-0 relative"><span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Carousel &times;10</span></div>
             <div class="min-w-0"><div class="font-medium truncate">Rekap Menu Mingguan</div>
             <div class="mt-0.5"><span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-300/10 text-slate-300">Images only</span></div></div>
           </div>
@@ -382,9 +424,9 @@
       <tr>
         <td class="px-3 py-3">
           <div class="flex gap-2.5">
-            <div class="thumb w-11 h-14 rounded shrink-0 relative"><span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Carousel &times;8</span></div>
+            <div class="thumb w-10 h-10 rounded shrink-0 relative"><span class="absolute bottom-0.5 left-0.5 text-[8px] px-1 rounded bg-slate-300/20 text-slate-300">Carousel &times;8</span></div>
             <div class="min-w-0"><div class="font-medium truncate">Before / After &mdash; Makeover Dapur Sempit</div>
-            <div class="text-[11px] text-mutedfg truncate" data-l2>cover foto, video di slide 6</div></div>
+            <div class="text-[11px] text-mutedfg clamp2" data-l2>cover foto, video di slide 6</div></div>
           </div>
         </td>
         <td class="px-3 py-3"><div class="truncate">@warungmbaksri</div><div class="text-[11px] text-mutedfg" data-l2>Instagram</div></td>
@@ -411,7 +453,7 @@
       <tr class="relative">
         <td class="px-3 py-3 border-l-[3px] border-l-rose">
           <div class="flex gap-2.5">
-            <div class="thumb w-11 h-14 rounded shrink-0 opacity-40"></div>
+            <div class="thumb w-10 h-10 rounded shrink-0 opacity-40"></div>
             <div class="min-w-0"><div class="font-medium truncate text-mutedfg">instagram.com/reel/DXk9…</div>
             <div class="text-[11px] text-rose truncate">Analysis failed &mdash; the post could not be fetched</div></div>
           </div>

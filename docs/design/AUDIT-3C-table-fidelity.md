@@ -1,6 +1,8 @@
 # Design-Fidelity Audit — Phase 3C, the Analyses Table
 
-**Status:** Audit only. **No code was changed and no design document was changed.** The owner reviews this and decides what gets ticketed.
+**Status:** Audit only. **No code was changed and no design document was changed by the audit itself.** The owner reviews this and decides what gets ticketed.
+
+> **Updated 2026-08-13 — the owner has ruled on the Content-column addendum, and those rulings ARE now written into the spec** (`DESIGN-3C-analyses-table.md`, amendment **A8**) and into the mockup. Still no code changed. What was ruled: **R-D17 APPROVED at two lines** (M9 — the rule now lives in `DESIGN-3C` §2.2.1, which is its authority); **M10 REJECTED, the 40px square thumbnail stays** and the mockup was corrected to it; **L1 and L4's copy questions DROPPED**, no fix either way. Each is marked at its finding below. **M11, L6 and L9 remain open for the owner.**
 **Author:** Jessica (UI/UX)
 **Date:** 2026-08-13
 **Requested by:** the owner — *"the shipped analyses table is far from the mockup."*
@@ -262,6 +264,8 @@ Correct column, correct position, correct condition — **no tint, no rounding, 
 
 **Resolution.** Owner's ruling, not a code fix. Either accept the shipped string and update the mockup, or decide the Counts cell should mirror the engagement column's kind-split — which would be a **new** design decision requiring its own R-13.5.2 reasoning, not a restoration.
 
+> **CLOSED 2026-08-13 — DROPPED by the owner. No fix in either direction, and no ticket.** The finding was considered and deliberately set aside: **the shipped `Counts weren't available` stays**, the mockup's `not published for image posts` on that cell **is not being changed either**, and the kind-split alternative is not being pursued. This is recorded so it does not resurface as a finding — **a "no action" decision and an oversight look identical to the next reader unless one of them is written down.** Note what was already true and made it easy to drop: both strings are true of that row, and the shipped one asserts no cause, which is the R-13.5.3a-safe answer. **Nothing here licenses changing either string.** *(`DESIGN-3C` amendment A8-note (i).)*
+
 ---
 
 #### L2 — The follower colour is a raw Tailwind palette value, not a token, and was never re-measured
@@ -291,6 +295,8 @@ Correct column, correct position, correct condition — **no tint, no rounding, 
 Separately: `AnalysisDataTable.tsx:259` renders the failed group as `Analysis failed — 2`. That is **not prose and does not pretend to be** — the code comment at `:251-257` flags it explicitly as awaiting a design ruling, because §3.3 requires failed rows be *"labelled separately"* without ever stating the sentence. **The developer was right to stop.** No failed row is present in this screenshot, so it is unverified in the shipped shot.
 
 **Severity: LOW.** **Resolution.** Casing fix on the divider. The failed-group label is a copy gap I owe `DESIGN-3B` §5 — it should be written where copy is written, following row 7's register, and it is not urgent until a failed row can appear on screen.
+
+> **The failed-group divider sentence is CLOSED 2026-08-13 — DROPPED by the owner. No sentence is written, and none is owed.** I said above that I owed `DESIGN-3B` §5 a string; **the owner has ruled that he does not want one**, so the debt is discharged rather than outstanding, and there is no ticket. Recorded so it does not resurface as a finding. **No copy is invented under this note** — `AnalysisDataTable.tsx`'s `Analysis failed — 2` stays as it is, still flagged in its own code comment, and it remains unverifiable in the shipped UI until a failed row can be captured. **The divider casing half of L4 is untouched by this and still stands** (it belongs to the §9 typography pass, ticket group 4). *(`DESIGN-3C` amendment A8-note (ii).)*
 
 ---
 
@@ -397,11 +403,13 @@ No `truncate`, no `line-clamp`, no character cap, no ellipsis — and a comment 
 
 **Resolution — a NEW rule, proposed, for the owner's ruling.**
 
-> ### NEW — R-D17 *(PROPOSED 2026-08-13, NOT APPROVED — nothing in it may be built until the owner rules)*
+> ### R-D17 — **APPROVED 2026-08-13 by the owner. `N` = 2, Option B.**
+>
+> **Status flipped from `NEW / PROPOSED / NOT APPROVED`.** The rule below is superseded as an audit proposal by its approved form, which now lives where design rules live: **`DESIGN-3C-analyses-table.md` §2.2.1** (amendment **A8a**), beside the word *snippet* it defines. **§2.2.1 is the authority; this block is kept as the record of how the rule was reasoned, not as a second copy to build from.** The build block on item 8 of the ticket grouping is lifted.
 >
 > **The Content column's caption snippet is line-clamped. Nothing else in the table is.**
 >
-> - **Comfortable:** the caption renders at most **N lines** and CSS-ellipsises the last clipped line. (N is the owner's ruling — see the two options below.)
+> - **Comfortable:** the caption renders at most **two lines** — **ruled: Option B** — and CSS-ellipsises the last clipped line. **When the caption is shorter than the clamp it renders at its natural height with no ellipsis and no padding to a fixed box** (§2.2.1 — the clamp is a ceiling, never a floor).
 > - **Compact:** the caption is not rendered at all. **Unchanged** — §3.2 already says this.
 > - **The title is unaffected.** It stays a single truncated line with an ellipsis, which is what ships today and what the mockup draws. The title is already correct and this rule must not be read as touching it.
 > - **CSS clamp only** (`line-clamp-{N}`). The full caption **stays in the DOM**, so a screen reader still reads it whole and §10's semantics are untouched. A JS substring, which would delete text from the accessibility tree, is out of bounds.
@@ -422,13 +430,27 @@ No `truncate`, no `line-clamp`, no character cap, no ellipsis — and a comment 
 | What the user loses | a lot. Row 4's caption gets ~9 words of 30. At 300px minus a thumbnail, one 11px line is roughly 30–35 characters — often less than one clause of an Indonesian caption | the first sentence usually survives |
 | Risk | the snippet becomes decorative — too short to identify a post by, which is the job §2.2 gave column 1 | rows stay slightly unequal |
 
+> **RULED 2026-08-13 — Option B, two lines.** The recommendation below was accepted, on its stated reason: **column 1 must still be able to identify the post, and a one-line clamp reduces some real captions to text that identifies nothing.** Option A is spent — it is not a fallback, not a Compact variant, and not something to reach for if rows come out taller than expected. The full rule, including the shorter-than-clamp case the options table never covered, is **`DESIGN-3C` §2.2.1**.
+
 **I recommend Option B.** The mockup's one-line treatment was drawn against short invented captions; the real ones in this capture are long, conversational and front-load nothing, and one line of *"Share ke temen kalian yang butuh denger ini ya. Btw…"* identifies almost nothing. Two lines bounds the row and still lets the caption do its identification job. **But A is the tighter table and the owner may simply prefer it — this is a taste call on his product and I will build to whichever he picks.**
 
 **And a second ruling I need with it:** whichever N wins, **§2.2's word *"snippet"* should be given its definition in §2.2, beside the word**, because that word has been silently carrying this requirement since 2026-08-06 and is where the next reader will look. That is a spec edit, and this audit does not make spec edits.
 
+> **DONE 2026-08-13.** The definition is written into **`DESIGN-3C` §2.2.1**, beside the word, and §2.2's column-1 row now points at it. The root cause was fixed with it: **§3.1's *"line 2 is never truncated"* is now explicitly scoped to qualifiers**, so it can never again be read as governing unbounded caption text. *(Amendment A8a / A8c.)*
+
 ---
 
-#### M10 — The thumbnail is a 40px square; §3.1's wireframe and the mockup both draw a portrait tile
+#### M10 — The thumbnail is a 40px square; §3.1's wireframe and the mockup both draw a portrait tile — **REJECTED 2026-08-13. The thumbnail does not change.**
+
+> **OWNER RULING, 2026-08-13 — M10 is REJECTED and this is not reopenable.** **The shipped 40 × 40px square thumbnail stays.** The owner looked at the real table and stated plainly that he likes it as it is. There is no portrait tile, no 44 × 56px, no aspect-ratio change and no ticket.
+>
+> **The mockup was the stale artefact here, and the mockup is what changed** — its seven `w-11 h-14` tiles are now `w-10 h-10`. **Code was not moved to match a mockup; a mockup that proposed a rejected tile was corrected.**
+>
+> **The reasoning, recorded so this is not re-argued:** (1) it is the owner's stated preference on his own product, given from the real UI, which settles it on its own; (2) **this finding's own arithmetic already cut this way** — `py-3` + a 56px tile is an 80px floor before a line of text is laid out, over §3.1's own figure, and the square tile is the only reason short rows come near it; (3) the identification cost of a square `object-cover` crop is **real, weighed and knowingly accepted** — a trade that was made, not one that was missed.
+>
+> **The one live consequence: M11 is now unavoidable.** Part 3 below says *"if the owner keeps the square tile, the badge needs its own answer."* He has. See M11.
+>
+> The finding as written is preserved below, unedited, as the record of what was proposed and declined.
 
 **Mockup.** `:156`, `:200`, `:242`, `:280`, `:320`, `:351`, `:385` — `class="thumb w-11 h-14 rounded shrink-0 relative"`. **44 × 56px, portrait, ~4:5.**
 
@@ -462,6 +484,16 @@ No `truncate`, no `line-clamp`, no character cap, no ellipsis — and a comment 
 1. Give the over-image badge a backing that does not depend on the photo — the mockup's `/20`, or a small opaque scrim. **Record the measurement against the scrim, not against the four surface tokens** (§9.1 / AC-17); the four-token measurement in the comment is correct method pointed at the wrong surface and should not simply be re-run.
 2. Move the badge to **bottom-left** (mockup `:157` — `bottom-0.5 left-0.5`) rather than the shipped `right-0 bottom-0`. Left-aligned it starts at the reading edge; right-aligned, a longer word grows leftward across the subject's face.
 3. The word `Carousel` filling a 40px tile is a **width** problem that **M10** solves — a 44px tile plus the mockup's inset gives it room. If the owner keeps the square tile, the badge needs its own answer.
+
+> **STILL OPEN after the 2026-08-13 rulings, and now unavoidable — part 3's condition has fired.** **M10 was rejected: the tile stays 40 × 40px square**, so the width half of this finding has no solution left in M10 and needs its own. **I am not ruling on this one, and I want to be exact about why: the thing I would have to measure is not measurable by this audit's method.** §9.1 measures a foreground against a **known surface token**; this badge sits on **an arbitrary user photograph**, and WCAG 1.4.3 defines no ratio against arbitrary photography. Re-running the four-token measurement more carefully produces a more precise number about four surfaces the badge is never on.
+>
+> **What I need in order to rule, stated concretely — three things, none of which I can get on my own:**
+>
+> 1. **An owner preference between three approaches, which I will mock up on request.** (a) **Opaque scrim** — a solid or near-solid backing behind the badge, which makes the photo stop participating and turns the measurement back into a fixed, measurable text-on-known-surface pair. (b) **Heavier tint only** — the mockup's `/20` instead of the shipped `/10`, which is cheaper but still leaves the ratio dependent on the image underneath, so it can only ever be *"better"*, never *verified*. (c) **Move the badge off the image** — under or beside the thumbnail, on a real surface token, which makes §9.1's existing method apply unchanged and is the only option that is provably compliant, at the cost of a line of vertical space in the cell that the row-height work has just been spent buying back. **This is a taste-versus-provability call on the owner's product, and it is his to make, not mine.**
+> 2. **A 1:1, unscaled capture of the shipped table with at least one light/high-key thumbnail in frame** — the row-1 white t-shirt case is the worst case I have seen and I have only seen it in a scaled screenshot. **This audit's own method note forbids me eyedropping a scaled PNG**, so I cannot honestly measure the current state without it.
+> 3. **Confirmation that the kind vocabulary is closed.** `AnalysisContentCell/constants.ts` enumerates exactly four labels — `Reel`, `Post`, `Carousel`, `Short` — so **`Carousel` is the longest word the badge can ever hold** and the width problem is bounded and solvable rather than open-ended. If a fifth, longer kind is coming, the sizing answer changes and I need to know before I give one.
+>
+> Until 1 is answered, any change here would be me picking the owner's aesthetic for him on a surface he has just told me he likes.
 
 ---
 
@@ -592,14 +624,14 @@ Not a plan — the owner decides what gets ticketed. Grouped by what would sensi
 4. **The §9 typography and colour pass (M1, M2, M4, M5, M8, L2, L3).** One ticket. Every item is a class change plus one measurement, and doing them piecemeal means measuring the same surfaces four times. AC-17's ratios go in that PR body.
 5. **The `Early` badge (M6).** Styling only — condition, column and word are already correct.
 6. **A6/B7's header tooltips (M7).** New build, bounded by R-D5…R-D11.
-7. **Owner rulings needed, no code:** L1 (the Counts reason string — mockup or implementation?), L4 (the failed-group divider sentence, which I owe `DESIGN-3B` §5), and §3.1's 68px row height if M8's fix cannot reach it.
+7. **Owner rulings needed, no code:** ~~L1 (the Counts reason string — mockup or implementation?)~~ and ~~L4 (the failed-group divider sentence, which I owe `DESIGN-3B` §5)~~ — **both DROPPED by the owner on 2026-08-13; no fix in either direction and no ticket, see the notes on L1 and L4.** Still live: **§3.1's 68px row height**, which the 2026-08-13 arithmetic shows M8's fix cannot reach — a replacement figure is now **proposed** in `DESIGN-3C` §3.1 and awaits the owner.
 
 *Added by the addendum:*
 
-8. **The Content cell's vertical arithmetic (M9, M10, L7, and M8 from the list above).** **Blocked on one owner ruling first** — R-D17's line count, Option A or Option B. Caption clamp, thumbnail height, chip stacking and row height are one arithmetic problem with four inputs; solved separately they get solved four times, and §3.1's 68px gets re-argued at each. **Nothing here may be built before R-D17 is approved and written into §2.2**, because today there is no rule to build against — that is the whole finding.
-9. **The kind badge over the thumbnail (M11).** Backing, position, and a contrast measurement taken against the **scrim** rather than the four surface tokens. Changes no word. Sequence after the M10 ruling, since the tile width decides whether `Carousel` fits.
+8. **The Content cell's vertical arithmetic (M9, L7, and M8 from the list above).** ~~**Blocked on one owner ruling first** — R-D17's line count, Option A or Option B.~~ **UNBLOCKED 2026-08-13: R-D17 is approved at two lines and is written into `DESIGN-3C` §2.2.1, so there is now a rule to build against.** **M10 is out of this group — it was rejected; the 40px square thumbnail is a fixed input, not a variable.** Two inputs remain open and both are in `DESIGN-3C` §3.1's open list: **L7's chip stacking**, and the **68px → 64px** replacement. Caption clamp and row height are still one arithmetic problem — do not solve them in separate PRs.
+9. **The kind badge over the thumbnail (M11).** Backing, position, and a contrast measurement taken against the **scrim** rather than the four surface tokens. Changes no word. ~~Sequence after the M10 ruling, since the tile width decides whether `Carousel` fits.~~ **The M10 ruling has landed and it keeps the 40px square, so the width problem now has no solution outside this item.** Still an owner ruling, not an implementation choice — the three things I need before I can rule are listed under M11.
 10. **The Content cell's fallback ladder (L8).** Approve or replace `Untitled`, and stop the caption rendering twice when it has been promoted into the title slot. Same file as item 8 — land together.
-11. **More owner rulings, no code:** the mockup's `Carousel ×10` overlay, which draws a field the #144 payload does not carry (**L6**); §5.4's parenthetical that cites that overlay as precedent; the failed row's reason-text colour (**L9**); and, with whichever R-D17 option wins, a **definition of the word "snippet" written into §2.2** beside the word that has been carrying this requirement since 2026-08-06.
+11. **More owner rulings, no code — the list as it stands after 2026-08-13.** **Still open:** the mockup's `Carousel ×10` overlay, which draws a field the #144 payload does not carry (**L6**), and §5.4's parenthetical that cites that overlay as precedent; the failed row's **reason-text colour** (**L9**); and **M11**, the kind badge over a photograph (item 9). **Closed:** ~~a definition of the word "snippet" written into §2.2~~ — **done, `DESIGN-3C` §2.2.1, with §3.1's truncation rule scoped to qualifiers alongside it.**
 
 ## What this audit does not cover
 
