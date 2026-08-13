@@ -9,14 +9,16 @@
 
 | | |
 |---|---|
-| Shipped UI | `~/Desktop/table.png` — desktop width, 6 analyses, one creator (`@giorrando`), left edge of the Content column cropped out of frame |
+| Shipped UI | `~/Desktop/table.png` — desktop width, 6 analyses, one creator (`@giorrando`), left edge of the Content column cropped out of frame. **Superseded for the Content column by `~/Desktop/wider table.png`** (same 6 analyses, wider frame, Content column and the `Showing N of M` line included) — see the addendum. |
 | Mockup | [`3c-analyses-table-mockup.html`](./3c-analyses-table-mockup.html) at `f0ac16f` |
 | Spec | [`DESIGN-3C-analyses-table.md`](./DESIGN-3C-analyses-table.md) — **§2.2 is the layout authority, not §5** — and [`DESIGN-3B-score-explainability.md`](./DESIGN-3B-score-explainability.md) (B5–B8, §4.6, §5.5) |
 | Implementation | `app/app/analyses/components/grids/AnalysisDataTable/**`, plus `lib/api/analyses/helpers.ts` where the copy is selected |
 
-**Method note and its one limit.** Colour, size and string claims below are read from the source, not eyedropped from the PNG — the screenshot is a scaled capture and pixel measurement from it would not be evidence. Where the screenshot is the evidence (a string being on screen, a glyph count, row proportions) I say so. **The Content column is cropped out of the shot**, so its thumbnail, kind overlay, mode chip and caption line are **not audited**; nothing below should be read as clearing them.
+**Method note.** Colour, size and string claims below are read from the source, not eyedropped from the PNG — the screenshot is a scaled capture and pixel measurement from it would not be evidence. Where the screenshot is the evidence (a string being on screen, a glyph count, a line count, row proportions) I say so.
 
-**Headline.** Nine columns, their order and their widths are **exactly** §2.2 — the table's skeleton is right. What has drifted is everything hung on it: two withdrawn strings are still live, one column renders a hard-coded placeholder on every row, and the type/colour system was rebuilt from the app's defaults rather than from §9. Fourteen findings, four of which change what a reader understands.
+> **The Content column is no longer an open gap.** The original capture cropped it out, and this note used to say its thumbnail, kind overlay, mode chip and caption line were unaudited. The owner supplied a wider capture on 2026-08-13 and **the Content column is audited in the [addendum](#addendum--the-content-column-2026-08-13)** — findings **M9–M11** and **L6–L9**, plus one correction to **L4**. The remaining uncovered surfaces are listed, updated, in [What this audit does not cover](#what-this-audit-does-not-cover).
+
+**Headline.** Nine columns, their order and their widths are **exactly** §2.2 — the table's skeleton is right. What has drifted is everything hung on it: two withdrawn strings are still live, one column renders a hard-coded placeholder on every row, and the type/colour system was rebuilt from the app's defaults rather than from §9. Fourteen findings, four of which change what a reader understands. **The addendum adds seven more** — and the largest of them is a **spec gap**, not a code defect.
 
 ---
 
@@ -322,6 +324,264 @@ Stated plainly, because a short honest audit is worth more than a long one.
 
 ---
 
+## Addendum — the Content column *(2026-08-13)*
+
+**Status:** Still audit only. **No code was changed and no design document was changed by this addendum.** One rule is **proposed** and marked **NEW**; it is not written into `DESIGN-3C` and must not be until the owner rules on it.
+
+**Why there is an addendum.** The original capture cropped the Content column out of frame, so the audit recorded it as unaudited. The owner supplied a wider capture — `~/Desktop/wider table.png`, same six analyses, same creator, same density — with a specific report:
+
+> *"the caption is truncated in the mockup but not in the real table"*
+
+**That report is confirmed, in full, with the mechanism.** What follows audits the whole column, not just the caption, and corrects one thing the earlier audit got wrong.
+
+**Inputs.** Wider capture as above; mockup at **`3b1ef89`** (the audit header cites `f0ac16f`; the file has since moved for #213, and the Content-column markup is unchanged between them — line numbers below are at `3b1ef89`); `DESIGN-3C` **§2.2 as the layout authority**, with §2.1, §3.1, §3.2, §3.3, §5.4, §9.3; implementation at `app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisContentCell/**`.
+
+**Addendum headline.** The caption is the finding, and **the caption is a spec gap**. §2.2 asks for a *"caption snippet"* and then never defines *snippet* — no clamp, no line count, no character limit, no ellipsis, anywhere in the document. The mockup truncates to one line; nothing approved says it must. The developer applied a rule that *does* exist (§3.1's "line 2 is never truncated"), which was written for denominator qualifiers and not for unbounded user text, and left a comment saying exactly that. **No one did anything wrong here and there is nothing to blame a developer for. The rule is missing, and writing it is my job.**
+
+---
+
+### MEDIUM
+
+---
+
+#### M9 — The caption is unclamped, and on half the visible rows it is what sets the row height *(the owner's report — CONFIRMED)*
+
+**Mockup.** Line 161: `<div class="text-[11px] text-mutedfg truncate" data-l2>resep andalan anak kos, cuma 5 bahan…</div>`. Same at `:246`, `:282`, `:322`, `:387`. **One line, `truncate`, CSS ellipsis.**
+
+**Implementation.** `AnalysisContentCell.tsx:58-62`:
+
+```tsx
+{/* PR #198 review blocker 7 — line 2 is never truncated; the column widens instead if
+    the text doesn't fit. No `truncate` class here, deliberately. */}
+{!failed && comfortable && caption && (
+  <p className="text-xs text-muted-foreground">{caption}</p>
+)}
+```
+
+No `truncate`, no `line-clamp`, no character cap, no ellipsis — and a comment saying the omission is deliberate and citing its authority.
+
+**Screenshot — the evidence, counted in lines rather than pixels.** Caption line counts, top to bottom: **2, 2, 4, 4, 3, 2**. Row 4's caption runs *"Share ke temen kalian yang butuh denger ini ya. Btw ini figurative ya. Gw ga punya macbook. In fact dr 2015 gw ud ga pake laptop sampe hari ini 🤭"* across four wrapped lines.
+
+**And here is the mechanism the owner suspected.** Counting rendered lines per cell, the tallest cell in each row is:
+
+| Row | Content cell | Tallest other cell | Row height set by |
+|---|---|---|---|
+| 1 Livestream Daging | 3 (title + 2 caption) | 3 (Performance) | tie |
+| 2 Nasihat Pak Sandi | 3 (title + 2 caption) | 3 (Performance) | tie |
+| 3 Mencari Telur Ajaib | **6** (title + chip + 4 caption) | 4 (Counts) | **Content** |
+| 4 "MacBook Mau Kapan?" | **5** (title + 4 caption) | 3 (Performance) | **Content** |
+| 5 "Tanya Theresa" | **4** (title + 3 caption) | 3 (cold-start) | **Content** |
+| 6 Sukses dengan Menguasai | 3 (title + 2 caption) | 3 (cold-start) | tie |
+
+**On three of six rows the Content cell is strictly the tallest cell in its row**, and on those three the caption alone accounts for every line above the tie. Clamp the caption to one line and the Content cell stops setting row height anywhere in this capture — the tallest cell in the table becomes row 3's four-line Counts cell, and that one is **H3**'s problem, not this one. **The owner is right: uncontrolled caption length is a direct cause of the shipped table looking heavier than the mockup, and it is the largest single cause.**
+
+**It also compounds two findings already recorded.** With `align-middle` (**M8**), a six-line Content cell pushes every short cell in that row to float in the middle of a tall row, which is what breaks §3.1's *"Line 1 is the number, Line 2 is the qualifier"* cross-row grid. And unequal row heights are the other half of *"the font size looks off"* (**M8** again). M9 is the input; M8 is the amplifier. **Neither is a re-litigation of the other** — M8 is alignment and type scale, M9 is content length.
+
+**What the spec actually says about caption length — the honest answer: nothing.**
+
+| Where | What it says | Does it bound the caption? |
+|---|---|---|
+| §2.2, column 1 | *"Thumbnail (with kind + slide-count overlay), **title/caption snippet**, mode chip when not `full_video`, failure reason when failed"* | **No.** *"Snippet"* is the only signal in the document and it is never defined. |
+| §2.1, the collapsed-column table | badge on the thumbnail, *"a chip under the title"* | No — concerns the badge and chip only. |
+| §3.1, the wireframe | draws `5 Menit — resep…` on one line, with a typed ellipsis | It **depicts** a clamp. It states no rule. |
+| §3.1, the prose rule | *"**Line 2** is the qualifier that §13.7 requires. Line 2 is never optional and never truncated to nothing — if it does not fit, the column is too narrow and gets widened, not the text shortened."* | **This is the rule the code followed**, and it is about **qualifiers** — denominators, tier phrases, `based on N`. Note it forbids truncating line 2 *"to nothing"*, which an ellipsised caption is not. The rule is genuinely ambiguous read against a caption, and the developer's reading is defensible. |
+| §3.2, Compact | *"What Compact loses: **the caption snippet**, the platform word…"* — and the binding list of what no density may drop (denominator, tier, sample size, provisional badge, absent-score reason, format noun, cited figure) **does not include the caption** | **The caption is explicitly droppable.** This is the load-bearing fact for the proposal below. |
+| §3.3, failed rows | *"The title cell shows the caption snippet greyed"* | No. |
+| §10, accessibility | nothing on caption length | No. |
+
+**No clamp. No maximum line count. No character limit. No ellipsis rule. Anywhere.** This is a **spec gap**, and the fix is a new rule, not a bug report.
+
+**The mockup is not the authority either, and I want to be exact about why.** Line 161's caption is `resep andalan anak kos, cuma 5 bahan…` — the `…` is a **literal character typed into the string**, on a div that *also* carries `truncate`. The mockup fakes the ellipsis in its content and applies a truncation class on top of it. That is not the artefact of someone who reasoned about a clamp; it is someone typing a plausible-looking short caption. **"The mockup does it" is not a ruling**, and I am not asking the owner to treat it as one.
+
+**Severity: MEDIUM.** By this audit's own scheme — high = *changes what the user understands* — this does not qualify. No number is wrong, no denominator is missing, no sentence is false, and a longer caption is if anything *more* information. I am not inflating it. **But by user-visible effect it is the top item in this addendum**, and the owner named it unprompted from a screenshot, which is the strongest signal a design finding gets.
+
+**Resolution — a NEW rule, proposed, for the owner's ruling.**
+
+> ### NEW — R-D17 *(PROPOSED 2026-08-13, NOT APPROVED — nothing in it may be built until the owner rules)*
+>
+> **The Content column's caption snippet is line-clamped. Nothing else in the table is.**
+>
+> - **Comfortable:** the caption renders at most **N lines** and CSS-ellipsises the last clipped line. (N is the owner's ruling — see the two options below.)
+> - **Compact:** the caption is not rendered at all. **Unchanged** — §3.2 already says this.
+> - **The title is unaffected.** It stays a single truncated line with an ellipsis, which is what ships today and what the mockup draws. The title is already correct and this rule must not be read as touching it.
+> - **CSS clamp only** (`line-clamp-{N}`). The full caption **stays in the DOM**, so a screen reader still reads it whole and §10's semantics are untouched. A JS substring, which would delete text from the accessibility tree, is out of bounds.
+> - **No `title` attribute, no tooltip, no popover, no hover-reveal of the remainder.** §8 forbids a native `title`; **R-8.4.7 / R-13.6.2** forbid hover-gating. The clipped tail is simply not shown in the table. The post's own surface is where a full caption belongs.
+> - **Scope, stated so it cannot be widened:** R-D17 binds **the Content column's caption and nothing else**. §3.1's *"line 2 is never truncated"* stands **untouched** for every denominator qualifier, tier phrase, confidence word, `based on N …`, cold-start figure with its format noun, and every absent-score reason and any figure it cites. If a *qualifier* does not fit, §3.1's answer is still the correct one: **widen the column**.
+> - **Why this breaks no information rule.** §3.2's binding list of what no density mode may drop does not include the caption, and §3.2 already drops it **entirely** at Compact. A caption is identification material, not an explanation — it is not a denominator, a tier, a sample size or an absent-score reason. Clamping at Comfortable is strictly less lossy than what §3.2 already approves at Compact.
+> - **R-13.5.3a and R-13.3.4 checked and not engaged.** A clamped caption states no facts, shares no sentence with a second fact, and shows no division.
+
+**Two options for N — the owner picks one.**
+
+| | **Option A — one line** | **Option B — two lines** *(my recommendation)* |
+|---|---|---|
+| Rule | `line-clamp-1` (equivalently `truncate`) | `line-clamp-2` |
+| Matches | the mockup exactly | not drawn anywhere yet |
+| Content cell height | **always 2 lines** (3 with a mode chip) | 2–3 lines (3–4 with a chip) |
+| Effect on this capture | Content never sets row height on any row | rows 3, 4 and 5 drop from 6, 5 and 4 lines to 4, 3 and 3; Content ties but never exceeds |
+| Nearest to §3.1's 68px | **yes** | close, not exact |
+| What the user loses | a lot. Row 4's caption gets ~9 words of 30. At 300px minus a thumbnail, one 11px line is roughly 30–35 characters — often less than one clause of an Indonesian caption | the first sentence usually survives |
+| Risk | the snippet becomes decorative — too short to identify a post by, which is the job §2.2 gave column 1 | rows stay slightly unequal |
+
+**I recommend Option B.** The mockup's one-line treatment was drawn against short invented captions; the real ones in this capture are long, conversational and front-load nothing, and one line of *"Share ke temen kalian yang butuh denger ini ya. Btw…"* identifies almost nothing. Two lines bounds the row and still lets the caption do its identification job. **But A is the tighter table and the owner may simply prefer it — this is a taste call on his product and I will build to whichever he picks.**
+
+**And a second ruling I need with it:** whichever N wins, **§2.2's word *"snippet"* should be given its definition in §2.2, beside the word**, because that word has been silently carrying this requirement since 2026-08-06 and is where the next reader will look. That is a spec edit, and this audit does not make spec edits.
+
+---
+
+#### M10 — The thumbnail is a 40px square; §3.1's wireframe and the mockup both draw a portrait tile
+
+**Mockup.** `:156`, `:200`, `:242`, `:280`, `:320`, `:351`, `:385` — `class="thumb w-11 h-14 rounded shrink-0 relative"`. **44 × 56px, portrait, ~4:5.**
+
+**§3.1's wireframe.** The `▓▓▓` block is drawn on **all three** text lines of each row, i.e. a tile as tall as the cell — a portrait tile, not a square one.
+
+**Implementation.** `AnalysisContentCell.tsx:37` — `className="relative h-10 w-10 shrink-0 overflow-hidden rounded bg-muted"`. **40 × 40px, square**, with `object-cover` on the image at `:41`.
+
+**Screenshot.** Every thumbnail is visibly square. Row 1's is a centre crop of a 9:16 reel frame; row 3's carousel cover is cropped hard enough that its text panel is cut top and bottom.
+
+**Severity: MEDIUM.** Nothing false — but every post in this library is 9:16 or 4:5 source, and a square `object-cover` crop discards more of each frame than a portrait tile does. Column 1 is the **identification** column (§2.2's column-order rationale: *"Identification (1–3) → raw evidence (4) → …"*), and identification is exactly what the crop is spending.
+
+**One honest complication, and it cuts against the mockup.** `py-3` + a 56px tile = **80px minimum row height in the mockup**, which **exceeds §3.1's own 68px** before a single line of text is laid out. The shipped `p-3` + a 40px tile = **64px**, which fits under 68. **So the square thumbnail is currently the only reason the shortest shipped rows come near §3.1's number.** Restoring the portrait tile makes §3.1's 68px arithmetically unreachable — which strengthens rather than weakens **M8**'s resolution note that **68px is the figure that should change, in §3.1, with the owner's agreement.** Do not restore the tile and leave 68px in the document; that would leave the spec self-contradicting.
+
+**Resolution.** Owner's ruling, and it should be taken **together with M8 and M9** — thumbnail height, caption clamp and row height are one arithmetic problem with three inputs, and solving them separately means solving them three times.
+
+---
+
+#### M11 — The kind badge is tinted for a surface it never sits on: it sits on a photograph
+
+**Spec.** §9.3's badge table: `| Neutral (kind, mode) | bg-slate-300/10 text-slate-300 | 11.63 | 11.25 | 10.36 | 9.31 |` — measured *"on background / on card / on hover / on muted"*. §9.1's whole method is foreground-on-composited-tint **against a known surface token**.
+
+**Implementation.** `AnalysisContentCell.tsx:44` — `absolute right-0 bottom-0 rounded-tl bg-slate-300/10 px-1 py-0.5 text-[9px] leading-none font-medium text-slate-300`. The header comment at `:11-14` records a re-measurement — **11.87 / 11.20 / 10.53 / 9.85** on background / card / row-hover / muted — which is diligent, correct method, and **measures four surfaces the badge is never on.** The badge is positioned over the thumbnail `<img>`.
+
+**Mockup.** `:157` — `bg-slate-300/**20**` for the kind badge on the thumbnail, and `bg-slate-300/**10**` for the mode chip below the title (`:205`, `:353`). **The mockup used double the tint for the over-image badge specifically.** The shipped code uses `/10` for both, so the one badge that needed the heavier backing got the lighter one.
+
+**Screenshot.** Row 1: `Reel` renders in slate over a bright white t-shirt, with a `/10` tint doing effectively nothing — it is legible only because the reader knows what word to expect. Row 3: `Carousel` spans **the full 40px width of the tile, edge to edge**, over a photographic strip, with its `px-1` padding pushed off both sides.
+
+**Severity: MEDIUM.** §9.5 is satisfied — the kind is a **word**, not a colour or an icon, so WCAG 1.4.1 holds and AC-13's *"the labelled badge is in the rendered text"* holds. And PR #203's blocker 2 fix is **correct and worth restating**: the badge is a sibling **outside** the `aria-hidden` thumbnail scope (`:38` vs `:44`), so it reaches the accessibility tree. **A screen-reader user is fully served here. A sighted user reading a badge over a white shirt is not**, and WCAG 1.4.3 has no defined ratio against arbitrary photography, which is precisely why a badge over an image needs a treatment that does not depend on what the image is.
+
+**Resolution.** Three parts, all cosmetic, none of them changing a word:
+1. Give the over-image badge a backing that does not depend on the photo — the mockup's `/20`, or a small opaque scrim. **Record the measurement against the scrim, not against the four surface tokens** (§9.1 / AC-17); the four-token measurement in the comment is correct method pointed at the wrong surface and should not simply be re-run.
+2. Move the badge to **bottom-left** (mockup `:157` — `bottom-0.5 left-0.5`) rather than the shipped `right-0 bottom-0`. Left-aligned it starts at the reading edge; right-aligned, a longer word grows leftward across the subject's face.
+3. The word `Carousel` filling a 40px tile is a **width** problem that **M10** solves — a 44px tile plus the mockup's inset gives it room. If the owner keeps the square tile, the badge needs its own answer.
+
+---
+
+### LOW
+
+---
+
+#### L6 — The slide-count half of the `kind + slide-count` overlay does not ship — and §5.4 quietly leans on it
+
+**Spec.** §2.2, column 1: *"Thumbnail (with **kind + slide-count** overlay)"*. Mockup: `Carousel &times;10` (`:201`, `:243`, `:352`), `Carousel &times;8` (`:385`).
+
+**Screenshot.** `Reel`, `Carousel`. **No count, on any row.**
+
+**Implementation.** `AnalysisContentCell/constants.ts:3-9`, verbatim:
+
+> *The slide-COUNT half of that overlay is NOT rendered — `AnalysisListItem` (the #144 API response, `lib/api/analyses/types.ts`) carries no slide/media-part-count field, and inventing one would be a fabricated number (AGENTS.md external-verification rule / R-13.5.3a). Flagged in the PR body rather than guessed; the kind word alone is still real, verified data.*
+
+**The developer was right, said so, and said why.** This is a data gap correctly declined, not a fidelity defect, and it is the second place in this audit where a developer stopped rather than invent (cf. **H4**, **L4**).
+
+**What is new, and why this is worth a finding at all.** `DESIGN-3C` **§5.4** justifies its own wording by pointing at this overlay: *"`slide 1` rather than `the first slide` for width; **the table already uses one-based slide language in the Content column's `Carousel ×10` overlay**."* That justification rests on a thing that **does not render**. §5.4's copy is not wrong and does not need changing — `slide 1` is good copy on its own merits — but its stated reason is currently false, and a future reader will take it as evidence that the overlay ships.
+
+**Severity: LOW.** No user is misinformed; the kind word alone is true.
+
+**Resolution.** Owner's ruling, two independent parts:
+1. **The mockup is the stale artefact.** It draws `Carousel ×10` — data the #144 response does not carry. Either add a media-part count to the list payload (a **#144 scope change**, not a UI ticket) or redraw the mockup's overlay as the bare kind word. **Flagged for the owner rather than changed here**, per this audit's standing rule that I do not edit the mockup to match code or code to match the mockup.
+2. If the count is never carried, **§5.4's parenthetical reason should be amended** to stop citing an overlay that does not exist. That is a spec edit and this audit does not make spec edits.
+
+---
+
+#### L7 — The mode chip takes a line of its own **above** the caption; the mockup gives it line 2 **instead of** the caption
+
+**Mockup.** Rows with a chip render `title` then the chip, and **no caption at all** (`:204-205`, `:352-353`). Rows without a chip render `title` then the caption. The chip **occupies** line 2; it never stacks on top of one.
+
+**Implementation.** `AnalysisContentCell.tsx:53-62` — the chip and the caption are independent conditionals. Both render when both are present, chip first.
+
+**Screenshot.** Row 3 is the only chipped row: `Mencari Telur Ajaib di New York` / `Images only` / four lines of caption = **six lines**, the tallest cell in the table.
+
+**Also drifting, in the same element.** Chip is `text-[10px] px-1.5 py-0.5` (`:54`) against the mockup's `text-[9px] px-1.5 py-0.5` (`:205`). At 10px semibold on a tinted pill, sitting directly under a 14px title (**M8**), it reads with nearly the weight of the title.
+
+**What the spec says.** §2.1's collapsed-column table: *"a chip under the title (`Caption only` / `Images only`) shown **only when the mode is not `full_video`**"*. **"Under the title" is satisfied by both layouts.** The spec does not say whether the chip replaces or precedes the caption — so, as with M9, the mockup depicts a decision the document never recorded.
+
+**Severity: LOW.** The chip's **words**, its **condition** and its **position under the title** are all exactly right, and AC-13 is satisfied — `Images only` is real rendered text, not a colour or an icon. This is stacking and size only.
+
+**Resolution.** Fold into whatever the owner rules on **M9**. If the caption is clamped, the stacking question mostly dissolves: chip + a clamped caption is 3–4 lines, not 6. If the owner prefers the mockup's exact behaviour, note that **suppressing the caption on chipped rows costs real information** on precisely the rows — `Caption only` — where the caption is the *only* thing that was analysed. **I would keep both and clamp**, rather than replicate the mockup here.
+
+---
+
+#### L8 — `Untitled` is invented copy, and when `title` is null the caption renders twice
+
+**Implementation.** `AnalysisContentCell.tsx:49-50`:
+
+```tsx
+<p className={cn("truncate text-sm font-medium", failed && "text-muted-foreground")}>
+  {title || caption || "Untitled"}
+</p>
+```
+
+`title` and `caption` are both `string | null` (`types.ts:4-5`). Two consequences:
+
+1. **`Untitled` appears in no design document.** Grepping `docs/` for it returns nothing. It is a developer-chosen user-facing string — a small one, and a reasonable one, but unapproved, and this project's standing rule is that copy is written where copy is written.
+2. **When `title` is null and `caption` is not**, the caption renders **as the title** (bold, truncated to one line) and **again** on line 2 (muted, unclamped, in full) — the same sentence twice in one cell, the second time longer than the first. The fallback ladder was written for the title slot in isolation and the line-2 conditional at `:60` does not know the ladder consumed the caption.
+
+**Screenshot.** **Neither is visible.** All six rows carry a distinct title and a distinct caption. This finding is read from source and I am labelling it as such — it is a latent defect, not something the owner is looking at.
+
+**Severity: LOW.** Nothing on screen is wrong. Duplication would be noticeable but not misleading, and the mockup's failed row (`:415`) suggests a better fallback already exists in the design's own thinking: it shows the **post URL** greyed (`instagram.com/reel/DXk9…`) rather than a generic word.
+
+**Resolution.** Two small rulings, no urgency. (a) Approve or replace `Untitled` — the mockup's URL-as-fallback is worth considering, since a URL identifies a post and `Untitled` identifies nothing. (b) Suppress line 2 when the ladder has already consumed the caption. Both belong in the same ticket as **M9**, since both are the caption line.
+
+---
+
+#### L9 — The failed row: the rose edge **is** built; the reason text is not, and its colour is unspecified
+
+**Closing an item the earlier audit left open**, from source rather than from a screenshot — no failed row appears in either capture.
+
+**Built and correct.** `AnalysisTableRow.tsx:82` — `failed && "border-l-[3px] border-l-rose-500"`, matching §3.3's *"A 3px rose left edge marker."* `:174` renders `Not analysed` in the Performance cell, matching §3.3's requirement that a failed analysis never borrows an absent-score reason. The Content cell greys the title (`AnalysisContentCell.tsx:49`) and suppresses the caption on failed rows (`:60`), so §3.3's *"caption snippet greyed"* is **half** satisfied — greyed, but the snippet itself is not shown.
+
+**Not built.** `AnalysisTableRow.tsx:50` — ``const failedLabel = failed ? (row.status === "failed" ? "Analysis failed" : "Queued") : null;``. §3.3 asks for `Analysis failed — {reason}` and `Queued · position 4`; **both the reason and the queue position are dropped**, and the comment at `:41-45` flags both as absent fields rather than guessing them. **Right call again** — a fabricated failure reason is the R-13.5.3a class exactly.
+
+**Unspecified.** The label renders `text-xs text-muted-foreground` (`AnalysisContentCell.tsx:52`); the mockup draws it `text-rose` (`:416`). §3.3 puts rose on the **left edge** and says nothing about the reason text's colour, and §9.3's `bg-rose/12 text-rose` is a **badge** pattern, not a text-colour rule. **So there is no rule to have broken here** — it is another undefined corner, smaller than M9's.
+
+**Severity: LOW,** and unverifiable in the shipped UI until a failed row can be captured.
+
+**Resolution.** Owner's ruling on the reason-text colour, alongside **L4**'s failed-group divider sentence — which is the copy I still owe `DESIGN-3B` §5. Both are blocked on the same thing: nobody has yet seen a failed row on screen.
+
+---
+
+### Correction to the merged audit — L4's reconstructed count was wrong
+
+**What L4 says:** *"the screenshot's `…separately` is the tail of `6 posts with no performance score — sorted separately`, verbatim from §6.1."*
+
+**What the wider capture shows:** **`2 posts with no performance score — sorted separately`**, with exactly two rows beneath it.
+
+**What I got wrong.** The original capture cropped the divider's leading text, so I reconstructed it from **§6.1 R-S2's example string**, which reads `6 posts with no performance score — sorted separately`. **The `6` in the spec is an illustrative count, not a literal.** `AnalysisDataTable.tsx:247` builds the label from the group size, with correct singular/plural handling:
+
+```tsx
+label={`${groups.scoreless.length} post${groups.scoreless.length === 1 ? "" : "s"} with no performance score — sorted separately`}
+```
+
+**What survives.** The §6.1 / R-S2 citation is correct, the string's shape is correct, R-S2's *"visible, labelled and counted"* is satisfied — and it is satisfied **better** than L4 claimed, because the count is live rather than fixed. L4's actual finding, that the divider is styled as body text (`text-xs font-medium`) against the mockup's `text-[10.5px] uppercase tracking-wider`, is **unaffected and stands**.
+
+**Stating it plainly:** I asserted a string was "verbatim" when I had only seen its last word. That was a reconstruction presented as evidence, and the method note at the top of this audit exists precisely to stop me doing that. The correction is the finding.
+
+---
+
+### Correct as shipped in the Content column
+
+| | Verdict |
+|---|---|
+| **Title truncation** | `truncate` at `AnalysisContentCell.tsx:49` — single line, CSS ellipsis, exactly the mockup's `:160`. **The title was never the problem**; only the caption below it is (**M9**). |
+| **Mode chip words and condition** | `Caption only` / `Images only` (`constants.ts:18-21`), rendered **only** when the mode is not `full_video` (`:33`), under the title — §2.1 word for word. AC-13 satisfied: real text, never colour or icon alone. Only its stacking and size drift (**L7**). |
+| **The kind badge reaches assistive technology** | `AnalysisContentCell.tsx:38` `aria-hidden`s **only** the image wrapper; the badge at `:44` is a **sibling outside** that scope. PR #203's blocker 2 fix is correct and holds — an `aria-hidden` ancestor would have removed the badge from the tree regardless of its own attributes. |
+| **The thumbnail image is decorative** | `alt=""` on a `aria-hidden` wrapper (`:38-42`). Correct — the kind word and the title carry the meaning, so the image adds nothing a screen reader needs. §10 holds. |
+| **No `ⓘ` anywhere in the Content column** | Confirmed in the wider capture. **#147's one-`ⓘ`-per-row ruling holds across the full row width**, which the cropped shot could not establish. The single `ⓘ` per scored row is still the Performance cell's. |
+| **No fabricated slide count** | See **L6** — declined in code with its reason written down. |
+| **Column 1 width** | The wider capture puts the Content column at ~23% of the table's rendered width against §2.2's 300 / 1288 = 23.3%. Consistent with the audit's source-read finding that `constants.ts:15-57` matches §2.2 field for field. **Not a new finding** — a visual confirmation of one already recorded. |
+| **`Showing 6 of 6 analyses.`** | On screen, above the table card, matching `AnalysisFilterSection/helpers.ts:12`. Previously listed as unverified. |
+| **The `Columns` trigger and the Density toggle** | Both present in the toolbar, `Comfortable` selected. The affordances exist; the menu's **contents** remain unverified (see "does not cover"). |
+
+---
+
 ## Suggested ticket grouping
 
 Not a plan — the owner decides what gets ticketed. Grouped by what would sensibly land together.
@@ -334,9 +594,19 @@ Not a plan — the owner decides what gets ticketed. Grouped by what would sensi
 6. **A6/B7's header tooltips (M7).** New build, bounded by R-D5…R-D11.
 7. **Owner rulings needed, no code:** L1 (the Counts reason string — mockup or implementation?), L4 (the failed-group divider sentence, which I owe `DESIGN-3B` §5), and §3.1's 68px row height if M8's fix cannot reach it.
 
+*Added by the addendum:*
+
+8. **The Content cell's vertical arithmetic (M9, M10, L7, and M8 from the list above).** **Blocked on one owner ruling first** — R-D17's line count, Option A or Option B. Caption clamp, thumbnail height, chip stacking and row height are one arithmetic problem with four inputs; solved separately they get solved four times, and §3.1's 68px gets re-argued at each. **Nothing here may be built before R-D17 is approved and written into §2.2**, because today there is no rule to build against — that is the whole finding.
+9. **The kind badge over the thumbnail (M11).** Backing, position, and a contrast measurement taken against the **scrim** rather than the four surface tokens. Changes no word. Sequence after the M10 ruling, since the tile width decides whether `Carousel` fits.
+10. **The Content cell's fallback ladder (L8).** Approve or replace `Untitled`, and stop the caption rendering twice when it has been promoted into the title slot. Same file as item 8 — land together.
+11. **More owner rulings, no code:** the mockup's `Carousel ×10` overlay, which draws a field the #144 payload does not carry (**L6**); §5.4's parenthetical that cites that overlay as precedent; the failed row's reason-text colour (**L9**); and, with whichever R-D17 option wins, a **definition of the word "snippet" written into §2.2** beside the word that has been carrying this requirement since 2026-08-06.
+
 ## What this audit does not cover
 
-- **The Content column** — cropped out of the screenshot. Thumbnail, kind + slide-count overlay, mode chip, caption line, title truncation and the failed row's rose left edge are all **unverified**.
-- **The filter bar and `Showing N of M analyses`** — above the crop. `AnalysisFilterSection.tsx:155` indicates it is built; not visually confirmed.
-- **Compact density, the loading / empty / error states, the popover contents, the Style column and the Columns menu** — none appear in the shot. §3.2's rule that no density may drop a denominator, a format noun or an absent-score reason is **untested by this audit**.
-- **Measured contrast ratios.** Everything in §9 is stated as a required value here; none of it was re-measured against the app's real tokens. §9.1 asks for that at implementation time, and M4/L2 are the point at which it is owed.
+*Updated 2026-08-13 by the addendum. Struck items were closed by the wider capture.*
+
+- ~~**The Content column**~~ — **closed.** Audited in the addendum from `~/Desktop/wider table.png`: thumbnail, kind overlay, mode chip, caption line and title truncation are findings **M9–M11 / L6–L8**. The failed row's rose left edge is **built** and confirmed from source (`AnalysisTableRow.tsx:82`, `border-l-[3px] border-l-rose-500`) — see **L9**; it is still not *visually* confirmed, because no failed row exists in either capture.
+- ~~**`Showing N of M analyses`**~~ — **closed.** `Showing 6 of 6 analyses.` is on screen in the wider capture, above the table card, matching `AnalysisFilterSection/helpers.ts:12`. **The filter chip row itself is still cropped** (only the bottom edge of the chips and the search field is in frame), so the chips' labels, states and the `No results match your filters` variant remain unverified.
+- **Compact density, the loading / empty / error states, the popover contents, and the Style column** — none appear in either shot. §3.2's rule that no density may drop a denominator, a format noun or an absent-score reason is **untested by this audit**. Note that §3.2 also drops the caption snippet at Compact, which **M9** relies on.
+- **The Columns menu's contents.** The `Columns` trigger and the `Density · Comfortable | Compact` toggle are both visible in the wider capture, so the affordances exist. The menu is closed in the shot, so **whether it carries a Style entry — the only route to the Style column on every load (A4a) — is still unverified**, and a missing entry ships Style as dead code.
+- **Measured contrast ratios.** Everything in §9 is stated as a required value here; none of it was re-measured against the app's real tokens. §9.1 asks for that at implementation time, and M4/L2 are the point at which it is owed. **M11 adds a surface §9.1's method never had: a photographic thumbnail**, which no token measurement can cover.
