@@ -137,12 +137,15 @@ describe("classifyViewCount", () => {
   });
 
   /**
-   * PR #210 review B4 — `playCount` has the identical hole: a negative playCount must
-   * never reach the UI as `{ kind: "plays", value: -1 }` ("-1 plays"). Uses
-   * `viewCount: null` so State 4's own `playCount > 0` guard is proven insufficient on
-   * its own (a naive fix might rely on that comparison alone, which a negative number
-   * also fails, but does nothing for a case like `playCount: -1` reached via a viewCount
-   * that is itself 0/null and otherwise valid — this pins the sanitize step directly).
+   * PR #210 review B5 (round 4) — `{ kind: "plays", value: -1 }` ("-1 plays") was never
+   * actually reachable pre-fix: State 4's own `playCount > 0` comparison already excludes
+   * any negative `playCount`, `-1` included, with no help from `sanitizeCount`. Confirmed by
+   * mutation: stripping `sanitizeCount` to a passthrough (removing the guard entirely) still
+   * leaves both of the next two tests passing. They pin that pre-existing `playCount > 0`
+   * branch behaviour, not the sanitize step, and are kept as defence-in-depth documentation
+   * of the invariant, not as regression coverage for `sanitizeCount` itself — the `Infinity`
+   * playCount test below is what actually exercises that guard (it fails under the same
+   * mutation).
    */
   it("a negative playCount (the -1 sentinel) resolves to unknown, never a negative plays value", () => {
     expect(
@@ -160,6 +163,20 @@ describe("classifyViewCount", () => {
     expect(
       classifyViewCount({ viewCount: 0, playCount: Infinity, likeAndViewCountsDisabled: false }),
     ).toEqual({ kind: "zero" });
+  });
+
+  /**
+   * PR #210 review N10 — the one input class whose resulting `kind` the B4 sanitize step
+   * actually changes: a negative `viewCount` sanitizes to `null`, which (with a real,
+   * positive `playCount` present) falls into State 4 and renders `plays`, not the
+   * `unknown`/fabricated-`count` result a naive `-1` would otherwise produce. Every other
+   * negative/non-finite case above resolves to `unknown` or `zero`; this is the only one that
+   * resolves to `plays`.
+   */
+  it("a negative viewCount with a real playCount present sanitizes to plays, not a fabricated negative count", () => {
+    expect(
+      classifyViewCount({ viewCount: -1, playCount: 116_333, likeAndViewCountsDisabled: false }),
+    ).toEqual({ kind: "plays", value: 116_333 });
   });
 });
 
