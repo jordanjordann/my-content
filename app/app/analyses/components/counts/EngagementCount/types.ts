@@ -1,6 +1,6 @@
 import type { CountState } from "@/lib/api/analyses/types";
 
-export type EngagementMetric = "views" | "likes";
+export type EngagementMetric = "views" | "likes" | "comments";
 
 export type EngagementCountProps = {
   /** Already-classified state (TDD §4.1) — never pass raw counts. */
@@ -18,5 +18,10 @@ export type EngagementCountProps = {
 };
 
 export type CountInfoTooltipProps = {
-  metric: EngagementMetric;
+  /**
+   * `comments` is excluded at the type level: `computed.comments.state` never resolves
+   * to `hidden` (ticket #205 — comments are never gated by `like_and_view_counts_disabled`),
+   * so this trigger has no accessible-name copy for it and must never be asked to render one.
+   */
+  metric: Exclude<EngagementMetric, "comments">;
 };

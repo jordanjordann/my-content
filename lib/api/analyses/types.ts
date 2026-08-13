@@ -188,6 +188,11 @@ export type AnalysisTableDerivedPerformance = {
    * `viewCountState`/`likeCountState` (PR #198 review, blocker 4: those can be genuinely
    * WRONG for a carousel/plays-only reel, not merely absent). */
   reachCountState: CountState;
+  /** Col 4 (Counts, comfortable density's likes-line) — ticket #205. Sourced from
+   * `performance.computed.comments`, classified the same way `reachCountState` is classified
+   * from `performance.computed.reach` (`classifyCommentCountState`) — never a raw stored field,
+   * there is none for comments on `AnalysisListItem`. */
+  commentCountState: CountState;
   /** Col 4 (Counts) — OR-11's three-case reason (TDD §9.5). Always computed; the Counts cell
    * only renders it when `reachCountState.kind` is `"unknown"` (case 1 always yields `"hidden"`
    * instead, which already carries its own explanation via `EngagementCount`'s tooltip). */

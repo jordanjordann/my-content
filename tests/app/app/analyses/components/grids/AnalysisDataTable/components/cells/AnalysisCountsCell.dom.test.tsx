@@ -16,6 +16,7 @@ describe("AnalysisCountsCell — OR-11's three-case absent-count reason", () => 
       <AnalysisCountsCell
         reachCountState={{ kind: "unknown" }}
         likeCountState={{ kind: "unknown" }}
+        commentCountState={{ kind: "unknown" }}
         absentCountReason="TYPE_NOT_REPORTED"
         comfortable={false}
       />,
@@ -28,6 +29,7 @@ describe("AnalysisCountsCell — OR-11's three-case absent-count reason", () => 
       <AnalysisCountsCell
         reachCountState={{ kind: "unknown" }}
         likeCountState={{ kind: "unknown" }}
+        commentCountState={{ kind: "unknown" }}
         absentCountReason="NOT_AVAILABLE"
         comfortable={false}
       />,
@@ -41,6 +43,7 @@ describe("AnalysisCountsCell — OR-11's three-case absent-count reason", () => 
       <AnalysisCountsCell
         reachCountState={{ kind: "zero" }}
         likeCountState={{ kind: "zero" }}
+        commentCountState={{ kind: "zero" }}
         absentCountReason="NOT_AVAILABLE"
         comfortable={false}
       />,
@@ -54,11 +57,93 @@ describe("AnalysisCountsCell — OR-11's three-case absent-count reason", () => 
       <AnalysisCountsCell
         reachCountState={{ kind: "hidden" }}
         likeCountState={{ kind: "hidden" }}
+        commentCountState={{ kind: "hidden" }}
         absentCountReason="CREATOR_DISABLED"
         comfortable={false}
       />,
     );
     expect(screen.getByText("Hidden")).toBeInTheDocument();
     expect(screen.queryByText("Creator turned off counts")).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Ticket #205 — the comfortable-density likes-line's comment figure. Previously a hardcoded,
+ * `aria-hidden="true"` em-dash (`AnalysisCountsCell.tsx:32`) that rendered identically on every
+ * row regardless of data. `commentCountState` is now threaded through from
+ * `performance.computed.comments` (`classifyCommentCountState`, `lib/api/analyses/helpers.ts`)
+ * exactly like `reachCountState` is threaded from `performance.computed.reach`.
+ *
+ * The present-count case below is asserted with `getByText` PLUS an explicit
+ * `.closest('[aria-hidden="true"]')` check — `getByText` alone ignores `aria-hidden` and would
+ * have matched the old hardcoded dash just as happily; the `aria-hidden` check is the part that
+ * actually catches it. The absent-count case is asserted with `getByRole("img", ...)` instead,
+ * because an `aria-hidden="true"` node (the original defect) is excluded from the accessibility
+ * tree entirely — that query fails exactly the way the shipped bug should have been caught.
+ */
+describe("AnalysisCountsCell — ticket #205's comment count", () => {
+  it("a real, present comment count renders the actual abbreviated figure on the likes line, reachable by its own accessible text", () => {
+    const { container } = render(
+      <AnalysisCountsCell
+        reachCountState={{ kind: "count", value: 500_000 }}
+        likeCountState={{ kind: "count", value: 31_400 }}
+        commentCountState={{ kind: "count", value: 1_200 }}
+        absentCountReason="NOT_AVAILABLE"
+        comfortable
+      />,
+    );
+
+    // The exact shipped abbreviation (`formatAbbrev`, EngagementCount/helpers.ts):
+    // 1_200 -> "1.2K". `getByText` alone does NOT prove this node is accessible — it ignores
+    // `aria-hidden` entirely and would have matched the old hardcoded dash just as happily.
+    // The `.closest('[aria-hidden="true"]')` check below is what actually gives this test
+    // teeth: it fails if this figure were ever wrapped in the same `aria-hidden="true"` span
+    // the original bug used.
+    const commentFigure = screen.getByText("1.2K");
+    expect(commentFigure).toBeInTheDocument();
+    expect(commentFigure.closest('[aria-hidden="true"]')).toBeNull();
+
+    // Full likes-line text, proving the middot separates two real values, not a dangling
+    // dash — matches the issue's own worked example ("31.4K · 1.2K").
+    expect(container.textContent).toContain("31.4K · 1.2K");
+  });
+
+  /**
+   * PR #210 review N9 — the comment `zero` state at comfortable density was untested
+   * end-to-end. This pins the CURRENT rendered output (a bare "0" alongside the likes
+   * figure) so it cannot silently drift; whether a bare "0" is the right treatment for a
+   * genuine zero comment count is an owner/designer call, not one made here.
+   */
+  it("a genuine zero comment count renders a bare '0' on the likes line (pinned, not a design decision)", () => {
+    const { container } = render(
+      <AnalysisCountsCell
+        reachCountState={{ kind: "count", value: 500_000 }}
+        likeCountState={{ kind: "count", value: 31_400 }}
+        commentCountState={{ kind: "zero" }}
+        absentCountReason="NOT_AVAILABLE"
+        comfortable
+      />,
+    );
+
+    expect(container.textContent).toContain("31.4K · 0");
+  });
+
+  it("an absent comment count (state UNKNOWN) announces 'comments unknown' via role=img, not a bare unlabelled dash", () => {
+    render(
+      <AnalysisCountsCell
+        reachCountState={{ kind: "count", value: 500_000 }}
+        likeCountState={{ kind: "count", value: 31_400 }}
+        commentCountState={{ kind: "unknown" }}
+        absentCountReason="NOT_AVAILABLE"
+        comfortable
+      />,
+    );
+
+    // `getByRole` walks the accessibility tree — an `aria-hidden="true"` node (the original
+    // defect) is excluded from it entirely, so this assertion would fail exactly the way the
+    // shipped bug should have been caught.
+    const commentFigure = screen.getByRole("img", { name: "comments unknown" });
+    expect(commentFigure).toBeInTheDocument();
+    expect(commentFigure).toHaveTextContent("—");
   });
 });

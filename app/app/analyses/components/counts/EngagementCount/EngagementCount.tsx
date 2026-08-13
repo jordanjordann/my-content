@@ -30,7 +30,9 @@ export function EngagementCount({
     return (
       <span className={cn("inline-flex items-center gap-1", ENGAGEMENT_MUTED_CLASSNAME, className)}>
         Hidden
-        <CountInfoTooltip metric={metric} />
+        {/* `comments` never resolves to `hidden` (ticket #205) — `CountInfoTooltip` has no
+         * copy for it, so this narrows the metric at the type level rather than casting. */}
+        {metric !== "comments" && <CountInfoTooltip metric={metric} />}
       </span>
     );
   }

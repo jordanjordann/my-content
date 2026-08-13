@@ -112,6 +112,72 @@ describe("classifyViewCount", () => {
       classifyViewCount({ viewCount: null, playCount: null, likeAndViewCountsDisabled: false }),
     ).toEqual({ kind: "unknown" });
   });
+
+  /**
+   * PR #210 review B4 — the same `-1` sentinel (OR-20) `classifyLikeCount` guards is
+   * reachable through `viewCount` on the identical code path (`adapter.ts` -> `hooks.ts`
+   * -> `classifyViewCount` -> `formatAbbrev(-1)`, which renders the literal string "-1").
+   */
+  it("a negative viewCount (the -1 sentinel, OR-20) resolves to unknown, never a negative count", () => {
+    expect(
+      classifyViewCount({ viewCount: -1, playCount: null, likeAndViewCountsDisabled: false }),
+    ).toEqual({ kind: "unknown" });
+  });
+
+  it("a negative viewCount with likeAndViewCountsDisabled absent (null) is still unknown, not hidden and not a fabricated count", () => {
+    expect(
+      classifyViewCount({ viewCount: -1, playCount: null, likeAndViewCountsDisabled: null }),
+    ).toEqual({ kind: "unknown" });
+  });
+
+  it("a non-finite viewCount (NaN) resolves to unknown, never NaN rendered downstream", () => {
+    expect(
+      classifyViewCount({ viewCount: NaN, playCount: null, likeAndViewCountsDisabled: false }),
+    ).toEqual({ kind: "unknown" });
+  });
+
+  /**
+   * PR #210 review B5 (round 4) — `{ kind: "plays", value: -1 }` ("-1 plays") was never
+   * actually reachable pre-fix: State 4's own `playCount > 0` comparison already excludes
+   * any negative `playCount`, `-1` included, with no help from `sanitizeCount`. Confirmed by
+   * mutation: stripping `sanitizeCount` to a passthrough (removing the guard entirely) still
+   * leaves both of the next two tests passing. They pin that pre-existing `playCount > 0`
+   * branch behaviour, not the sanitize step, and are kept as defence-in-depth documentation
+   * of the invariant, not as regression coverage for `sanitizeCount` itself — the `Infinity`
+   * playCount test below is what actually exercises that guard (it fails under the same
+   * mutation).
+   */
+  it("a negative playCount (the -1 sentinel) resolves to unknown, never a negative plays value", () => {
+    expect(
+      classifyViewCount({ viewCount: null, playCount: -1, likeAndViewCountsDisabled: false }),
+    ).toEqual({ kind: "unknown" });
+  });
+
+  it("a negative playCount with viewCount=0 resolves to zero, not a fabricated plays value", () => {
+    expect(
+      classifyViewCount({ viewCount: 0, playCount: -1, likeAndViewCountsDisabled: false }),
+    ).toEqual({ kind: "zero" });
+  });
+
+  it("a non-finite playCount (Infinity) never leaks through as a fabricated plays value", () => {
+    expect(
+      classifyViewCount({ viewCount: 0, playCount: Infinity, likeAndViewCountsDisabled: false }),
+    ).toEqual({ kind: "zero" });
+  });
+
+  /**
+   * PR #210 review N10 — the one input class whose resulting `kind` the B4 sanitize step
+   * actually changes: a negative `viewCount` sanitizes to `null`, which (with a real,
+   * positive `playCount` present) falls into State 4 and renders `plays`, not the
+   * `unknown`/fabricated-`count` result a naive `-1` would otherwise produce. Every other
+   * negative/non-finite case above resolves to `unknown` or `zero`; this is the only one that
+   * resolves to `plays`.
+   */
+  it("a negative viewCount with a real playCount present sanitizes to plays, not a fabricated negative count", () => {
+    expect(
+      classifyViewCount({ viewCount: -1, playCount: 116_333, likeAndViewCountsDisabled: false }),
+    ).toEqual({ kind: "plays", value: 116_333 });
+  });
 });
 
 describe("classifyLikeCount", () => {
@@ -149,6 +215,36 @@ describe("classifyLikeCount", () => {
     expect(classifyLikeCount({ likeCount: 31_400, likeAndViewCountsDisabled: false })).toEqual({
       kind: "count",
       value: 31_400,
+    });
+  });
+
+  /**
+   * PR #210 review — the `-1` sentinel (OR-20, `lib/server/analysis/performance/
+   * availability.ts`): a genuinely counts-disabled Instagram post can carry
+   * `edge_media_preview_like.count: -1`, present and populated. If `likeAndViewCountsDisabled`
+   * is itself absent on that payload, this negative guard is the only thing standing between
+   * that sentinel and a fabricated on-screen count.
+   */
+  it("a negative likeCount (the -1 sentinel, OR-20) resolves to unknown, never a negative count or a clamped zero", () => {
+    expect(classifyLikeCount({ likeCount: -1, likeAndViewCountsDisabled: false })).toEqual({
+      kind: "unknown",
+    });
+  });
+
+  it("a negative likeCount with likeAndViewCountsDisabled absent (null) is still unknown, not hidden and not a fabricated count", () => {
+    expect(classifyLikeCount({ likeCount: -1, likeAndViewCountsDisabled: null })).toEqual({
+      kind: "unknown",
+    });
+  });
+
+  /**
+   * PR #210 review N7 — `!Number.isFinite(input.likeCount)` had no test of its own; the
+   * `< 0` clause alone was sufficient to pass every existing case. Pins the non-finite
+   * branch directly so it can't silently regress.
+   */
+  it("a non-finite likeCount (NaN) resolves to unknown, never NaN rendered downstream", () => {
+    expect(classifyLikeCount({ likeCount: NaN, likeAndViewCountsDisabled: false })).toEqual({
+      kind: "unknown",
     });
   });
 });
@@ -313,5 +409,60 @@ describe("deriveAnalysisTablePerformance — disagreementLine (ticket #147, DESI
       const derived = deriveAnalysisTablePerformance(performanceWith(2, 1.02), "reel", null);
       expect(derived?.disagreementLine).toBeNull();
     });
+  });
+});
+
+/**
+ * Ticket #205 — `commentCountState` was never derived at all (`deriveAnalysisTablePerformance`'s
+ * return had no such field), which is how the Counts cell ended up rendering a hardcoded,
+ * unbound `—` for comments on every row. Sourced from `performance.computed.comments`, mirroring
+ * `reachCountState`'s classification from `performance.computed.reach` exactly.
+ */
+describe("deriveAnalysisTablePerformance — commentCountState (ticket #205)", () => {
+  it("a present, non-zero comment count classifies as 'count' with the real value", () => {
+    const derived = deriveAnalysisTablePerformance(performanceWith(4, 3.2), "reel", null);
+    expect(derived?.commentCountState).toEqual({ kind: "count", value: 1_204 });
+  });
+
+  it("comments.state ZERO classifies as a genuine zero, not unknown", () => {
+    const base = performanceWith(4, 3.2);
+    if (base == null) throw new Error("performanceWith never returns null in this fixture");
+    const withZeroComments: AnalysisPerformance = {
+      ...base,
+      computed: { ...base.computed, comments: { value: 0, state: "ZERO" } },
+    };
+    const derived = deriveAnalysisTablePerformance(withZeroComments, "reel", null);
+    expect(derived?.commentCountState).toEqual({ kind: "zero" });
+  });
+
+  it("comments.state UNKNOWN classifies as unknown, never a fabricated 0 or a silent dash", () => {
+    const base = performanceWith(4, 3.2);
+    if (base == null) throw new Error("performanceWith never returns null in this fixture");
+    const withUnknownComments: AnalysisPerformance = {
+      ...base,
+      computed: { ...base.computed, comments: { value: null, state: "UNKNOWN" } },
+    };
+    const derived = deriveAnalysisTablePerformance(withUnknownComments, "reel", null);
+    expect(derived?.commentCountState).toEqual({ kind: "unknown" });
+  });
+
+  /**
+   * PR #210 review N1/N2 — `comments.state` is never `HIDDEN` in practice
+   * (`like_and_view_counts_disabled` deliberately never gates comments), but the union type
+   * is exhaustive over `HIDDEN`/`UNKNOWN`/`ZERO`/`AVAILABLE`, and this was the one arm with no
+   * test. `EngagementCount`'s `hidden` treatment renders the shared, likes/views-specific
+   * tooltip copy, which is the wrong explanation for a hidden comment figure — so `HIDDEN`
+   * degrades to `unknown` here rather than `hidden`, and this is the assertion that would fail
+   * if a future change ever reintroduced that mismatch.
+   */
+  it("comments.state HIDDEN degrades to unknown, never 'hidden' — there is no approved hidden-comment-count copy", () => {
+    const base = performanceWith(4, 3.2);
+    if (base == null) throw new Error("performanceWith never returns null in this fixture");
+    const withHiddenComments: AnalysisPerformance = {
+      ...base,
+      computed: { ...base.computed, comments: { value: null, state: "HIDDEN" } },
+    };
+    const derived = deriveAnalysisTablePerformance(withHiddenComments, "reel", null);
+    expect(derived?.commentCountState).toEqual({ kind: "unknown" });
   });
 });

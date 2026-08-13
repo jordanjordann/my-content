@@ -136,6 +136,7 @@ function renderCell(
         <AnalysisCountsCell
           reachCountState={row.tableDerived.reachCountState}
           likeCountState={row.likeCountState}
+          commentCountState={row.tableDerived.commentCountState}
           absentCountReason={row.tableDerived.absentCountReason}
           comfortable={ctx.comfortable}
         />
