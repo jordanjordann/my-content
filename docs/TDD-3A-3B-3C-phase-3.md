@@ -1579,6 +1579,59 @@ The PRD is **wrong on `main`**. These edits are applied in the same PR as this T
 | 14.5 | §8.3 D9 | The 12-column default set is **superseded by the approved 9-column set** (§9.1); Status is cut; Style is optional and off by default. | OR-1, OR-4, OR-5 |
 | **14.6** | **§9.1 "Unmeasured risk" row; §9.2 R1, R2** | **The carousel headroom risk is measured and FALSE.** "A 10-slide carousel plus a longer prompt is the case that would actually bind" is replaced by the measured result: **~85.5% headroom on a real 10-slide carousel vs ~83% on the reel — better, not worse** (§8.4). R1 is updated from "approved but not yet captured" to **captured**, with the `-1` sentinel recorded. R2 is updated to record V2 as **uncaptured but no longer blocking**, under OR-21's conservative rule. | **OR-19, OR-20, OR-21** |
 | **14.7** | **§7 S3; §8 AC-10** | **AC-10 and S3 as written are FALSE and are corrected rather than left standing.** V4 measured non-identical output on byte-identical input at `temperature: 0`. The criterion is **narrowed to what code actually guarantees**: the **computed block** (which is deterministic because code produces it, OR-13) is byte-identical; **Gemini's judgement fields are NOT guaranteed identical**, and the drift is accepted (OR-22). An acceptance criterion known to be unpassable is worse than no criterion. | **OR-22** |
+| **14.8** | **§1.3 D8; §7; §14.7; §1.4 `MATURITY_FLOOR_HOURS`** | **D8's byte-identity is narrowed a second time: it covers MEASUREMENTS and JUDGEMENTS, and explicitly does NOT cover LIBRARY-PROGRESS INDICATORS.** The Tier 2 cold-start progress count (`tier2.sampleSize` when `tier2.multiplier IS NULL`) is a **live, read-time figure over the current library** and is **deliberately not byte-stable across two reads**. Separately, the `computeBaseline()` candidate-eligibility filter's use of the **frozen** `perf_post_age_hours` against `MATURITY_FLOOR_HOURS` is recorded as **DEFECTIVE, not intended** — see the two blocks below. | **OWNER RULING 2026-08-13 (#206)** |
+
+---
+
+### 14.8a — D8's boundary: measurements and judgements are frozen; library progress is live
+
+**Owner ruling, 2026-08-13, on #206, verbatim:** *"i think it is better for the counter to update as we analyze more no? that way the data is the most accurate as it can be."* The owner additionally approved narrowing the "nothing changes after it's saved" rule so that it covers measurements and judgements but **not** library-progress indicators.
+
+**Empirical evidence that forced the ruling** (owner's live data, creator `@giorrando`, 6 analyses — 5 reels + 1 carousel, observed simultaneously on one screen):
+
+| Post | Age at time of observation | Counter rendered |
+|---|---|---|
+| Aug 11 (analysed at ~1d old) | 1d, `Early` | **2 of 5 reels** |
+| Mar 30 | 135d | **0 of 5 reels** |
+| Mar 10 (carousel) | 155d | **0 of 5 carousels** |
+| Dec 26 | 594d | **1 of 5 reels** |
+| Aug 12 (analysed at ~20h old) | today, `Early` | **0 of 5 reels** |
+| Aug 10 (analysed at ~2d old) | 2d, `Early` | **2 of 5 reels** |
+
+Four different answers to "how many reels does this creator have?" on one screen, two of them identical-but-coincidental. Every one of those numbers was correct at its own write time. That is precisely the point: **a frozen progress indicator is not conservative, it is false about the present.**
+
+**The boundary, stated so it cannot be mistaken for a bug.** A future developer WILL find a response field that differs between two reads of an unchanged row and reach for "fix the non-determinism". That failure mode has already occurred in this codebase's history. The rule that decides it:
+
+> **A number that has a stored sentence conditioned on it is FROZEN. A number that is only a progress indicator toward a computation that has not happened yet is LIVE.**
+
+Applied:
+
+| Field | Frozen or live | Why |
+|---|---|---|
+| `reach`, `likes`, `comments`, `audience`, `tier1`, `tier3`, `postAgeHours` | **FROZEN** | Measurements of this post at its measurement instant. D8 unchanged. |
+| `tier2.median`, `tier2.sampleSize`, `tier2.multiplier` **when `multiplier != null`** | **FROZEN** | Operands of a stored multiplier. `based on {N} {noun}` is a provenance claim about a computed figure, and **R-13.3.4** requires every numeral in an explanation to exist in the computed block. Recomputing any one of the three makes the trio disagree with each other and with the stored verdict. |
+| `performanceScore`, `verdict`, `drivers[]`, `confidence`, `provisional` | **FROZEN** | Judgements. OR-22: an analysis runs once and is stored. |
+| `tier2.sampleSize` **when `multiplier == null` (`COLD_START`)** | **LIVE** | Not a measurement of the post at all. There is no multiplier and no verdict conditioned on it. It answers "how far is your library from unlocking this comparison", and **R-14.2.5** mandates the `builds as you analyse more` reassurance while **R-C4** defines the state as *temporary*. A frozen value here contradicts the state's own approved definition. |
+
+**The copy-side fix was unavailable and must not be re-proposed.** Changing the cell to admit the number is frozen would contradict R-14.2.5's mandated "resolves on its own" reassurance and R-C4's "temporary state" definition. Those two are settled; the code is what changes.
+
+**Consequential test note.** Existing D8 assertions — `tests/server/analysis/performance/readModel.test.ts:141`, `tests/api/analyses/route.test.ts:251` — legitimately need updating to carve out the cold-start progress count. Such an update is **not** a masked regression; it is this amendment landing. Any narrowing of a D8 test beyond that one field is.
+
+**Ruled and NOT reopened: `MEASURED` multipliers do not recompute.** The question was raised whether a `3.2×` computed from 5 comparators should recompute once 20 exist. It must not. The decisive reason is not cost and not screenshot-portability (both are real but secondary) — it is that the multiplier is an **input to Gemini's stored judgement**: `performance_score`, `verdict`, and `drivers[]` were produced conditioned on that multiplier. The prose cannot be recomputed without a second billed call (OR-22 — analyses run once; OR-25's no-retry stance is under separate consideration), so a recomputed multiplier would sit next to a verdict that no longer follows from it, breaking R-13.3.4 at the point it matters most. Where a better baseline now exists, the correct response is to **surface that fact**, not to silently rewrite the figure — a copy/affordance question routed to design, deliberately deferred behind OR-25.
+
+### 14.8b — `MATURITY_FLOOR_HOURS` evaluated against a frozen age is DEFECTIVE, not intended
+
+`computeBaseline()`'s candidate filter (`lib/server/analysis/performance/baseline.ts:291`) reads `AND perf_post_age_hours >= ?`. `perf_post_age_hours` is computed **once**, at analysis time (`computeBlock.ts:148-153` / `:212`), and is never recomputed. So the filter compares a **frozen** age against a floor that is meant to express "is this post old enough *now* to be a trustworthy comparator".
+
+**Consequence, confirmed empirically in the owner's only real dataset:** three of the five `@giorrando` reels were analysed while under the 72h floor (frozen at 20h / 24h / 48h). All three are **permanently ineligible as comparators, forever** — two of them are now genuinely mature in real-world time and still do not count. The counter is capped at 2 and can never reach 5 unless three further reels are analysed that are *already* over 72h old at analysis time.
+
+This makes the single most natural user behaviour — analyse a post right after publishing, to see how it did — **permanently poison that post as future baseline material**. That is not an acceptable trade; it is recorded here as a **defect**, so the ambiguity stops.
+
+**The correction, and the distinction it must preserve.** Candidate eligibility uses **live** age, derived at query time from the stored `post_date` (an ISO-8601 UTC string on both platforms — `fetcher/adapter.ts:50-57`, `fetcher/youtube.ts:75-82`). The post's **own** `perf_post_age_hours`, `perf_provisional`, and the `Early` badge stay **frozen** — those are properties of the ANALYSIS, and freezing them is exactly what makes `Early` an honest statement about when the measurement was taken. **The two must not be unified.** A row may therefore legitimately render `Early` while simultaneously serving as a mature comparator for its siblings; that is correct, not a contradiction.
+
+Eligibility must also be **monotone**: a candidate already eligible under the frozen age must never become ineligible (e.g. through an unparseable or absent `post_date`). The filter takes the **greater** of the live and frozen ages, so time can only ever add comparators, never remove them.
+
+**Blast radius.** The corrected filter runs on the write path too, so all future analyses get the right comparator set. It does **not** retroactively rewrite already-stored medians, sample sizes, or multipliers on `MEASURED` rows — those stay frozen per §14.8a. The resulting asymmetry (an old `MEASURED` row's operands were computed under the stricter frozen-age filter) is **accepted, deliberately**, and is the price of not recomputing stored judgements.
 
 ---
 
