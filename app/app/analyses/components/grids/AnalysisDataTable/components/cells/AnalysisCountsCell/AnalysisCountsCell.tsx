@@ -18,6 +18,7 @@ import type { AnalysisCountsCellProps } from "@/app/app/analyses/components/grid
 export function AnalysisCountsCell({
   reachCountState,
   likeCountState,
+  commentCountState,
   absentCountReason,
   comfortable,
 }: AnalysisCountsCellProps) {
@@ -29,7 +30,8 @@ export function AnalysisCountsCell({
       )}
       {comfortable && (
         <p className="text-xs text-muted-foreground">
-          <EngagementCount state={likeCountState} metric="likes" /> · <span aria-hidden="true">—</span>
+          <EngagementCount state={likeCountState} metric="likes" /> ·{" "}
+          <EngagementCount state={commentCountState} metric="comments" />
         </p>
       )}
     </>

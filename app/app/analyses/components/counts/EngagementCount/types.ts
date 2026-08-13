@@ -1,6 +1,6 @@
 import type { CountState } from "@/lib/api/analyses/types";
 
-export type EngagementMetric = "views" | "likes";
+export type EngagementMetric = "views" | "likes" | "comments";
 
 export type EngagementCountProps = {
   /** Already-classified state (TDD §4.1) — never pass raw counts. */

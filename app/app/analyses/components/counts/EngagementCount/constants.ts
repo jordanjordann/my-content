@@ -10,6 +10,7 @@ export const ENGAGEMENT_HIDDEN_TOOLTIP_COPY =
 export const ENGAGEMENT_METRIC_LABEL: Record<EngagementMetric, string> = {
   views: "views",
   likes: "likes",
+  comments: "comments",
 };
 
 /** Design §4 / PRD §6 — the fixed trailing word for the `plays` state, always shown. */
@@ -19,6 +20,12 @@ export const ENGAGEMENT_PLAYS_LABEL = "plays";
 export const ENGAGEMENT_HIDDEN_TRIGGER_LABEL: Record<EngagementMetric, string> = {
   views: "Why is the view count hidden?",
   likes: "Why is the like count hidden?",
+  /** Ticket #205 — `computed.comments.state` never resolves to `HIDDEN` in practice
+   * (`availability.ts`: comments are deliberately never gated by
+   * `like_and_view_counts_disabled`), so this entry only exists to keep the `Record` over
+   * `EngagementMetric` exhaustive; it mirrors the existing views/likes phrasing rather than
+   * introducing new copy. */
+  comments: "Why is the comment count hidden?",
 };
 
 /** Design §2 — info-blue, never warning/error. Non-text contrast target: WCAG 1.4.11. */

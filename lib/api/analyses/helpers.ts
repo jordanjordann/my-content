@@ -152,6 +152,28 @@ export function classifyReachCountState(reach: PerformanceComputed["reach"]): Co
   return reach.kind === "PLAYS" ? { kind: "plays", value: reach.value } : { kind: "count", value: reach.value };
 }
 
+/**
+ * Ticket #205 — the Counts cell's comfortable-density likes-line comment figure. Mirrors
+ * `classifyReachCountState` exactly: `performance.computed.comments` is already resolved
+ * server-side (`{ value, state }`, same shape as `computed.likes`), so this only maps that
+ * resolved `PerformanceAvailabilityState` onto the shared `CountState` union — the component
+ * must never branch on `computed.comments` directly. Comments have no `plays` equivalent
+ * (design §2: like counts only ever render Hidden / 0 / — / count, and comments follow the
+ * same four-state grammar) and, per `availability.ts`'s own comment, are never `HIDDEN` in
+ * practice (`like_and_view_counts_disabled` deliberately never gates comments) — the `hidden`
+ * branch below only exists so this stays exhaustive over the shared `PerformanceAvailabilityState`
+ * type rather than assuming that invariant holds forever.
+ */
+export function classifyCommentCountState(comments: PerformanceComputed["comments"]): CountState {
+  if (comments.state === "HIDDEN") return { kind: "hidden" };
+  if (comments.state === "UNKNOWN") return { kind: "unknown" };
+  if (comments.state === "ZERO") return { kind: "zero" };
+  // AVAILABLE — a value must exist by construction; if it somehow doesn't, degrade to
+  // `unknown` rather than rendering a fabricated `0`.
+  if (comments.value == null) return { kind: "unknown" };
+  return { kind: "count", value: comments.value };
+}
+
 /** TDD §9.3 / DESIGN-3B §3.1 (governing per Q4) — the tier phrase is never the raw enum. */
 function tierPhrase(tierUsed: Tier, denominator: "REACH" | "FOLLOWERS" | null): string | null {
   switch (tierUsed) {
@@ -405,6 +427,7 @@ export function deriveAnalysisTablePerformance(
 
   return {
     reachCountState: classifyReachCountState(computed.reach),
+    commentCountState: classifyCommentCountState(computed.comments),
     absentCountReason: deriveAbsentCountReason({
       unavailableReason: computed.unavailableReason,
       likeAndViewCountsDisabled,

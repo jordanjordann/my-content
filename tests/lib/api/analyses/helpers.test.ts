@@ -315,3 +315,38 @@ describe("deriveAnalysisTablePerformance — disagreementLine (ticket #147, DESI
     });
   });
 });
+
+/**
+ * Ticket #205 — `commentCountState` was never derived at all (`deriveAnalysisTablePerformance`'s
+ * return had no such field), which is how the Counts cell ended up rendering a hardcoded,
+ * unbound `—` for comments on every row. Sourced from `performance.computed.comments`, mirroring
+ * `reachCountState`'s classification from `performance.computed.reach` exactly.
+ */
+describe("deriveAnalysisTablePerformance — commentCountState (ticket #205)", () => {
+  it("a present, non-zero comment count classifies as 'count' with the real value", () => {
+    const derived = deriveAnalysisTablePerformance(performanceWith(4, 3.2), "reel", null);
+    expect(derived?.commentCountState).toEqual({ kind: "count", value: 1_204 });
+  });
+
+  it("comments.state ZERO classifies as a genuine zero, not unknown", () => {
+    const base = performanceWith(4, 3.2);
+    if (base == null) throw new Error("performanceWith never returns null in this fixture");
+    const withZeroComments: AnalysisPerformance = {
+      ...base,
+      computed: { ...base.computed, comments: { value: 0, state: "ZERO" } },
+    };
+    const derived = deriveAnalysisTablePerformance(withZeroComments, "reel", null);
+    expect(derived?.commentCountState).toEqual({ kind: "zero" });
+  });
+
+  it("comments.state UNKNOWN classifies as unknown, never a fabricated 0 or a silent dash", () => {
+    const base = performanceWith(4, 3.2);
+    if (base == null) throw new Error("performanceWith never returns null in this fixture");
+    const withUnknownComments: AnalysisPerformance = {
+      ...base,
+      computed: { ...base.computed, comments: { value: null, state: "UNKNOWN" } },
+    };
+    const derived = deriveAnalysisTablePerformance(withUnknownComments, "reel", null);
+    expect(derived?.commentCountState).toEqual({ kind: "unknown" });
+  });
+});
