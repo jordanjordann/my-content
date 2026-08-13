@@ -37,6 +37,7 @@ function baseRow(overrides: Partial<AnalysisListItem>): AnalysisListItem {
     title: "Untitled default row",
     createdAt: "2026-07-12T00:00:00.000Z",
     performance: null,
+    style: null,
     ...overrides,
   };
 }

@@ -1,10 +1,12 @@
 import { ArrowDown, ArrowUp } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { ANALYSES_TABLE_COLUMNS } from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
+import type { AnalysisTableColumnDef } from "@/app/app/analyses/components/grids/AnalysisDataTable/types";
 import type { AnalysesSortField, SortDirection } from "@/lib/api/analyses/types";
 
 type AnalysisTableColumnHeadersProps = {
+  /** Ticket #149 — the resolved, visibility-filtered display column list (table order). */
+  columns: AnalysisTableColumnDef[];
   sortBy: AnalysesSortField;
   sortDir: SortDirection;
   onSortChange: (field: AnalysesSortField) => void;
@@ -16,8 +18,13 @@ type AnalysisTableColumnHeadersProps = {
  * (design §8 — "the column headers are the only thing preventing a denominator misread;
  * they must never scroll away"). Sort headers are real `<button>`s inside `<th>` with
  * `aria-sort` set only on the active header (design §9.7 / §10).
+ *
+ * Ticket #149 — `columns` is the caller's already visibility-filtered list (the Style column,
+ * when toggled on, appends after column 9; the `Scores` group header still spans only its own
+ * two columns regardless of what else is visible).
  */
 export function AnalysisTableColumnHeaders({
+  columns,
   sortBy,
   sortDir,
   onSortChange,
@@ -30,7 +37,7 @@ export function AnalysisTableColumnHeaders({
   return (
     <thead className="sticky top-0 z-10 bg-card">
       <tr>
-        {ANALYSES_TABLE_COLUMNS.map((column) => {
+        {columns.map((column) => {
           if (column.group === "scores") {
             // Only render the group header once, on the first "scores" column.
             if (column.id !== "contentScore") return null;
@@ -66,7 +73,7 @@ export function AnalysisTableColumnHeaders({
         })}
       </tr>
       <tr>
-        {ANALYSES_TABLE_COLUMNS.filter((column) => column.group === "scores").map((column) => (
+        {columns.filter((column) => column.group === "scores").map((column) => (
           <th
             key={column.id}
             scope="col"
@@ -93,7 +100,7 @@ function ColumnHeaderLabel({
   sortDir,
   onSortChange,
 }: {
-  column: (typeof ANALYSES_TABLE_COLUMNS)[number];
+  column: AnalysisTableColumnDef;
   active: boolean;
   sortDir: SortDirection;
   onSortChange: (field: AnalysesSortField) => void;

@@ -35,6 +35,7 @@ function baseRow(overrides: Partial<AnalysisListItem>): AnalysisListItem {
     title: "Untitled default row",
     createdAt: "2026-07-12T00:00:00.000Z",
     performance: null,
+    style: null,
     ...overrides,
   };
 }
@@ -322,6 +323,87 @@ const ROW_K_ALL_IMAGE_CAROUSEL = baseRow({
   },
 });
 
+/**
+ * Row L — ticket #149 / AC-13. A genuine all-image carousel whose `tier2.bucketKey` encodes
+ * `analysisMode: "images_only"` (`platform:mediaType:analysisMode`, the same field
+ * `bucketNoun()` already parses server-side) — the real shape `deriveAnalysisMode` reads. Must
+ * render the labelled `Images only` mode chip in the Content cell (never `full_video`'s no-chip
+ * state, never colour/icon alone — WCAG 1.4.1).
+ */
+const ROW_L_IMAGES_ONLY = baseRow({
+  id: "row-l-images-only",
+  mediaType: "carousel",
+  title: "All-image carousel with a mode chip",
+  performance: {
+    computed: {
+      reach: { value: null, kind: null, derivedFrom: "NONE", state: "UNKNOWN" },
+      likes: { value: 10, state: "AVAILABLE" },
+      comments: { value: 1, state: "AVAILABLE" },
+      audience: { value: 1_000, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
+      postAgeHours: 10,
+      tier1: null,
+      tier2: { median: null, sampleSize: 0, bucketKey: "instagram:carousel:images_only", multiplier: null },
+      tier3: null,
+      tierUsed: "UNAVAILABLE",
+      confidence: "NONE",
+      confidenceReason: null,
+      provisional: false,
+      unavailableReason: "CONTENT_KIND_UNSUPPORTED",
+    },
+    judgement: { performanceScore: null, verdict: null, drivers: [] },
+  },
+});
+
+/** Row M — ticket #149 / AC-13. `metadata_only` -> the `Caption only` mode chip. */
+const ROW_M_METADATA_ONLY = baseRow({
+  id: "row-m-metadata-only",
+  mediaType: "post",
+  title: "Text-only post with a mode chip",
+  performance: {
+    computed: {
+      reach: { value: null, kind: null, derivedFrom: "NONE", state: "UNKNOWN" },
+      likes: { value: 5, state: "AVAILABLE" },
+      comments: { value: 0, state: "ZERO" },
+      audience: { value: 1_000, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
+      postAgeHours: 10,
+      tier1: null,
+      tier2: { median: null, sampleSize: 0, bucketKey: "instagram:post:metadata_only", multiplier: null },
+      tier3: null,
+      tierUsed: "UNAVAILABLE",
+      confidence: "NONE",
+      confidenceReason: null,
+      provisional: false,
+      unavailableReason: "CONTENT_KIND_UNSUPPORTED",
+    },
+    judgement: { performanceScore: null, verdict: null, drivers: [] },
+  },
+});
+
+/** Row N — `full_video` — must render NO mode chip at all (design §2.1). */
+const ROW_N_FULL_VIDEO = baseRow({
+  id: "row-n-full-video",
+  mediaType: "reel",
+  title: "Full video reel, no mode chip",
+  performance: {
+    computed: {
+      reach: { value: 1_000, kind: "VIEWS", derivedFrom: "TOP_LEVEL", state: "AVAILABLE" },
+      likes: { value: 10, state: "AVAILABLE" },
+      comments: { value: 1, state: "AVAILABLE" },
+      audience: { value: 1_000, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
+      postAgeHours: 10,
+      tier1: { denominator: "REACH", ratio: 0.01, reachKind: "VIEWS" },
+      tier2: { median: 1, sampleSize: 6, bucketKey: "instagram:reel:full_video", multiplier: 1.1 },
+      tier3: null,
+      tierUsed: "CREATOR_BASELINE",
+      confidence: "HIGH",
+      confidenceReason: null,
+      provisional: false,
+      unavailableReason: null,
+    },
+    judgement: { performanceScore: 3, verdict: "Fine.", drivers: [] },
+  },
+});
+
 const ALL_ROWS = [ROW_A_SCORED, ROW_B_COLD_START, ROW_C_SCORELESS, ROW_D_FAILED];
 
 function buildFetchMock(rows: AnalysisListItem[], capturedUrls: string[]) {
@@ -380,9 +462,11 @@ describe("AnalysisDataTable — default render (OR-1, OR-7, OR-8)", () => {
     expect(leafHeaders).toHaveLength(9);
     expect(screen.queryByRole("columnheader", { name: /style/i })).not.toBeInTheDocument();
 
-    // OR-8: no explicit `pageSize` override — relies on the server's default (50).
+    // Ticket #149 — the table now fetches the full corpus (`ANALYSES_FETCH_ALL_PAGE_SIZE`) so
+    // client-side filtering (see `AnalysisDataTable`'s own doc comment) has the whole dataset
+    // to work against, not just one server page.
     expect(capturedUrls.some((u) => u.includes("/api/analyses"))).toBe(true);
-    expect(capturedUrls.every((u) => !u.includes("pageSize"))).toBe(true);
+    expect(capturedUrls.every((u) => u.includes("pageSize=5000"))).toBe(true);
   });
 
   it("R-D1 — the footer states there is no totals row, exactly as specified, with no interaction", async () => {
@@ -632,7 +716,9 @@ describe("AnalysisDataTable — four distinct states (design §7)", () => {
   });
 
   it("empty — nothing analysed: distinct copy and action from empty-no-match", async () => {
-    const { onNewAnalysis } = renderTable([], { hasActiveFilters: false });
+    // Ticket #149 — the true unfiltered corpus (`pagination.total`) is zero, not merely a
+    // filtered-to-zero view; this is the ONLY trigger for this state now (no external boolean).
+    const { onNewAnalysis } = renderTable([]);
     expect(await screen.findByText("No analyses yet")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /analyse a post/i }));
     expect(onNewAnalysis).toHaveBeenCalledTimes(1);
@@ -640,7 +726,18 @@ describe("AnalysisDataTable — four distinct states (design §7)", () => {
   });
 
   it("empty — no rows match filters: distinct copy and action from empty-nothing", async () => {
-    const { onClearFilters } = renderTable([], { hasActiveFilters: true });
+    // Ticket #149 — the corpus is non-empty (`pagination.total` > 0 via `ALL_ROWS`), but the
+    // supplied `filters` match none of them, so `filteredCount === 0 && totalCount > 0`.
+    const { onClearFilters } = renderTable(ALL_ROWS, {
+      filters: {
+        account: ["someone-who-does-not-exist"],
+        platform: [],
+        contentKind: [],
+        tier: [],
+        status: [],
+        q: "",
+      },
+    });
     expect(await screen.findByText(/no analyses match these filters/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /clear all filters/i }));
     expect(onClearFilters).toHaveBeenCalledTimes(1);
@@ -695,5 +792,104 @@ describe("AnalysisDataTable — interaction (design §8)", () => {
     );
 
     expect(row).toHaveFocus();
+  });
+});
+
+describe("AnalysisDataTable — AC-13, the Content cell's mode chip", () => {
+  it("images_only renders the labelled 'Images only' badge in rendered text", async () => {
+    renderTable([ROW_L_IMAGES_ONLY]);
+    const row = (await screen.findByText("All-image carousel with a mode chip")).closest("tr") as HTMLElement;
+    expect(within(row).getByText("Images only")).toBeInTheDocument();
+  });
+
+  it("metadata_only renders the labelled 'Caption only' badge in rendered text", async () => {
+    renderTable([ROW_M_METADATA_ONLY]);
+    const row = (await screen.findByText("Text-only post with a mode chip")).closest("tr") as HTMLElement;
+    expect(within(row).getByText("Caption only")).toBeInTheDocument();
+  });
+
+  it("full_video renders NO mode chip at all", async () => {
+    renderTable([ROW_N_FULL_VIDEO]);
+    const row = (await screen.findByText("Full video reel, no mode chip")).closest("tr") as HTMLElement;
+    expect(within(row).queryByText("Images only")).not.toBeInTheDocument();
+    expect(within(row).queryByText("Caption only")).not.toBeInTheDocument();
+  });
+});
+
+describe("AnalysisDataTable — Columns menu (DESIGN-3C §6.3, ticket #149)", () => {
+  it("locked columns (Content, Performance, Eng. / reach, Eng. / followers) cannot be hidden through the UI", async () => {
+    renderTable();
+    await screen.findAllByRole("columnheader");
+
+    fireEvent.click(screen.getByRole("button", { name: /^columns/i }));
+
+    for (const name of [/^content$/i, /^performance$/i, /^eng\. \/ reach$/i, /^eng\. \/ followers$/i]) {
+      const option = await screen.findByRole("option", { name });
+      expect(option).toHaveAttribute("aria-selected", "true");
+      // Behavioural: actually attempt the click, not merely assert a `locked` prop exists.
+      fireEvent.click(within(option).getByRole("button"));
+      expect(option).toHaveAttribute("aria-selected", "true");
+    }
+
+    // The columns themselves stay rendered in the table — clicking did nothing.
+    expect(screen.getAllByRole("columnheader", { name: /^content$/i }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("columnheader", { name: /^performance$/i })).toBeInTheDocument();
+  });
+
+  it("hovering a locked entry shows the exact DESIGN-3C §6.3 tooltip string", async () => {
+    renderTable();
+    await screen.findAllByRole("columnheader");
+    fireEvent.click(screen.getByRole("button", { name: /^columns/i }));
+
+    const option = await screen.findByRole("option", { name: /^performance$/i });
+    fireEvent.mouseEnter(option);
+
+    // The popover primitive can briefly keep an exiting instance mounted during its own
+    // transition — assert at least one visible copy of the exact string, not exactly one.
+    const tooltips = await screen.findAllByText(
+      "Always shown — this column carries information the numbers can't be read without.",
+    );
+    expect(tooltips.length).toBeGreaterThan(0);
+  });
+});
+
+describe("AnalysisDataTable — Style column, off by default, toggled on, never persisted (Q3, OR-5, ticket #149 scope addition)", () => {
+  it("Style is absent on first render", async () => {
+    renderTable();
+    await screen.findAllByRole("columnheader");
+    expect(screen.queryByRole("columnheader", { name: /^style$/i })).not.toBeInTheDocument();
+  });
+
+  it("toggling Style on from the Columns menu makes the column appear", async () => {
+    renderTable();
+    await screen.findAllByRole("columnheader");
+
+    fireEvent.click(screen.getByRole("button", { name: /^columns/i }));
+    const styleOption = await screen.findByRole("option", { name: /^style$/i });
+    fireEvent.click(within(styleOption).getByRole("button"));
+
+    expect(await screen.findByRole("columnheader", { name: /^style$/i })).toBeInTheDocument();
+  });
+
+  it("does NOT persist across a simulated remount — Style resets to hidden, and nothing is written to storage", async () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
+
+    const { unmount } = renderTable();
+    await screen.findAllByRole("columnheader");
+    fireEvent.click(screen.getByRole("button", { name: /^columns/i }));
+    const styleOption = await screen.findByRole("option", { name: /^style$/i });
+    fireEvent.click(within(styleOption).getByRole("button"));
+    await screen.findByRole("columnheader", { name: /^style$/i });
+
+    unmount();
+
+    // Remount fresh — simulates a reload / navigate-away-and-back.
+    renderTable();
+    await screen.findAllByRole("columnheader");
+    expect(screen.queryByRole("columnheader", { name: /^style$/i })).not.toBeInTheDocument();
+
+    // No `localStorage`/`sessionStorage` write anywhere in the toggle path (OR-5's hard rule).
+    expect(setItemSpy).not.toHaveBeenCalled();
+    setItemSpy.mockRestore();
   });
 });

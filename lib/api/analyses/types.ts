@@ -23,6 +23,16 @@ export type AnalysisPlatform = "instagram" | "youtube";
 export type AnalysisStatus = "pending" | "completed" | "failed";
 
 /**
+ * Ticket #149 — mirrors the server's `analysis_mode`
+ * (`lib/server/analysis/performance/baseline.ts`'s `AnalysisMode`), which is not itself
+ * importable client-side (`lib/server/*`). Duplicated here rather than imported, the same
+ * posture `bucketNoun()` (`lib/api/analyses/helpers.ts`) already takes for the same reason.
+ * DESIGN-3C §2.1: `full_video` renders no mode chip; `images_only`/`metadata_only` render
+ * `Images only`/`Caption only` (AC-13).
+ */
+export type AnalysisMode = "full_video" | "images_only" | "metadata_only";
+
+/**
  * Classified engagement-count state (TDD §4.1, docs/archive/specs/TDD-engagement-count-display-states.md).
  * Derived once in the query-hook `select` layer from raw `viewCount`/`playCount`/
  * `likeCount`/`likeAndViewCountsDisabled` — components must never branch on the raw
@@ -193,6 +203,15 @@ export type AnalysisTableDerivedPerformance = {
    * not in the popover component — same rule PR #198 established for the tier phrase.
    */
   disagreementLine: string | null;
+  /**
+   * Ticket #149 / DESIGN-3C §2.1 — parsed from `performance.computed.tier2.bucketKey`'s
+   * `platform:mediaType:analysisMode` segments (the same field `bucketNoun()` already parses),
+   * never guessed and never a new stored/fetched field. `null` when `tier2` itself is `null`
+   * (no performance block, or a pre-schema-3 row) — the Content cell renders no mode chip in
+   * that case rather than fabricate one. Drives the Content cell's mode chip (AC-13) — `Caption
+   * only` for `metadata_only`, `Images only` for `images_only`, no chip for `full_video`.
+   */
+  analysisMode: AnalysisMode | null;
 };
 
 /** Ticket #144 (TDD §9.6) — server-side sortable fields. */
@@ -246,6 +265,14 @@ export type AnalysisListItem = {
   createdAt: string;
   /** Ticket #144 (TDD §7) — purely additive. `null` only for pre-schema-3 rows (none exist post-012). */
   performance: AnalysisPerformance;
+  /**
+   * Ticket #149 — `formatArchetype`/`hookType` for the optional Style column (Q3, DESIGN-3C
+   * §6.3, OR-5). Purely additive: `result_content` was already being fetched and parsed for
+   * `overallScore`/`scorecard` (`app/api/analyses/route.ts`'s `parseResultContent`) — this
+   * lifts `style` out the same way, no new DB read, no schema change. `null` when no analysis
+   * result exists yet (pending/failed) or the row predates the redesign.
+   */
+  style: StyleAttributes | null;
 };
 
 /**

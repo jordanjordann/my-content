@@ -162,18 +162,18 @@ export function AnalysesContent() {
           </div>
         )}
 
-        {/* Ticket #145 — the table now owns its own fetch (server-side pagination/sort,
-            OR-8) and renders all four states (loading/empty/error) inside its own frame
-            with the header intact (design §7), so it is rendered unconditionally here.
-            `hasActiveFilters`/`onClearFilters` bridge this page's existing client-side
-            filter bar (above) into the table's two distinct empty states; wiring real
-            filters into the table's own server-side query is ticket #149's scope. */}
+        {/* Ticket #145 — the table owns its own fetch and renders all four states (loading/
+            empty/error) inside its own frame with the header intact (design §7). Ticket #149 —
+            `filters` (this page's URL-sourced filter state, `useAnalysisFilters` above) is now
+            applied for real inside the table (see `AnalysisDataTable`'s own doc comment for the
+            fetch-strategy trade this makes); `onClearFilters` still drives the empty-no-match
+            state's action. */}
         <AnalysisDataTable
           onAnalysisClick={handleOpenDetail}
           onNewAnalysis={() => setModalOpen(true)}
           openAnalysisId={detailId}
-          hasActiveFilters={anyActive}
           onClearFilters={clearAll}
+          filters={filters}
         />
 
         <NewAnalysisModal

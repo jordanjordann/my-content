@@ -4,10 +4,15 @@ import { FilterChip } from "@/app/app/analyses/components/sections/AnalysisFilte
 import type { ActiveFilterRowProps } from "@/app/app/analyses/components/sections/AnalysisFilterSection/types";
 import type { FilterOption } from "@/app/app/analyses/types";
 
-/** Human-readable chip label per dimension — internal `FilterDimension` values are lowercase. */
+/**
+ * Human-readable chip label per dimension — internal `FilterDimension` values are lowercase.
+ * `account` renders as `Creator` (DESIGN-3C §6.2), matching `AnalysisFilterSection`'s trigger label.
+ */
 const DIMENSION_CHIP_LABELS = {
-  account: "Account",
+  account: "Creator",
   platform: "Platform",
+  contentKind: "Content kind",
+  tier: "Tier",
   status: "Status",
   keyword: "Search",
 } as const;
@@ -24,8 +29,9 @@ function resolveChipLabel(options: FilterOption[], value: string): string {
 
 /**
  * Secondary row of removable chips beneath the filter bar, one per active filter value. Fixed
- * dimension order — Account, then Platform, then Status, then the Search chip last — regardless
- * of the order the user selected them, so the row never visually reshuffles (design §5.2).
+ * dimension order — Creator, Platform, Content kind, Tier, Status, then the Search chip last —
+ * regardless of the order the user selected them, so the row never visually reshuffles (design
+ * §5.2, §6.2).
  *
  * Stateless and mount-agnostic: the parent decides whether this renders at all (only when at
  * least one filter or the keyword is active).
@@ -53,6 +59,22 @@ export function ActiveFilterRow({
           dimensionLabel={DIMENSION_CHIP_LABELS.platform}
           valueLabel={resolveChipLabel(counts.platform, value)}
           onRemove={() => onRemove("platform", value)}
+        />
+      ))}
+      {filters.contentKind.map((value) => (
+        <FilterChip
+          key={`contentKind-${value}`}
+          dimensionLabel={DIMENSION_CHIP_LABELS.contentKind}
+          valueLabel={resolveChipLabel(counts.contentKind, value)}
+          onRemove={() => onRemove("contentKind", value)}
+        />
+      ))}
+      {filters.tier.map((value) => (
+        <FilterChip
+          key={`tier-${value}`}
+          dimensionLabel={DIMENSION_CHIP_LABELS.tier}
+          valueLabel={resolveChipLabel(counts.tier, value)}
+          onRemove={() => onRemove("tier", value)}
         />
       ))}
       {filters.status.map((value) => (

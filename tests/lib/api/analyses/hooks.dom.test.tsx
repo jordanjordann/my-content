@@ -53,6 +53,7 @@ function makeAnalysis(index: number): AnalysisListItem {
     title: null,
     createdAt: postDate,
     performance: null,
+    style: null,
   };
 }
 

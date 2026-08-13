@@ -1,4 +1,5 @@
 import type { AnalysesSortField, AnalysisListItemIndexed, SortDirection } from "@/lib/api/analyses/types";
+import type { AnalysisFilters } from "@/app/app/analyses/types";
 
 export type AnalysisTableDensity = "comfortable" | "compact";
 
@@ -26,15 +27,15 @@ export type AnalysisDataTableProps = {
    * skeleton needs from the parent to satisfy the focus-return requirement.
    */
   openAnalysisId?: string | null;
-  /**
-   * Whether any filter is currently active — distinguishes the two empty states
-   * (design §7: "Empty — nothing analysed" vs "Empty — no rows match filters"). Real
-   * filters are ticket #149's scope; this ticket only needs to render the two states
-   * correctly. Defaults to `false` (no filters exist yet on this page).
-   */
-  hasActiveFilters?: boolean;
   /** "Clear all filters" action for the empty-no-match state. */
   onClearFilters?: () => void;
+  /**
+   * Ticket #149 — the active filter set (Creator/Platform/Content kind/Tier/Status/keyword),
+   * applied client-side against the full fetched corpus (see `AnalysisDataTable`'s own doc
+   * comment for why). Defaults to "no filters" so this table still renders standalone in tests
+   * that don't exercise filtering.
+   */
+  filters?: AnalysisFilters;
 };
 
 /** Internal grouping of one loaded page's rows (design §3.3, §6.1 — R-S1/R-S2). */

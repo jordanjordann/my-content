@@ -55,6 +55,7 @@ function buildRow(performance: AnalysisPerformance): AnalysisListItemIndexed {
     title: "Nasi Goreng Kampung",
     createdAt: "2026-07-12T00:00:00.000Z",
     performance,
+    style: null,
     searchText: "",
     viewCountState: { kind: "count", value: 482_100 },
     likeCountState: { kind: "count", value: 31_412 },

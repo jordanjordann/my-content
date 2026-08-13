@@ -4,7 +4,13 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import type { AnalysisListItemIndexed } from "@/lib/api/analyses/types";
-import { KEYWORD_DEBOUNCE_MS, PLATFORM_OPTIONS, STATUS_OPTIONS } from "@/app/app/analyses/constants";
+import {
+  CONTENT_KIND_OPTIONS,
+  KEYWORD_DEBOUNCE_MS,
+  PLATFORM_OPTIONS,
+  STATUS_OPTIONS,
+  TIER_OPTIONS,
+} from "@/app/app/analyses/constants";
 import {
   anyActive,
   buildFilterQueryString,
@@ -107,7 +113,7 @@ export function useAnalysisFilters() {
 
   const clearAll = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    writeFilters({ account: [], platform: [], status: [], q: "" });
+    writeFilters({ account: [], platform: [], contentKind: [], tier: [], status: [], q: "" });
   }, [writeFilters]);
 
   return {
@@ -179,6 +185,20 @@ export function useFilteredAnalyses(
         value: option.value,
         label: option.label,
         count: countFor("status", option.value, (item) => item.status),
+      })),
+      contentKind: CONTENT_KIND_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.label,
+        count: countFor("contentKind", option.value, (item) => item.mediaType),
+      })),
+      // Tier's `getValue` reads `performance.computed.tierUsed`, falling back to a sentinel
+      // that matches no option's `value` for rows with no `performance` block at all — those
+      // rows are excluded from every Tier count the same way `matchesDimensions` excludes them
+      // from every Tier match (helpers.ts).
+      tier: TIER_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.label,
+        count: countFor("tier", option.value, (item) => item.performance?.computed.tierUsed ?? "__NONE__"),
       })),
     };
 

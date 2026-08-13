@@ -2,6 +2,7 @@ import type {
   AnalysisListItemIndexed,
   AnalysisPlatform,
   AnalysisStatus,
+  Tier,
 } from "@/lib/api/analyses/types";
 
 export type AnalysisCardProps = {
@@ -29,13 +30,26 @@ export type NewAnalysisModalProps = {
   isAnalyzing: boolean;
 };
 
-/** The three multi-select filter dimensions on the analyses list. */
-export type FilterDimension = "account" | "platform" | "status";
+/**
+ * The five multi-select filter dimensions on the analyses list (DESIGN-3C §6.2, TDD §9.6):
+ * Creator (`account`) · Platform · Content kind · Tier · Status. Order here matches the chip
+ * bar's left-to-right rendering order. The Status *filter* survives OR-4's Status *column* cut
+ * — two different things (design §6.2's own note).
+ */
+export type FilterDimension = "account" | "platform" | "contentKind" | "tier" | "status";
 
 /** Current filter state, parsed from URL params. The URL is the source of truth. */
 export type AnalysisFilters = {
   account: string[];
   platform: AnalysisPlatform[];
+  /** `AnalysisListItemIndexed["mediaType"]` values — the only content-kind signal on this row shape. */
+  contentKind: AnalysisListItemIndexed["mediaType"][];
+  /**
+   * `Tier` values (`lib/api/analyses/types.ts`) — reused directly rather than a parallel
+   * filter-only enum, per the ticket's own instruction not to re-derive a second mapping.
+   * `UNAVAILABLE` is this filter's `No score` option (DESIGN-3C §6.2).
+   */
+  tier: Tier[];
   status: AnalysisStatus[];
   q: string;
 };
