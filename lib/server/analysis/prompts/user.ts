@@ -294,6 +294,9 @@ function resolvePerformanceAssessment(
     lines.push(
       `- ANGKA_ENGAGEMENT is the ONLY number you may quote anywhere in your output. Never restate, compute, or estimate any other number — not duration, resolution, post date, slide count, a specific slide's number, or any other figure appearing elsewhere in this prompt.`,
     );
+    lines.push(
+      `- This ban covers EVERY percentage, rate, or ratio claim, not just a bare restated number. Do NOT invent a second, unsanctioned "rate"/"ratio" claim dressed up as a qualitative description — for example "view rate yang melebihi 100%", "tingkat engagement di atas rata-rata industri", or "rasio views terhadap followers sangat tinggi" — even in the SAME sentence where ANGKA_ENGAGEMENT is quoted correctly. Quoting ANGKA_ENGAGEMENT verbatim does NOT license adding any other numeric claim next to it, however it is phrased: as a bare number, as a comparison, as an "exceeds/surpasses/di atas/di bawah X%" construction, or as an "X% dari Y" claim. If you have no real figure to support a claim, describe it in words only, with NO number or percentage attached to it.`,
+    );
   } else {
     lines.push(
       `- No engagement figure is available for this post. Never restate, compute, or estimate ANY number from this prompt — not duration, resolution, post date, slide count, a specific slide's number, or any other figure.`,

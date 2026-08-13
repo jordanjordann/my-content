@@ -258,6 +258,21 @@ describe("buildUserPrompt — performance assessment block (TDD §8.1, ticket #1
     expect(prompt).toContain("ANGKA_ENGAGEMENT is the ONLY number you may quote anywhere in your output.");
   });
 
+  it("forbids inventing a second, unsanctioned rate/ratio claim even when ANGKA_ENGAGEMENT is quoted correctly elsewhere (live bug: fabricated 'view rate melebihi 100%')", () => {
+    const metadata = baseMetadata({
+      viewCount: 482_100,
+      likeCount: 15_000,
+      commentCount: 5_000,
+    });
+
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
+
+    expect(prompt).toContain(
+      "This ban covers EVERY percentage, rate, or ratio claim, not just a bare restated number.",
+    );
+    expect(prompt).toContain('view rate yang melebihi 100%');
+  });
+
   it("when ANGKA_ENGAGEMENT is unavailable, forbids restating ANY number from the prompt (S2)", () => {
     const metadata = baseMetadata({
       viewCount: null,
