@@ -108,6 +108,26 @@ describe("AnalysisCountsCell — ticket #205's comment count", () => {
     expect(container.textContent).toContain("31.4K · 1.2K");
   });
 
+  /**
+   * PR #210 review N9 — the comment `zero` state at comfortable density was untested
+   * end-to-end. This pins the CURRENT rendered output (a bare "0" alongside the likes
+   * figure) so it cannot silently drift; whether a bare "0" is the right treatment for a
+   * genuine zero comment count is an owner/designer call, not one made here.
+   */
+  it("a genuine zero comment count renders a bare '0' on the likes line (pinned, not a design decision)", () => {
+    const { container } = render(
+      <AnalysisCountsCell
+        reachCountState={{ kind: "count", value: 500_000 }}
+        likeCountState={{ kind: "count", value: 31_400 }}
+        commentCountState={{ kind: "zero" }}
+        absentCountReason="NOT_AVAILABLE"
+        comfortable
+      />,
+    );
+
+    expect(container.textContent).toContain("31.4K · 0");
+  });
+
   it("an absent comment count (state UNKNOWN) announces 'comments unknown' via role=img, not a bare unlabelled dash", () => {
     render(
       <AnalysisCountsCell

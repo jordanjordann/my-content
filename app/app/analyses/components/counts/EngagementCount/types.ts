@@ -18,5 +18,10 @@ export type EngagementCountProps = {
 };
 
 export type CountInfoTooltipProps = {
-  metric: EngagementMetric;
+  /**
+   * `comments` is excluded at the type level: `computed.comments.state` never resolves
+   * to `hidden` (ticket #205 — comments are never gated by `like_and_view_counts_disabled`),
+   * so this trigger has no accessible-name copy for it and must never be asked to render one.
+   */
+  metric: Exclude<EngagementMetric, "comments">;
 };

@@ -16,16 +16,16 @@ export const ENGAGEMENT_METRIC_LABEL: Record<EngagementMetric, string> = {
 /** Design §4 / PRD §6 — the fixed trailing word for the `plays` state, always shown. */
 export const ENGAGEMENT_PLAYS_LABEL = "plays";
 
-/** Accessible names for the `hidden` info trigger (design §7) — a question, not a label. */
-export const ENGAGEMENT_HIDDEN_TRIGGER_LABEL: Record<EngagementMetric, string> = {
+/**
+ * Accessible names for the `hidden` info trigger (design §7) — a question, not a label.
+ * No `comments` entry: `computed.comments.state` never resolves to `hidden` (ticket #205 —
+ * comments are deliberately never gated by `like_and_view_counts_disabled`), so there is no
+ * approved copy for it. `Exclude` keeps the `Record` exhaustive over the metrics that can
+ * actually reach this trigger without inventing a placeholder string for one that can't.
+ */
+export const ENGAGEMENT_HIDDEN_TRIGGER_LABEL: Record<Exclude<EngagementMetric, "comments">, string> = {
   views: "Why is the view count hidden?",
   likes: "Why is the like count hidden?",
-  /** Ticket #205 — `computed.comments.state` never resolves to `HIDDEN` in practice
-   * (`availability.ts`: comments are deliberately never gated by
-   * `like_and_view_counts_disabled`), so this entry only exists to keep the `Record` over
-   * `EngagementMetric` exhaustive; it mirrors the existing views/likes phrasing rather than
-   * introducing new copy. */
-  comments: "Why is the comment count hidden?",
 };
 
 /** Design §2 — info-blue, never warning/error. Non-text contrast target: WCAG 1.4.11. */

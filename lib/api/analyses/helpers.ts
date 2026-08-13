@@ -57,6 +57,19 @@ export function toProxiedThumbnail(
 }
 
 /**
+ * Shared terminal guard for a raw view/play count, mirroring `resolveFromCount`
+ * (`lib/server/analysis/performance/availability.ts`) — that module lives under
+ * `lib/server` and is not importable from a client component, so this reproduces its
+ * rule exactly rather than diverging: non-finite collapses to "unusable", and OR-20 rule
+ * 2 ("any count < 0 from any source") also collapses to "unusable". `0` passes through
+ * unchanged — it is a genuine measured zero, not a sentinel.
+ */
+function sanitizeCount(value: number | null): number | null {
+  if (value == null || !Number.isFinite(value) || value < 0) return null;
+  return value;
+}
+
+/**
  * Classifies a view count into a `CountState` (TDD §4.2). Ordering is load-bearing —
  * do not reorder:
  *
@@ -70,6 +83,15 @@ export function toProxiedThumbnail(
  * 3. `viewCount === 0` (with no usable play count) is a genuine measured zero.
  * 4. `viewCount == null` (with no usable play count) is unknown / never fetched.
  * 5. Otherwise it is a normal non-zero count.
+ *
+ * PR #210 review B4 — `viewCount`/`playCount` are RAW client-side fields, the same ones
+ * `resolveInstagramLikeAvailability`'s OR-20 rule 2 guards server-side, and the same `-1`
+ * sentinel `classifyLikeCount` guards above (a genuinely counts-disabled Instagram post can
+ * carry it, present and populated, if `like_and_view_counts_disabled` is itself
+ * absent/stripped). Both `viewCount` and `playCount` are run through `sanitizeCount` before
+ * any branch reads them, so a negative or non-finite value on either field degrades to
+ * "unusable" (folded into the existing `null` branches below) instead of reaching the UI as
+ * a fabricated count or a fabricated `plays` value.
  */
 export function classifyViewCount(input: {
   viewCount: number | null;
@@ -77,16 +99,16 @@ export function classifyViewCount(input: {
   likeAndViewCountsDisabled: boolean | null;
 }): CountState {
   if (input.likeAndViewCountsDisabled === true) return { kind: "hidden" };
-  if (
-    (input.viewCount === 0 || input.viewCount == null) &&
-    input.playCount != null &&
-    input.playCount > 0
-  ) {
-    return { kind: "plays", value: input.playCount };
+
+  const viewCount = sanitizeCount(input.viewCount);
+  const playCount = sanitizeCount(input.playCount);
+
+  if ((viewCount === 0 || viewCount == null) && playCount != null && playCount > 0) {
+    return { kind: "plays", value: playCount };
   }
-  if (input.viewCount === 0) return { kind: "zero" };
-  if (input.viewCount == null) return { kind: "unknown" };
-  return { kind: "count", value: input.viewCount };
+  if (viewCount === 0) return { kind: "zero" };
+  if (viewCount == null) return { kind: "unknown" };
+  return { kind: "count", value: viewCount };
 }
 
 /**

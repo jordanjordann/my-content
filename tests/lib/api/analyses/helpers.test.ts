@@ -112,6 +112,55 @@ describe("classifyViewCount", () => {
       classifyViewCount({ viewCount: null, playCount: null, likeAndViewCountsDisabled: false }),
     ).toEqual({ kind: "unknown" });
   });
+
+  /**
+   * PR #210 review B4 — the same `-1` sentinel (OR-20) `classifyLikeCount` guards is
+   * reachable through `viewCount` on the identical code path (`adapter.ts` -> `hooks.ts`
+   * -> `classifyViewCount` -> `formatAbbrev(-1)`, which renders the literal string "-1").
+   */
+  it("a negative viewCount (the -1 sentinel, OR-20) resolves to unknown, never a negative count", () => {
+    expect(
+      classifyViewCount({ viewCount: -1, playCount: null, likeAndViewCountsDisabled: false }),
+    ).toEqual({ kind: "unknown" });
+  });
+
+  it("a negative viewCount with likeAndViewCountsDisabled absent (null) is still unknown, not hidden and not a fabricated count", () => {
+    expect(
+      classifyViewCount({ viewCount: -1, playCount: null, likeAndViewCountsDisabled: null }),
+    ).toEqual({ kind: "unknown" });
+  });
+
+  it("a non-finite viewCount (NaN) resolves to unknown, never NaN rendered downstream", () => {
+    expect(
+      classifyViewCount({ viewCount: NaN, playCount: null, likeAndViewCountsDisabled: false }),
+    ).toEqual({ kind: "unknown" });
+  });
+
+  /**
+   * PR #210 review B4 — `playCount` has the identical hole: a negative playCount must
+   * never reach the UI as `{ kind: "plays", value: -1 }` ("-1 plays"). Uses
+   * `viewCount: null` so State 4's own `playCount > 0` guard is proven insufficient on
+   * its own (a naive fix might rely on that comparison alone, which a negative number
+   * also fails, but does nothing for a case like `playCount: -1` reached via a viewCount
+   * that is itself 0/null and otherwise valid — this pins the sanitize step directly).
+   */
+  it("a negative playCount (the -1 sentinel) resolves to unknown, never a negative plays value", () => {
+    expect(
+      classifyViewCount({ viewCount: null, playCount: -1, likeAndViewCountsDisabled: false }),
+    ).toEqual({ kind: "unknown" });
+  });
+
+  it("a negative playCount with viewCount=0 resolves to zero, not a fabricated plays value", () => {
+    expect(
+      classifyViewCount({ viewCount: 0, playCount: -1, likeAndViewCountsDisabled: false }),
+    ).toEqual({ kind: "zero" });
+  });
+
+  it("a non-finite playCount (Infinity) never leaks through as a fabricated plays value", () => {
+    expect(
+      classifyViewCount({ viewCount: 0, playCount: Infinity, likeAndViewCountsDisabled: false }),
+    ).toEqual({ kind: "zero" });
+  });
 });
 
 describe("classifyLikeCount", () => {
@@ -167,6 +216,17 @@ describe("classifyLikeCount", () => {
 
   it("a negative likeCount with likeAndViewCountsDisabled absent (null) is still unknown, not hidden and not a fabricated count", () => {
     expect(classifyLikeCount({ likeCount: -1, likeAndViewCountsDisabled: null })).toEqual({
+      kind: "unknown",
+    });
+  });
+
+  /**
+   * PR #210 review N7 — `!Number.isFinite(input.likeCount)` had no test of its own; the
+   * `< 0` clause alone was sufficient to pass every existing case. Pins the non-finite
+   * branch directly so it can't silently regress.
+   */
+  it("a non-finite likeCount (NaN) resolves to unknown, never NaN rendered downstream", () => {
+    expect(classifyLikeCount({ likeCount: NaN, likeAndViewCountsDisabled: false })).toEqual({
       kind: "unknown",
     });
   });
