@@ -56,6 +56,7 @@ export function AnalysisTableColumnHeaders({
           return (
             <th
               key={column.id}
+              data-column-id={column.id}
               rowSpan={2}
               scope="col"
               style={{ width: column.width, minWidth: column.width }}
@@ -76,6 +77,7 @@ export function AnalysisTableColumnHeaders({
         {columns.filter((column) => column.group === "scores").map((column) => (
           <th
             key={column.id}
+            data-column-id={column.id}
             scope="col"
             style={{ width: column.width, minWidth: column.width }}
             aria-sort={ariaSortFor(column.sortField)}

@@ -853,14 +853,23 @@ describe("AnalysisDataTable — Columns menu (DESIGN-3C §6.3, ticket #149)", ()
   // of the four locked columns individually — the prior version of this test only re-checked
   // Content/Performance at the very end, never the two engagement columns R-12.3.1 exists to
   // protect.
+  //
+  // PR #203 round-3 review — the accessible-name lookup (`getAllByRole("columnheader", { name:
+  // /^content$/i })`) was UNFALSIFIABLE specifically for the "content" case: it is also
+  // satisfied by the unrelated Scores group's "Content" sub-header (`contentScore`, see
+  // `ANALYSES_TABLE_COLUMNS`), so removing the actual `content` column's `<th>` still left a
+  // match and the assertion could never fail. `AnalysisTableColumnHeaders` now stamps every
+  // leaf `<th>` with `data-column-id={column.id}` specifically so this test can target the
+  // real column's own header cell, independent of any accessible-name collision with a
+  // same-labelled sibling.
   it.each([
-    { name: /^content$/i, header: /^content$/i },
-    { name: /^performance$/i, header: /^performance$/i },
-    { name: /^eng\. \/ reach$/i, header: /^eng\. \/ reach$/i },
-    { name: /^eng\. \/ followers$/i, header: /^eng\. \/ followers$/i },
+    { name: /^content$/i, columnId: "content" },
+    { name: /^performance$/i, columnId: "performance" },
+    { name: /^eng\. \/ reach$/i, columnId: "engagementReach" },
+    { name: /^eng\. \/ followers$/i, columnId: "engagementFollowers" },
   ])(
     "locked column '$name' cannot be hidden through the UI — its header stays rendered after the click",
-    async ({ name, header }) => {
+    async ({ name, columnId }) => {
       renderTable();
       await screen.findAllByRole("columnheader");
 
@@ -871,12 +880,11 @@ describe("AnalysisDataTable — Columns menu (DESIGN-3C §6.3, ticket #149)", ()
       // Behavioural: actually attempt the click, not merely assert a `locked` prop exists.
       fireEvent.click(within(option).getByRole("button"));
 
-      // Falsifiable: the column's header must still be IN THE DOM — this would fail if the
-      // click genuinely hid the column, unlike `aria-selected`, which cannot fail for a locked
-      // column no matter what the click did. "Content" also matches the Scores group's
-      // "Content score" sub-header (same label by design, see `menuColumns`'s own doc comment),
-      // so use `getAllByRole` there rather than assume exactly one match.
-      expect(screen.getAllByRole("columnheader", { name: header }).length).toBeGreaterThan(0);
+      // Falsifiable: the column's OWN header cell, identified by `data-column-id`, must still
+      // be in the DOM. Unlike an accessible-name lookup, this cannot be satisfied by a
+      // different, same-labelled header (e.g. the Scores group's "Content" sub-header for
+      // `contentScore`) — it fails if, and only if, this specific column's `<th>` is gone.
+      expect(document.querySelector(`th[data-column-id="${columnId}"]`)).toBeInTheDocument();
     },
   );
 
