@@ -26,6 +26,7 @@
 
 | **B7** | 2026-08-13 | **New §4.6 — copy for two column-level tooltips, one on `Eng. / reach` and one on `Eng. / followers`**, each giving the operand stack (`Likes + comments` over an em-rule over the denominator), what the percentage answers in words, and a matched closing sentence naming the *other* column's denominator. **T2 additionally explains the `≈`** — the cached follower count, in the same `up to a week old` terms §4.3 already uses. The affordance, its placement and its accessible name are specified in the companion's new **§4.2**; this section is the home for the strings only. | **Direct owner request, 2026-08-13:** *"please make a tooltip to explain the formula of eng/reach and eng/followers."* The two columns are structurally separated (companion §4, Direction A) but nothing ever explained what each is divided by, so the reader could see that they differ without being able to say how. **No numeral appears in either string** — they are attached to a column, not a row, so no computed block licenses a figure, and **R-13.3.4**'s ban on a worked division is honoured by following #147's operand-list-plus-em-rule precedent rather than performing the calculation. Both are **L2 only**: the denominator is already on every cell at L1 in the qualifier, so **R-13.6.2** is not engaged — nothing required to prevent a misread moves behind a hover. **No copy string outside §4.6 changes**, and no colour, component, width or density changes. *(Owner request, 2026-08-13 session.)* |
 
+| **B9** | 2026-08-13 | **PROPOSED — awaiting owner sign-off; nothing in it may be built until the owner approves it.** **New §4.7 — the comment count that has no number, and the Counts column tooltip.** (a) **`HIDDEN` is ruled unreachable for a comment count**, verified in code rather than assumed (§4.7.1): both comment resolvers are bare `resolveFromCount`, which emits only `AVAILABLE`/`ZERO`/`UNKNOWN`; the state is re-derived at read time so it cannot be inherited from an old row; and nothing in `lib/` reads `comments_disabled`. **So no comments `hidden` copy is written** — the §5.5 / `INSUFFICIENT_HISTORY` discipline applied to a new state. (b) The invented string **`Why is the comment count hidden?`** is **withdrawn and preserved verbatim**, and **`ENGAGEMENT_HIDDEN_TOOLTIP_COPY` is ruled scoped to `like_and_view_counts_disabled`** — approved, unchanged, and never to be rendered for comments. (c) The reachable state is `unknown`, and it renders **no new string**: the shipped `—` plus its generated accessible name **`comments unknown`** (`S-C1`), the only new word being the metric noun `comments`. (d) The explanation the state was missing becomes **one column-header tooltip, `T3`**, in two density variants, with the trigger name `What do the counts in this column mean?`. Affordance is the companion's new **§4.3**. | **PR [#210](https://github.com/jordanjordann/my-content/pull/210) review, note N1.** A developer needed a label for a comment count with no number, found none, and wrote one — inventing user-facing copy, which is a hard stop here. The invented string was also wired to the views/likes sentence, so the app would have answered *"why is there no comment number?"* with *"the creator turned off view and like counts"*. That pairing is the **R-13.5.3a** failure in its purest form, and the fix is **not** a comments-shaped rewrite of it: the state it describes cannot occur, and copy for an undemonstrable state publishes a meaning we cannot stand behind. What the reader actually lacks is an explanation of the `—`, which is a property of the **column** — so it goes in the header, adding **zero** glyphs per row and honouring the **#147 one-`ⓘ`-per-row ruling** on the merits (companion §4.3). **R-13.3.4 checked: no division is performed or shown** — the Counts column divides nothing. **No stored value, no enum, no colour value, no component, no column, no width, no density, no sort or filter behaviour changes**, and no approved string is edited. *(PR #210 review note N1; owner request, 2026-08-13 session.)* |
 | **B8** | 2026-08-13 | **§5 gains rows 8 and 9, and new §5.5 rules the three states that render a bare `—`.** **Row 8** — the judgement returned no 1–5 over an intact computed block: L1 **`No 1–5 for this post`**, L2 naming the measurements as unaffected and refusing to guess at a cause. **Row 9** — no performance block exists at all: L1 **`Performance wasn't measured`**, L2 naming both possible histories and saying we cannot tell which. **`INSUFFICIENT_HISTORY` deliberately gets no copy** and keeps the `—`. §5.5 also fixes the affordance: row 8 keeps the row's single `ⓘ` with a heading/intro swap inside the popover, row 9 carries none. The `All eight` count is corrected to **`All ten`**. **Rows 1–7 and 3b are untouched and row numbering is unchanged.** | **Direct owner request, 2026-08-13:** *"Also a little explanation about why the performance score is '-' rather than just '-'."* This is the copy PR #198's round-3 review **deliberately deferred** — it ruled the muted `—` correct *"because no approved copy exists for those states and inventing one is worse"*, and forbade a developer from writing it. **R-13.5.3a decides the shape**: the three states are three different facts (the model declined to score; nothing was ever measured; a state no user can reach), so they cannot share a sentence. Row 8's `null` score is documented in the response contract as *"an expected state … not a parse failure"*, and the owner's Aug 12 reel carries a confident quantified verdict beside it — so *"the model didn't reach a judgement"* is true there and *"there's no data"* is false. Row 8's refusal to name a cause is the **`CAUSE_NOT_DETERMINABLE`** discipline applied to a new state, and its `We can't tell` clause carries the same protection as string 3's (R-13.5.3b). `INSUFFICIENT_HISTORY` gets no sentence because it is **never produced**: copy for it would publish a meaning the system cannot demonstrate, and its most natural wording is either the cold-start state's job or the un-nouned creator-level framing **R-C1** forbids. **No stored enum value, colour value, component, layout, density or interaction changes**, and `AC-30`'s four cases and negative assertion are untouched. *(Owner request, 2026-08-13 session; PR #198 review round 3.)* |
 
 **B1 reopens no settled decision.** It is a copy correction consequent on rules ruled on *after* this document was written, and it brings this document into line with wording already merged in the companion spec's §5.3. No colour value, component, layout, density or interaction changes.
@@ -326,6 +327,88 @@ That footer is unconditional. It is repetitive and I want it that way — it is 
 - **`views or plays`, never `views` alone.** The reach kind word is mandatory and matches the stored kind (R-4.3.1, R-13.2.5). A column-level string cannot know which kind a given row carries, so it names both — it must never resolve the ambiguity by picking one.
 - **Neither string states a threshold, an hour count or a settling window** (R-13.4.4), and neither mentions the 1–5, the multiplier or the tier — those are the row popover's subject, not the column's.
 - **Neither string may be reworded into a percentage claim about a typical post.** No benchmark, no "good is around…" — §3.4 rejected universal benchmarks and this is the surface most likely to smuggle one back in.
+
+---
+
+### 4.7 The Counts column tooltip, and the comment count that has no number *(amendment B9, 2026-08-13 — PROPOSED, awaiting owner sign-off)*
+
+**Why this section exists.** On PR [#210](https://github.com/jordanjordann/my-content/pull/210) a developer wiring the real comment count into the Counts cell needed a label for the case where that count has no number, found no approved copy, and wrote one: **`Why is the comment count hidden?`**. Review caught it and it is being deleted. **That string is withdrawn here, preserved verbatim below, and must not be restored** — not because the wording is poor, but because **the state it names cannot occur**, and the neighbouring approved string it was paired with is about a different setting entirely.
+
+#### 4.7.1 Which comment-count states are reachable — verified in code, not assumed
+
+I checked this rather than taking the brief's word for it. At the commit this amendment is written against (`f0ac16f`):
+
+| Claim | Evidence |
+|---|---|
+| A comment count is resolved by `resolveInstagramCommentAvailability` / `resolveYoutubeCommentAvailability`, and **both are bare calls to `resolveFromCount`** | `lib/server/analysis/performance/availability.ts:78-80`, `:109-111` |
+| `resolveFromCount` can return **only** `UNKNOWN` (non-finite, absent, or negative), `ZERO` (`0`) or `AVAILABLE` (`> 0`) | same file, `:40-56` — the module contains exactly one `state: "HIDDEN"` return, at `:71`, inside `resolveInstagramLikeAvailability`'s `like_and_view_counts_disabled === true` branch, which no comment path reaches |
+| The state is **not stored** and cannot be inherited from an older row | `lib/server/analysis/performance/readModel.ts:124-137` re-derives `likes`/`comments` through the *same* resolvers at read time; the DB row carries `commentCount: number \| null` only |
+| Nothing reads a comments-off signal from the payload | `grep -rn "comments_disabled" lib/` returns **nothing**. The field exists in the raw Instagram payload (`comments_disabled`, `commenting_disabled_for_viewer` — present in 6 of the 8 committed fixtures) and **no resolver, adapter or pipeline step looks at it** |
+| The likes/views flag does **not** govern comments | `.claude/context/fixtures/scrapecreators-instagram/ig_post_counts_disabled.json` has `like_and_view_counts_disabled: true` **and** `edge_media_to_parent_comment.count: 1` **and** `comments_disabled: false` — on the one payload where a creator demonstrably turned counts off, the comment count came through anyway (this is V1, already recorded in `availability.ts`'s module doc and in `.claude/context/verified-facts.md`) |
+
+**Ruling: `HIDDEN` is unreachable for a comment count, so no comments `hidden` copy is written.** Writing it would publish a meaning the system cannot demonstrate — the same reasoning **§5.5** applies to `INSUFFICIENT_HISTORY`, and the same reasoning PR #198's review applied when it forbade a developer from inventing the absent-score strings. **The only absent comment-count state that renders is `unknown`**, and it is genuinely reachable: the field is absent or non-finite (a YouTube video with comments turned off returns no `commentCountInt`), the universal negative guard fires, or the stored `comment_count` is `NULL` on an older row.
+
+**If a comments `HIDDEN` ever appears, that is a new-evidence event, not a display problem.** The correct response is a design ticket adding a row to this section — never a fallback string (§5.2 — this document has none) and never a reuse of the likes/views sentence.
+
+#### 4.7.2 The withdrawn string, and the approved string it must never borrow
+
+> **WITHDRAWN — never rendered, never to be restored:** `Why is the comment count hidden?`
+
+Two independent reasons, either of which is sufficient: it names an unreachable state (§4.7.1), and it was wired to open **`ENGAGEMENT_HIDDEN_TOOLTIP_COPY`**, which reads:
+
+> `The creator turned off view and like counts on this post. This is a creator setting — not zero, and not missing data.`
+
+**That string is correct, approved and unchanged — and it is scoped to one Instagram setting, not to the idea of a missing count.** It is the sentence for `like_and_view_counts_disabled === true`, which is why it names views and likes together: one flag, one fact, one sentence. **R-13.5.3a is not violated by it, and would be violated by stretching it** — asked "why is there no comment number?", it answers about views and likes, which is how the PR #210 bug surfaced. Binding: **no metric outside the two that flag governs may render it, and it must never be generalised** (its constant name invites exactly that reuse; renaming it to something flag-scoped is a developer call, not a copy change).
+
+#### 4.7.3 The strings — with the exact condition each one renders on
+
+**S-C1 — the comment count itself, when there is no number.** **No new string. The shipped four-state vocabulary already answers this**, and `DESIGN-3C`'s own precedent note binds me to reuse it rather than invent a second language for "the count is missing". The `—` renders with the accessible name the shipped component already generates from its metric word:
+
+> `comments unknown`
+
+- **Renders when:** the Counts cell's line-2 right slot has `commentCountState.kind === "unknown"` — i.e. `computed.comments.state === "UNKNOWN"` — in **Comfortable** density (line 2 does not exist in Compact).
+- **The visible glyph stays the `—`**, at the shipped `unknown` treatment (the most muted of the four). Not `Hidden`, not `0`, not empty.
+- **The only genuinely new word this state needs is the metric noun `comments`**, joining `views`/`likes` in the metric-word map. That is a mechanical extension, and it is the whole of the new vocabulary here.
+- **`comments unknown` is not to be "improved" into a cause.** `comment count not published` and `Instagram didn't return comments` both assert something we cannot evidence — `UNKNOWN` also covers a negative sentinel and a pre-existing `NULL` row.
+
+**S-C2 — the explanation body.** A dash with an accessible name tells a screen-reader user what it is and tells a sighted user nothing. The explanation is a property of the **column**, not of any row, so it lives in one column-header tooltip. The affordance, its placement and the one-`ⓘ`-per-row analysis are the companion's new **§4.3**; this section is the home for the string.
+
+> **Trigger accessible name:** `What do the counts in this column mean?`
+
+> **T3 — the `Counts` column tooltip (Comfortable density)**
+>
+> **What the counts show**
+>
+> `The top figure is the post's reach — views on a carousel or an image post, plays on a reel.`
+>
+> `Below it, likes on the left and comments on the right.`
+>
+> `A dash means we don't have that count for this post. It never means zero — a zero shows as 0.`
+>
+> `Where we know why a reach figure is missing, the cell says so under it.`
+
+> **T3-compact — the same tooltip in Compact density**
+>
+> **What the counts show**
+>
+> `The figure is the post's reach — views on a carousel or an image post, plays on a reel.`
+>
+> `A dash means we don't have that count for this post. It never means zero — a zero shows as 0.`
+>
+> `Where we know why a reach figure is missing, the cell says so under it.`
+
+- **T3 renders when:** the table is in **Comfortable** density (the cell has two lines). **T3-compact renders when:** the table is in **Compact** density, where line 2 is not rendered at all (`AnalysisCountsCell` gates it on `comfortable`) — the sentence describing a line that is not on screen is dropped, and nothing else changes. **Both render on every row-set including an empty table**, because a column tooltip is a property of the column; neither is conditional on any row's state.
+- **Sentence 2 is the only difference between the two variants.** Same heading, same order, same closing sentence — a reader switching density meets the same explanation minus the part that no longer applies.
+
+**Copy rules binding on T3:**
+
+- **One fact per sentence (R-13.5.3a).** What the top figure is; what line 2 is; what a dash means; where a reason appears when we have one. The dash sentence's second clause (`It never means zero — a zero shows as 0`) is a *negation of a misreading*, not a second fact, and it follows the register string 1 already uses (`it isn't zero, and it isn't missing data`). It must not be merged into sentence 1.
+- **No cause is asserted for the dash.** `we don't have that count` is the whole of what is true across all three routes into `UNKNOWN`. **`Instagram didn't publish it` is specifically forbidden here** — this string is column-level and cannot know the platform, and it would also assert a cause we cannot distinguish (the `CAUSE_NOT_DETERMINABLE` discipline, §5.1/§5.5).
+- **`views ... plays`, never one of them alone** — the same rule §4.6 binds T1/T2 with, for the same reason: a column-level string cannot know a row's reach kind and must not resolve the ambiguity by picking one (R-4.3.1, R-13.2.5).
+- **No figure, and no worked division.** **R-13.3.4 checked and honoured:** the tooltip performs no calculation and shows no quotient, because the Counts column *is* the raw evidence and divides nothing. The only numeral is the literal `0`, which is a display state being named — not a measurement, not a threshold, and not a figure about any post.
+- **L2 only, and provably so (R-13.6.2).** Nothing needed to prevent a misread moves behind the hover: the `—` keeps its accessible name at L1 on every row, the reach line keeps its in-cell OR-11 reason at L1, and the `Hidden` state keeps its own shipped per-cell affordance. If a later change makes this tooltip the only place any of those appears, that change is non-compliant — the tooltip is not the licence for it.
+- **It never mentions the 1–5, the tier, the multiplier or either engagement percentage.** Those are the row popover's and §4.6's subjects. A Counts tooltip that starts explaining scores is a Counts tooltip that will be reworded into a second, competing explanation of the table.
+- **The closing sentence points at the cell; it does not restate the cell.** Same construction as T1's third sentence, and for the same reason — it tells the reader where to look without duplicating a string that can change independently.
 
 ---
 

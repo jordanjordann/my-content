@@ -128,7 +128,17 @@
         <th class="px-3 py-2 font-semibold w-[300px]">Content</th>
         <th class="px-3 py-2 font-semibold w-[140px]">Creator</th>
         <th class="px-3 py-2 font-semibold w-[108px]" aria-sort="descending">Posted &#9662;</th>
-        <th class="px-3 py-2 font-semibold w-[132px]">Counts</th>
+        <!-- Counts header trigger (design 4.3 / companion 4.7, amendment A7 — PROPOSED).
+             ONE glyph for the whole table, in the header. Rows carry no new glyph — the
+             one-i-per-row ruling of 5.1 is unchanged. Copy is T3 (Comfortable). -->
+        <th class="px-3 py-2 font-semibold w-[132px]">Counts
+          <span class="popwrap"><span class="ex" tabindex="0" role="button" aria-label="What do the counts in this column mean?" aria-describedby="pcounts">i</span>
+          <span class="pop" id="pcounts" role="tooltip"><b class="text-fg">What the counts show</b><br/>
+            <span class="text-mutedfg">The top figure is the post&rsquo;s reach &mdash; views on a carousel or an image post, plays on a reel.</span>
+            <div class="mt-2 text-mutedfg">Below it, likes on the left and comments on the right.</div>
+            <div class="mt-2 text-mutedfg">A dash means we don&rsquo;t have that count for this post. It never means zero &mdash; a zero shows as 0.</div>
+            <div class="mt-2 text-mutedfg">Where we know why a reach figure is missing, the cell says so under it.</div></span></span>
+        </th>
         <th class="px-3 py-2 font-semibold w-[84px] border-l border-border/60">Content</th>
         <th class="px-3 py-2 font-semibold w-[156px] border-r border-border/60">Performance</th>
         <th class="px-3 py-2 font-semibold w-[128px]">vs their usual</th>
@@ -314,7 +324,11 @@
         </td>
         <td class="px-3 py-3"><div class="truncate">@kulinerjakarta</div><div class="text-[11px] text-mutedfg" data-l2>Instagram</div></td>
         <td class="px-3 py-3 num"><div>1 Jul</div><div class="text-[11px] text-mutedfg">36d ago</div></td>
-        <td class="px-3 py-3"><div class="text-mutedfg">Hidden</div><div class="text-[11px] text-mutedfg" data-l2>Hidden &middot; Hidden</div></td>
+        <!-- Corrected by amendment A7 (PROPOSED): this cell drew `Hidden &middot; Hidden`, which
+             cannot occur. `like_and_view_counts_disabled` does not govern comments — on the one
+             captured counts-disabled payload the comment count came through anyway — and no
+             comment count can resolve to `HIDDEN` at all (companion 4.7.1). -->
+        <td class="px-3 py-3"><div class="text-mutedfg">Hidden</div><div class="text-[11px] text-mutedfg" data-l2>Hidden &middot; <span class="num">312</span></div></td>
         <td class="px-3 py-3 border-l border-border/60"><div class="num font-semibold">4 <span class="ml-0.5" aria-hidden="true"><i class="pip onm"></i><i class="pip onm"></i><i class="pip onm"></i><i class="pip onm"></i><i class="pip"></i></span></div></td>
         <td class="px-3 py-3 border-r border-border/60">
           <div class="text-[11.5px]">Creator hid the counts
