@@ -1139,7 +1139,13 @@ plain-language reason, never a blank.
 | | Reel row | All-image carousel row |
 |---|---|---|
 | **Eng. / reach** | `4.1%` / `of 482.1K views` | `—` / `not published for image posts` |
-| **Eng. / followers** | `—` / `no follower measure here` | `≈16.2%` / `of 284K followers` |
+| **Eng. / followers** | `—` / `measured against reach instead` | `≈16.2%` / `of 284K followers` |
+
+> **CORRECTED 2026-08-13 — DESIGN-3C amendment A5.** This row previously carried `no follower measure here`,
+> which is **withdrawn**; it is named here only so it is not restored. **The condition is unchanged** — A5 is
+> copy-only. The `Eng. / reach` mirror strings stay **split on content kind** (`no post-level reach` for video,
+> `not published for image posts` for image-only, R-13.5.2), and A5 is not licence to collapse them. The code
+> change is §16.2, ticket **3C-F1**.
 
 Three always-on distinguishers, all rendered with **no hover, no legend** (R-8.4.7):
 
@@ -1186,6 +1192,12 @@ this order:
    Four variants, per design-3B §3.1. **Computed in `hooks.ts`, not in the component.**
 5. `drivers[]` under `Why it did what it did`, in Gemini's Indonesian, unedited.
 6. **The unconditional footer:** `Measured {date}. These numbers are frozen at the time of analysis and don't update.`
+
+> **AMENDED 2026-08-13 — DESIGN-3B §4.5.1 (amendment B6): the footer is still unconditional, but it is now
+> TWO variants.** The string quoted above is **F1**, the default. **F2** renders instead when the row's
+> `vs their usual` state is cold start (`tier2.multiplier == null`), because §14.8a makes that one count
+> **live** and F1's unhedged "frozen" claim would be false about it. F1/F2 are mutually exclusive and one of
+> them always renders. Implementation is §16.2, ticket **3C-F3**. **Not yet built** as of `f378c5f`.
 
 One `ⓘ` per **row**, in the Performance cell only — not one per figure. It reuses the shipped #70 tooltip
 trigger (hover **and** keyboard focus, `role="tooltip"` + `aria-describedby`, `Escape` to dismiss, never a
@@ -1671,3 +1683,232 @@ response shape 3B-6 creates. Within each phase the chain above is sequential exc
 parallel once 3C-1 lands.
 
 **Not ticketed yet (OR-18):** deploy + Turso cutover (§11), 3A queue (§10). Cut when 3C lands.
+
+---
+
+## 16. 3C fidelity remediation — the design-audit backlog *(2026-08-13)*
+
+**Why this lives here and not in a new document.** §15 is the single sequencing authority for this phase, §14.8
+is where the #206 collision has to be reasoned about, and §9.1–§9.7 are the sections these tickets amend. A
+separate doc would fork the ticket map and put the collision analysis one file away from the ruling that causes
+it. This section extends the map; it does not replace it.
+
+**Source of truth for every finding ID below:** `docs/design/AUDIT-3C-table-fidelity.md` (PRs #214, #215).
+**Layout authority: `DESIGN-3C` §2.2, not §5.** Copy authority: `DESIGN-3B` for strings, `DESIGN-3C` for
+affordances. **No ticket in this section may introduce a user-facing string that is not quoted from one of
+those two documents.**
+
+### 16.1 Owner rulings applied to the audit, before any ticket was written
+
+| Audit finding | Ruling | Effect on this section |
+|---|---|---|
+| **R-D17** (M9, caption clamp) | **Option B — clamp to 2 lines with a CSS ellipsis.** The designer is writing the rule into §2.2 in parallel. | Ticketed as **3C-S4**. "2 lines + ellipsis" is authoritative; no third interpretation is permitted. |
+| **M10** (portrait thumbnail) | **REJECTED.** The shipped 40×40 square stays. | **No ticket.** Do not re-open. A consequence: the audit's arithmetic argument against §3.1's 68px loses its largest input, so 68px stays an open question rather than a known-unreachable number (§16.5). |
+| **L1** (Counts reason string) and **L4's failed-group divider sentence** | **Dropped — the mockup was the stale artefact.** | **No ticket.** L4's *divider casing* half is unaffected and is ticketed in **3C-S1**. |
+| **`Carousel ×10`** (L6), **failed-row reason-text colour** (L9), **M11** (kind-badge contrast over photography) | **Unruled.** | **No ticket.** Listed in §16.5. |
+
+**Already closed by work that landed after the audit was captured — do not re-ticket.** **H3** (the hard-coded
+`· —` in the Counts cell) is **fixed on `main` at `f378c5f`**: `AnalysisCountsCell` renders
+`<EngagementCount state={commentCountState} metric="comments" />`, `AnalysisListItem` carries
+`commentCountState`, and the `aria-hidden` half-pair defect is gone with it. The audit's H3 text describes a
+pre-#205 tree.
+
+**Issue map.** 3C-F1 [#216](https://github.com/jordanjordann/my-content/issues/216) · 3C-F2 [#219](https://github.com/jordanjordann/my-content/issues/219) · 3C-F3 [#220](https://github.com/jordanjordann/my-content/issues/220) · 3C-F4 [#223](https://github.com/jordanjordann/my-content/issues/223) · 3C-S1 [#221](https://github.com/jordanjordann/my-content/issues/221) · 3C-S2 [#222](https://github.com/jordanjordann/my-content/issues/222) · 3C-S3 [#217](https://github.com/jordanjordann/my-content/issues/217) · 3C-S4 [#218](https://github.com/jordanjordann/my-content/issues/218).
+
+### 16.2 Bucket B — meaning-changing. Ships first.
+
+Four defects where **copy approved on 2026-08-13 is not wired into the running table**. Every one of them
+changes what a reader understands, and none of them is a styling question.
+
+**3C-F1 — the two withdrawn strings (H1, H2).** Size **S**.
+
+- `lib/api/analyses/helpers.ts`, `deriveEngagementCell`'s wrong-denominator branch: the literal
+  `no follower measure here` → **`measured against reach instead`** (`DESIGN-3C` §4, amendment A5). **Condition
+  unchanged.** The two `Eng. / reach` mirror strings on the same branch are **not touched** (R-13.5.2).
+- `AnalysisDataTable.tsx` footer, left slot: `No totals — these posts are measured against different things.`
+  → **`No totals — some posts are measured against views or plays, others against follower count. The two
+  can't be added or averaged.`** (`DESIGN-3C` §4.1 R-D1 as amended by A5.)
+- **R-D11 is part of this ticket, not a follow-up.** The replacement is ~2.4× longer. The footer stays
+  always-visible plain text at `text-xs text-muted-foreground`, full opacity, **never truncated or
+  ellipsised**; the pagination side of the footer bar takes `min-width: 0` so the sentence gets the room.
+- Two existing tests assert the withdrawn strings and **move with them**, they are not deleted:
+  `AnalysisDataTable.dom.test.tsx:475` (footer) and `:612-616` (the follower-column reason).
+
+**3C-F2 — §5.5's three-way Performance split (H4).** Size **M**.
+
+`derivePerformanceCell` currently collapses three distinct facts into one shape,
+`{ kind: "reason", text: null }`, and `PerformanceCell` renders a bare `—` for all of them. `DESIGN-3B` §5.5
+(amendment B8) rules they are three different facts and **cannot share one sentence**:
+
+| State | Reachable when | Renders |
+|---|---|---|
+| **Row 8** — the judgement returned no 1–5 | `performance != null`, `judgement.performanceScore == null`, `computed.unavailableReason == null` | L1 **`No 1–5 for this post`**, and the row **keeps its single `ⓘ`** |
+| **Row 9** — no performance block at all | `performance == null` on a **completed** row → `row.tableDerived == null` and `isNonCompletedRow(row) === false` | L1 **`Performance wasn't measured`**, and the row carries **no `ⓘ`** |
+| **`INSUFFICIENT_HISTORY`** | `unavailableReason === "INSUFFICIENT_HISTORY"` (declared, never produced) | **the muted `—` stays** — a ruling, not an oversight |
+
+**Type change.** `AnalysisTablePerformanceCell` (`lib/api/analyses/types.ts:143-151`) gains discriminants so
+the cell can tell the three apart — `{ kind: "no-judgement" }` for row 8 and `{ kind: "dash" }` for
+`INSUFFICIENT_HISTORY`, alongside the existing `"reason"`. `{ kind: "reason"; text: string | null }` must stop
+being the carrier of "we don't know which of these this is". Row 9 is expressible **without** a new derived
+value, because `tableDerived == null` already means exactly "no performance block" (`helpers.ts`,
+`deriveAnalysisTablePerformance` returns `null` iff `performance == null`) — but `AnalysisTableRow` currently
+routes `failed || tableDerived == null` to the failed treatment in several cells, so row 9 must be split out
+from the failed path explicitly. **Row 9 is not a failed row** (§5.5) — no rose edge, no `Not analysed`.
+
+**Popover consequence, and it is inside this ticket.** In row 8's state **only**, the popover's heading becomes
+**`Why there's no 1–5 here`** and its opening paragraph becomes row 8's L2 string, replacing
+`SCORE_EXPLAIN_JUDGEMENT_INTRO` (which asserts a score that is not there). Every other block renders on its
+existing conditions. The disagreement line cannot fire (its first precondition is a present score) and **no
+placeholder replaces it**. Structural note for the implementer: today the `ⓘ` is rendered by
+`AnalysisScoreCell`, which only renders when a score exists — row 8 has no score, so the trigger has to be
+reachable from the row-8 branch of `PerformanceCell` without duplicating the popover component.
+
+**3C-F3 — the popover footer's F1/F2 split (B6).** Size **S**. **Not built** as of `f378c5f`:
+`scoreExplainFooter()` returns F1 unconditionally and its doc comment still says "the unconditional footer, no
+condition".
+
+- **F2** renders **iff** the row's `vs their usual` state is cold start — i.e. `tier2` exists and
+  `tier2.multiplier == null`, which is already discriminated in the derived layer as
+  `multiplierCell.kind === "cold-start"` and is already read by the popover for its bucket noun.
+- **F2 is F1 plus one clause**, byte-identical up to the em-dash. Implement it as one template with an optional
+  tail, not two independently editable strings.
+- The **format noun in F2 is the same bucket noun the cell renders**, from the same `tier2` bucket key. A
+  footer saying `carousels` above a cell saying `reels` is a bug and needs a test that would catch it.
+- **F2 contains no numeral and states no duration** (R-13.3.4, R-13.4.4). **R-C1**: the count never appears
+  creator-scoped and the literal `5 posts` must not appear.
+- **Ordering against #206 — this is the load-bearing sequencing fact in this section.** #206 makes the
+  cold-start count **live** (§14.8a). The moment it lands, F1's unhedged "frozen" claim is **false** on every
+  cold-start row. **3C-F3 should merge before or with #206.** It does not depend on #206's code and can be
+  built today; the dependency runs the other way.
+
+**3C-F4 — the two engagement-column header tooltips (M7 / A6 + B7).** Size **M**. **Not in the owner's
+enumerated buckets** — recorded here because it is a fully-specified, approved amendment (`DESIGN-3C` §4.2,
+`DESIGN-3B` §4.6) that has never been built, and it needs a scheduling decision, not a design one.
+
+- Copy is `T1`/`T2` verbatim from `DESIGN-3B` §4.6. Accessible names are R-D8's two questions.
+- **R-D6**: a real `<button>`, sibling of the sort control inside the same `<th>`, never nested inside it.
+  **R-D7**: the shipped ticket-#70 contract, reused, not reinvented. **R-D10**: no figure, no worked division.
+- **R-D5 / R-D9**: zero new glyphs per row. Any `ⓘ` in an engagement **cell** is out of bounds, and the
+  qualifier and the `≈` stay on every cell at L1.
+- **`DESIGN-3C` §4.3 / `DESIGN-3B` §4.7 (the Counts column tooltip, T3) are PROPOSED and awaiting owner
+  sign-off. They are NOT in this ticket and must not be built with it.**
+
+### 16.3 Bucket A — the §9 typography and colour pass
+
+One root cause, stated in the audit and not re-argued here: these components were built from the app's ambient
+`text-sm` / `text-xs` / `text-muted-foreground` defaults instead of from `DESIGN-3C` §9. Split into four
+tickets **by file**, not by finding, so they can run in parallel without touching each other.
+
+**3C-S1 — chrome typography and the score group (M1, M2, M3, L4-casing).** Size **S/M**.
+Files: `components/headers/AnalysisTableColumnHeaders.tsx`, `components/dividers/AnalysisSinkDivider.tsx`,
+`types.ts` + `constants.ts` (the column-def colour field).
+
+- Both header rows: `text-[10px] uppercase tracking-wider font-semibold text-muted-foreground`.
+- The `Scores` group header regains `text-primary` and the header casing. The mockup's `border-x` bracketing is
+  the **optional** half — §5's Trap-3 mitigation is carried by the colour and casing; if the vertical rules are
+  taken, the matching `border-l`/`border-r` on the two score columns' `<td>`s belongs to **3C-S2**, not here,
+  and the two tickets must then be serialised. **Default: take colour + casing only, and no `<td>` change.**
+- `AnalysisTableColumnDef` gains an **optional per-column class** so columns 8 and 9 can carry `text-accent`
+  and the teal token. **Needs 3C-S3's teal token to exist first.**
+- Sink divider: `text-[10.5px] uppercase tracking-wider`. **Its label string does not change** — the live
+  count and the `— sorted separately` wording are correct (audit's own correction to L4).
+
+**3C-S2 — row density, alignment, score pips and the `Early` badge (M5, M6, M8, L3).** Size **M**.
+Files: `AnalysisDataTable.tsx` (the `<table>` class only), `components/rows/AnalysisTableRow.tsx`,
+`components/cells/AnalysisScoreCell/*`.
+
+- `align-top` on the row's `<td>`s, and the mockup's type scale (12.5px body / 11px qualifier, or the nearest
+  tokens the app has) in place of `text-sm` / `text-xs`.
+- Performance numeral takes the variant colour (`text-primary`); numeral weight `font-semibold`; the unfilled
+  pip track takes §9.4's `#5c6c86` **explicitly**, not an opacity modifier off `muted-foreground`.
+- **The `Early` badge is styling only.** Its condition, its column, its position and the word are **already
+  correct and already render** — the audit is explicit about this. Apply §9.3's pattern:
+  `rounded px-1.5 py-0.5 text-[10px] font-semibold bg-accent/12 text-accent`. **Changing the condition, the
+  position or the word is out of scope and would be a regression.**
+- `ROW_HEIGHT_PX` stays a **minimum**. §3.1's 68px is an **open question** (§16.5) and this ticket must not
+  edit §3.1 to make its own arithmetic work.
+
+**3C-S3 — the inverted engagement colour and the teal token (M4, L2).** Size **S**.
+Files: `components/cells/AnalysisEngagementCell/*`, `app/globals.css`, `tests/…/contrast.dom.test.tsx`.
+
+- §9.2 puts the accent/teal on the **line-2 qualifier**; the code has it on the **figure**. Move it. The value
+  line takes the default foreground. This is an inversion, not an approximation — the qualifier is the thing
+  that must not be skipped, and §2.2's column-order rationale depends on the figures not being the loudest
+  thing in the table.
+- `text-teal-500` (`#14b8a6`) is a raw palette value standing in for §9.2's `#3fd0bb`, and `globals.css` has no
+  teal token. Add a semantic token and use it.
+- **AC-17**: re-measure against the **real** tokens on all four surfaces and record the ratios in the PR body.
+  The measurement is for the **new** element — moving the colour changes what it is composited against.
+- **This ticket owns `contrast.dom.test.tsx` for the duration.** 3C-S1 needs its teal token, so **3C-S3 lands
+  before 3C-S1.**
+
+**3C-S4 — the caption clamp (M9 / R-D17 Option B, and L8's duplication half).** Size **S**.
+File: `components/cells/AnalysisContentCell/AnalysisContentCell.tsx`.
+
+- `line-clamp-2` on the caption. **CSS clamp only** — the full caption stays in the DOM so a screen reader
+  still reads it whole. A JS substring is out of bounds. No `title` attribute, no tooltip, no hover-reveal
+  (§8, R-8.4.7, R-13.6.2).
+- **Scope, stated so it cannot widen:** R-D17 binds the Content column's **caption and nothing else**. §3.1's
+  "line 2 is never truncated" stands untouched for every denominator qualifier, tier phrase, confidence word,
+  `based on N …`, cold-start figure and absent-score reason. The PR must delete the `AnalysisContentCell.tsx`
+  comment that cites §3.1 as authority for the un-clamped caption, and cite §2.2's R-D17 instead.
+- **The title is unaffected** — it stays a single truncated line, which is already correct.
+- **L8's second half is in scope:** when `title` is null the fallback ladder promotes the caption into the
+  title slot and line 2 then renders the same sentence again. Suppress line 2 when the ladder consumed the
+  caption. **L8's first half — the invented string `Untitled` — is NOT in scope** (§16.5).
+- **L7 (chip stacking) is not in scope.** The audit's own recommendation is to keep both the chip and a clamped
+  caption; with the clamp, a chipped row is 3–4 lines, not 6. The chip's `text-[10px]` → `text-[9px]` step is
+  the only part worth taking and it can ride along.
+- **Merge gate, not a start gate:** the developer may build against "2 lines + ellipsis" today (the owner has
+  ruled), but the PR must not merge until §2.2 carries R-D17's text, and the PR body must cite it.
+
+### 16.4 Sequencing — and the collision constraints, stated so two developers cannot collide
+
+```
+3C-F1 (S)  helpers.ts + AnalysisDataTable.tsx footer + 2 tests
+  └► 3C-F2 (M)  types.ts + helpers.ts + AnalysisTableRow.tsx + popover
+       └► 3C-S2 (M)  AnalysisTableRow.tsx + AnalysisDataTable.tsx + AnalysisScoreCell
+  └► 3C-F3 (S)  popover constants + component        [serialise with 3C-F2: same two files]
+
+3C-S3 (S)  engagement cell + globals.css + contrast test
+  └► 3C-S1 (S/M)  headers + divider + column-def colour field   [needs the teal token]
+
+3C-S4 (S)  AnalysisContentCell only — parallel with everything above
+3C-F4 (M)  headers only — SERIALISE WITH 3C-S1 (same file)
+```
+
+**The three real collisions:**
+
+1. **`lib/api/analyses/helpers.ts` + `AnalysisTableRow.tsx`** — 3C-F1, 3C-F2 and 3C-S2 all touch this pair.
+   **Serialise: F1 → F2 → S2.** F1 is a two-literal diff and will not hold anyone up for long.
+2. **The popover module** — 3C-F2 (heading/intro swap) and 3C-F3 (footer variants) edit the same
+   `constants.ts` and the same component. **Serialise, either order.** F3 first is the safer order if #206 is
+   about to be picked up.
+3. **`AnalysisTableColumnHeaders.tsx`** — 3C-S1 (typography, colour field) and 3C-F4 (tooltip triggers).
+   **Serialise: S1 → F4.**
+
+**Genuinely parallel:** 3C-S4 against everything, and the {F1→F2→F3/S2} chain against the {S3→S1} chain.
+
+**Collision with #206 — assessed, and it is not a re-plan of #206.** #206 is BE: `baseline.ts`'s candidate
+filter, `computeBaseline`, the read path, and the D8 test carve-out. It does **not** change
+`AnalysisTablePerformanceCell`, `AnalysisTableMultiplierCell`, any cell component, or any string. Two contact
+points, both benign:
+
+- **`lib/api/analyses/helpers.ts`** is touched by #206 (read-path plumbing for the live count) and by 3C-F1/F2
+  — but in **different functions** (`deriveMultiplierCell` / the derivation entry point vs
+  `deriveEngagementCell` / `derivePerformanceCell`). Textual conflict risk only; no semantic overlap.
+- **3C-F3 is a prerequisite for #206 being *truthful*, not for it compiling.** #206 makes the cold-start count
+  live; F1's "frozen" sentence then over-claims on exactly those rows. **Land 3C-F3 first.** Nothing in #206's
+  scope changes as a result — this is a note on ordering, not on its contents.
+
+### 16.5 Open questions — no ticket exists for any of these
+
+| # | Question | Who rules | What is blocked |
+|---|---|---|---|
+| 1 | The mockup's `Carousel ×10` slide-count overlay draws a field the #144 payload does not carry (**L6**). Add a media-part count to the list payload (a #144 scope change), or redraw the mockup as the bare kind word? | Owner | Nothing is blocked; the kind word alone is true and ships today. If the count is never carried, `DESIGN-3C` §5.4's parenthetical must stop citing the overlay as precedent. |
+| 2 | The failed row's **reason-text colour** (**L9**). §3.3 puts rose on the left edge and says nothing about the text; §9.3's `bg-rose/12 text-rose` is a badge pattern, not a text rule. | Owner + designer | The failed-row treatment. Unverifiable in the UI until a failed row can be captured. |
+| 3 | **M11** — the kind badge sits on a **photograph**, a surface §9.1's four-token method cannot measure. Heavier tint, an opaque scrim, or leave it? | Owner | The badge's backing and position. Note the audit's part 3 (`Carousel` filling a 40px tile) is now **unresolved by M10's rejection** — the square tile stays, so the width problem needs its own answer if this is taken up. |
+| 4 | §3.1's **68px Comfortable row height**. With M10 rejected the 40px tile stays, so the audit's "68px is arithmetically unreachable" argument is weakened — but three-line cells at the §9 type scale may still exceed it. | Owner + designer, **after 3C-S2 measures it** | Nothing. 3C-S2 treats 68px as a minimum and does not edit §3.1. |
+| 5 | **`Untitled`** (**L8**) is a developer-chosen user-facing string and appears in no design document. Approve it, or replace it — the mockup's failed row uses the **post URL** greyed, which identifies a post where `Untitled` identifies nothing. | Designer, then owner | The Content cell's fallback ladder. 3C-S4 fixes the duplication half only and leaves the string alone. |
+| 6 | **R-D17's text in §2.2**, and a **definition of the word "snippet"** beside it. In flight with the designer. | Designer | **3C-S4's merge**, not its start. |
+| 7 | `DESIGN-3C` §4.3 / `DESIGN-3B` §4.7 — the **Counts column tooltip (T3)** and amendment B9 are **PROPOSED, awaiting owner sign-off**. | Owner | Any Counts-tooltip work. Explicitly excluded from 3C-F4. |
