@@ -12,6 +12,13 @@ import { cn } from "@/lib/utils";
  * DESIGN-3C §9's stand-in values) — both badges share one pattern, `bg-slate-300/10
  * text-slate-300`: **11.87 / 11.20 / 10.53 / 9.85** against background / card / row-hover /
  * muted. All ≥ 4.5:1 with wide margin.
+ *
+ * PR #203 review, blocker 2 — the kind badge (Reel/Carousel/etc.) is the ONLY place OR-1's
+ * merged Content/kind column exposes content type, so it must be reachable by assistive
+ * technology. Only the thumbnail IMAGE is decorative and `aria-hidden` — the badge is a sibling
+ * OUTSIDE that hidden scope (an `aria-hidden` ancestor removes every descendant from the
+ * accessibility tree regardless of the descendant's own attributes, so nesting the badge inside
+ * the hidden thumbnail wrapper, as before, hid it from screen readers everywhere in this table).
  */
 export function AnalysisContentCell({
   title,
@@ -27,11 +34,13 @@ export function AnalysisContentCell({
 
   return (
     <div className="flex items-center gap-3">
-      <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded bg-muted" aria-hidden="true">
-        {thumbnailUrl && (
-          // eslint-disable-next-line @next/next/no-img-element -- proxied/external thumbnails, same as the rest of this table.
-          <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" />
-        )}
+      <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded bg-muted">
+        <div className="h-full w-full" aria-hidden="true">
+          {thumbnailUrl && (
+            // eslint-disable-next-line @next/next/no-img-element -- proxied/external thumbnails, same as the rest of this table.
+            <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" />
+          )}
+        </div>
         <span className="absolute right-0 bottom-0 rounded-tl bg-slate-300/10 px-1 py-0.5 text-[9px] leading-none font-medium text-slate-300">
           {CONTENT_KIND_LABELS[mediaType]}
         </span>

@@ -55,6 +55,14 @@ const ALL_COLUMNS = [...ANALYSES_TABLE_COLUMNS, STYLE_COLUMN];
  * larger fetch instead of N small ones, acceptable for this dataset size and explicitly
  * preferred over a filter bar that looks wired but silently only searches page 1 (the
  * "confident-looking wrong number" the ticket's reliability rule warns against).
+ *
+ * PR #203 review, blocker 1 — `AnalysesContent` (this table's real-page caller) ALSO needs the
+ * full corpus for its own filter-bar counts, and independently called `useAllAnalysesQuery`
+ * with a different query key, so the page fired two 5000-row fetches on every load. Fixed by
+ * making `sortBy`/`sortDir` controllable (see `AnalysisDataTableProps`) — `AnalysesContent` now
+ * owns the single source of truth for those two values and builds its own `useAnalysesQuery`
+ * call with the exact same `{ sortBy, sortDir, pageSize }` shape this table builds below, so
+ * TanStack Query's key hashing dedupes the two hook calls into one network request.
  */
 export function AnalysisDataTable({
   onAnalysisClick,
@@ -62,10 +70,20 @@ export function AnalysisDataTable({
   openAnalysisId,
   onClearFilters,
   filters = EMPTY_ANALYSIS_FILTERS,
+  sortBy: controlledSortBy,
+  sortDir: controlledSortDir,
+  onSortChange: controlledOnSortChange,
 }: AnalysisDataTableProps) {
   const [page, setPage] = useState(1);
-  const [sortBy, setSortBy] = useState<AnalysesSortField>(DEFAULT_SORT_FIELD);
-  const [sortDir, setSortDir] = useState<SortDirection>(DEFAULT_SORT_DIR);
+  // PR #203 review, blocker 1 — local fallback state, only used when the caller doesn't
+  // control sort (see this component's own `AnalysisDataTableProps.sortBy` doc comment). When
+  // controlled, `sortBy`/`sortDir` below always resolve to the caller's values so this table's
+  // `useAnalysesQuery` call builds the EXACT same params object `AnalysesContent` builds for its
+  // own full-corpus fetch, letting TanStack Query dedupe the two into one network request.
+  const [localSortBy, setLocalSortBy] = useState<AnalysesSortField>(DEFAULT_SORT_FIELD);
+  const [localSortDir, setLocalSortDir] = useState<SortDirection>(DEFAULT_SORT_DIR);
+  const sortBy = controlledSortBy ?? localSortBy;
+  const sortDir = controlledSortDir ?? localSortDir;
   // OR-5 / DESIGN-3C §6.3 (superseded 2026-08-09) — plain React state, no persistence of
   // any kind. Comfortable is the owner-ruled default (OR-7).
   const [density, setDensity] = useState<AnalysisTableDensity>("comfortable");
@@ -100,20 +118,30 @@ export function AnalysisDataTable({
   }, [openAnalysisId]);
 
   const handleSortChange = (field: AnalysesSortField) => {
-    if (field === sortBy) {
-      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+    const nextDir: SortDirection =
+      field === sortBy
+        ? sortDir === "asc"
+          ? "desc"
+          : "asc"
+        : (ANALYSES_TABLE_COLUMNS.find((c) => c.sortField === field)?.defaultSortDir ?? "desc");
+
+    if (controlledOnSortChange) {
+      controlledOnSortChange(field, nextDir);
     } else {
-      const column = ANALYSES_TABLE_COLUMNS.find((c) => c.sortField === field);
-      setSortBy(field);
-      setSortDir(column?.defaultSortDir ?? "desc");
+      setLocalSortBy(field);
+      setLocalSortDir(nextDir);
     }
     setPage(1);
   };
 
   const toggleColumn = (id: string) => {
-    if (LOCKED_COLUMN_IDS.has(id) || id !== "style") {
-      // Only Style is genuinely interactive (see `AnalysisColumnsMenuColumn.interactive`'s
-      // own doc comment for why the other five default columns are checked-and-disabled).
+    // PR #203 review, blocker 3 — only `Style` is genuinely interactive (see
+    // `AnalysisColumnsMenuColumn.interactive`'s own doc comment for why the other five default
+    // columns, including all four `LOCKED_COLUMN_IDS`, are checked-and-disabled). `id !== "style"`
+    // alone already excludes every locked id (a locked id is never `"style"`) — this is the
+    // second, redundant guard behind the Columns menu's own `disabled` button, which is what
+    // actually stops the click at the DOM level (belt and braces, not the only line of defence).
+    if (id !== "style") {
       return;
     }
     setVisibleColumnIds((prev) => {

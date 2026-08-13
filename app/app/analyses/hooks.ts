@@ -142,8 +142,10 @@ export function useAnalysisFilters() {
  *
  * Ticket #144 introduced server-side pagination (`ANALYSES_PAGE_SIZE`/page) for the future 3C
  * table, which would have silently capped this page's filters at one page. B4 (PR #196 review)
- * fixes that for THIS page specifically: the caller uses `useAllAnalysesQuery` to fetch the full
- * corpus in one response, so `analyses` here is the full corpus again, same as pre-#144.
+ * fixes that for THIS page specifically: the caller (`AnalysesContent`) fetches the full corpus
+ * in one response — PR #203 review blocker 1 — via `useAnalysesQuery({ sortBy, sortDir, pageSize:
+ * ANALYSES_FETCH_ALL_PAGE_SIZE })`, the same params `AnalysisDataTable` itself now builds, so
+ * `analyses` here is the full corpus again, same as pre-#144, without a second independent fetch.
  * `totalCount` is still passed in separately from `pagination.total` rather than derived as
  * `analyses.length`, so this stays correct even if the caller's fetch strategy changes again.
  */

@@ -15,6 +15,18 @@ export const ANALYSIS_KEYS = {
  * just the client's request value, not a source of truth. Bridge only:
  * once #145 replaces the old page with server-side filtering, this
  * constant (and `useAllAnalysesQuery`) goes away.
+ *
+ * PR #203 review, blocker 1 — ticket #149 ALSO reaches for this constant for the NEW 3C
+ * table (`AnalysisDataTable`), for the same reason: the #144 API has no filter query params,
+ * so a correct filtered count/page can only be computed client-side over the full corpus. This
+ * is a second, equally interim stopgap — "the old page already uses it" is not license to reach
+ * for it elsewhere. `AnalysesContent` (the old page's shell) and `AnalysisDataTable` now
+ * deliberately build the SAME `{ sortBy, sortDir, pageSize }` params object so TanStack Query's
+ * key hashing dedupes the two `useAnalysesQuery` calls into one network request instead of two
+ * independent 5000-row fetches — if you add a third call site, route it through the same shared
+ * params or it will silently double the fetch again. This constant, `useAllAnalysesQuery`, and
+ * `AnalysisDataTable`'s own full-corpus fetch should all be retired together once the API gains
+ * real server-side filter params (deserves its own follow-up ticket, not created here).
  */
 export const ANALYSES_FETCH_ALL_PAGE_SIZE = 5000;
 

@@ -816,8 +816,71 @@ describe("AnalysisDataTable — AC-13, the Content cell's mode chip", () => {
   });
 });
 
+describe("AnalysisContentCell — kind badge reachable by assistive technology (PR #203 review, blocker 2)", () => {
+  // `getByText` alone does not respect `aria-hidden` — the badge's TEXT is present either way.
+  // The accessibility-tree-aware assertion is that the badge is not nested inside any
+  // `aria-hidden="true"` ancestor: an `aria-hidden` ancestor removes every descendant from the
+  // accessibility tree regardless of the descendant's own attributes (WAI-ARIA §6.2), which is
+  // exactly the bug this cell shipped with.
+  it("the kind badge text is NOT nested inside any aria-hidden ancestor", async () => {
+    renderTable([ROW_A_SCORED]);
+    const row = (await screen.findByText("Nasi Goreng Kampung")).closest("tr") as HTMLElement;
+    const badge = within(row).getByText("Reel");
+    expect(badge.closest('[aria-hidden="true"]')).toBeNull();
+  });
+
+  it("a second kind (Carousel) is also reachable — not just the default reel fixture", async () => {
+    renderTable([ROW_B_COLD_START]);
+    const row = (await screen.findByText("10 Ide Konten Ramadan")).closest("tr") as HTMLElement;
+    const badge = within(row).getByText("Carousel");
+    expect(badge.closest('[aria-hidden="true"]')).toBeNull();
+  });
+
+  it("the thumbnail image itself remains decorative (aria-hidden) — only the badge was pulled out of that scope", async () => {
+    renderTable([ROW_A_SCORED]);
+    const row = (await screen.findByText("Nasi Goreng Kampung")).closest("tr") as HTMLElement;
+    const badge = within(row).getByText("Reel");
+    const cell = badge.closest("td") as HTMLElement;
+    expect(cell.querySelector('[aria-hidden="true"]')).not.toBeNull();
+  });
+});
+
 describe("AnalysisDataTable — Columns menu (DESIGN-3C §6.3, ticket #149)", () => {
-  it("locked columns (Content, Performance, Eng. / reach, Eng. / followers) cannot be hidden through the UI", async () => {
+  // PR #203 review, blocker 3 — `checked={column.locked || visibleColumnIds.has(column.id)}` is
+  // hardcoded `true` for a locked column, so `aria-selected="true"` alone is UNFALSIFIABLE (it
+  // would pass even if the click genuinely hid the column). Falsifiable per-column: after
+  // clicking, assert the column's HEADER is still actually rendered in the table, for EVERY one
+  // of the four locked columns individually — the prior version of this test only re-checked
+  // Content/Performance at the very end, never the two engagement columns R-12.3.1 exists to
+  // protect.
+  it.each([
+    { name: /^content$/i, header: /^content$/i },
+    { name: /^performance$/i, header: /^performance$/i },
+    { name: /^eng\. \/ reach$/i, header: /^eng\. \/ reach$/i },
+    { name: /^eng\. \/ followers$/i, header: /^eng\. \/ followers$/i },
+  ])(
+    "locked column '$name' cannot be hidden through the UI — its header stays rendered after the click",
+    async ({ name, header }) => {
+      renderTable();
+      await screen.findAllByRole("columnheader");
+
+      fireEvent.click(screen.getByRole("button", { name: /^columns/i }));
+      const option = await screen.findByRole("option", { name });
+      expect(option).toHaveAttribute("aria-selected", "true");
+
+      // Behavioural: actually attempt the click, not merely assert a `locked` prop exists.
+      fireEvent.click(within(option).getByRole("button"));
+
+      // Falsifiable: the column's header must still be IN THE DOM — this would fail if the
+      // click genuinely hid the column, unlike `aria-selected`, which cannot fail for a locked
+      // column no matter what the click did. "Content" also matches the Scores group's
+      // "Content score" sub-header (same label by design, see `menuColumns`'s own doc comment),
+      // so use `getAllByRole` there rather than assume exactly one match.
+      expect(screen.getAllByRole("columnheader", { name: header }).length).toBeGreaterThan(0);
+    },
+  );
+
+  it("attempting to click every locked column's toggle does not remove any of the four from the table at once", async () => {
     renderTable();
     await screen.findAllByRole("columnheader");
 
@@ -825,15 +888,27 @@ describe("AnalysisDataTable — Columns menu (DESIGN-3C §6.3, ticket #149)", ()
 
     for (const name of [/^content$/i, /^performance$/i, /^eng\. \/ reach$/i, /^eng\. \/ followers$/i]) {
       const option = await screen.findByRole("option", { name });
-      expect(option).toHaveAttribute("aria-selected", "true");
-      // Behavioural: actually attempt the click, not merely assert a `locked` prop exists.
       fireEvent.click(within(option).getByRole("button"));
-      expect(option).toHaveAttribute("aria-selected", "true");
     }
 
-    // The columns themselves stay rendered in the table — clicking did nothing.
     expect(screen.getAllByRole("columnheader", { name: /^content$/i }).length).toBeGreaterThan(0);
     expect(screen.getByRole("columnheader", { name: /^performance$/i })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /^eng\. \/ reach$/i })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /^eng\. \/ followers$/i })).toBeInTheDocument();
+  });
+
+  it("a locked column's toggle button is a genuinely disabled control, not merely checked — clicking it never reaches the same toggle handler Style's click reaches", async () => {
+    renderTable();
+    await screen.findAllByRole("columnheader");
+    fireEvent.click(screen.getByRole("button", { name: /^columns/i }));
+
+    const lockedOption = await screen.findByRole("option", { name: /^performance$/i });
+    const lockedButton = within(lockedOption).getByRole("button");
+    expect(lockedButton).toBeDisabled();
+
+    const styleOption = await screen.findByRole("option", { name: /^style$/i });
+    const styleButton = within(styleOption).getByRole("button");
+    expect(styleButton).not.toBeDisabled();
   });
 
   it("hovering a locked entry shows the exact DESIGN-3C §6.3 tooltip string", async () => {
