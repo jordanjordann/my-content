@@ -56,6 +56,31 @@ export const ANALYSES_TABLE_COLUMNS: AnalysisTableColumnDef[] = [
   },
 ];
 
+/**
+ * Ticket #149 / DESIGN-3C §2.2 — the optional tenth column, `formatArchetype` + `hookType`.
+ * OFF by default (Q3, ruled 2026-08-09) and reachable only from `AnalysisColumnsMenu` — kept
+ * separate from `ANALYSES_TABLE_COLUMNS` (the nine DEFAULT columns, §2.2's "nine, and only
+ * these nine") rather than folded in with an `optional` flag, so the default column set stays
+ * exactly what §2.2 states without a filter step at every call site.
+ */
+export const STYLE_COLUMN: AnalysisTableColumnDef = { id: "style", label: "Style", width: 150 };
+
+/**
+ * DESIGN-3C §6.3 — the four columns the `Columns` menu cannot hide (R-12.3.1: hiding a
+ * denominator-bearing column is how a user, not a developer, violates it).
+ */
+export const LOCKED_COLUMN_IDS: ReadonlySet<string> = new Set([
+  "content",
+  "performance",
+  "engagementReach",
+  "engagementFollowers",
+]);
+
+/** Every column ID visible on first load — every default column, Style excluded (OR-5). */
+export const DEFAULT_VISIBLE_COLUMN_IDS: ReadonlySet<string> = new Set(
+  ANALYSES_TABLE_COLUMNS.map((c) => c.id),
+);
+
 /** DESIGN-3C §3 — two legal row densities. Comfortable is the owner-ruled default (OR-7). */
 export const ROW_HEIGHT_PX: Record<"comfortable" | "compact", number> = {
   comfortable: 68,

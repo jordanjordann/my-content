@@ -5,9 +5,15 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { useAllAnalysesQuery, useAnalyzeContentMutation } from "@/lib/api/analyses";
+import { useAnalysesQuery, useAnalyzeContentMutation } from "@/lib/api/analyses";
+import { ANALYSES_FETCH_ALL_PAGE_SIZE } from "@/lib/api/analyses/constants";
+import type { AnalysesSortField, SortDirection } from "@/lib/api/analyses/types";
 import type { ProgressState } from "@/app/app/analyses/components/progress/AnalysisProgressPanel/types";
 import { AnalysisDataTable } from "@/app/app/analyses/components/grids/AnalysisDataTable";
+import {
+  DEFAULT_SORT_DIR,
+  DEFAULT_SORT_FIELD,
+} from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
 import { AnalysisFilterSection } from "@/app/app/analyses/components/sections/AnalysisFilterSection";
 import { NewAnalysisModal } from "@/app/app/analyses/components/modals/NewAnalysisModal";
 import { AnalysisProgressPanel } from "@/app/app/analyses/components/progress/AnalysisProgressPanel";
@@ -21,20 +27,36 @@ export function AnalysesContent() {
   const searchParams = useSearchParams();
   const detailId = searchParams.get("id");
 
-  // B4 (PR #196 review) — this page's filters are client-side over the full corpus, so it
-  // must fetch every row in one response, not one server-paginated page. See
-  // `useAllAnalysesQuery` for why; #145 replaces this page with server-side filtering.
-  const { data, isPending } = useAllAnalysesQuery();
+  // PR #203 review, blocker 1 — `sortBy`/`sortDir` are owned HERE, not inside `AnalysisDataTable`,
+  // and passed down as controlled props (`AnalysisDataTable`'s own doc comment explains why):
+  // this page's filter-bar counts and the table's own rows both need the full corpus, and this
+  // is what lets both `useAnalysesQuery` calls below build an IDENTICAL params object so
+  // TanStack Query dedupes them into ONE network request instead of two independent 5000-row
+  // fetches. B4 (PR #196 review) is why the corpus is fetched in one response at all — `analyses`
+  // must be the full corpus for the client-side filters to search more than one page.
+  const [sortBy, setSortBy] = useState<AnalysesSortField>(DEFAULT_SORT_FIELD);
+  const [sortDir, setSortDir] = useState<SortDirection>(DEFAULT_SORT_DIR);
+  const handleSortChange = useCallback((nextSortBy: AnalysesSortField, nextSortDir: SortDirection) => {
+    setSortBy(nextSortBy);
+    setSortDir(nextSortDir);
+  }, []);
+
+  const { data, isPending } = useAnalysesQuery({
+    sortBy,
+    sortDir,
+    pageSize: ANALYSES_FETCH_ALL_PAGE_SIZE,
+  });
   const { mutate: startAnalysis, isPending: isAnalyzing } = useAnalyzeContentMutation();
   const [modalOpen, setModalOpen] = useState(false);
   const [progress, setProgress] = useState<ProgressState | null>(null);
 
   const analyses = data?.analyses ?? [];
   const accounts = data?.accounts ?? [];
-  // Ticket #144 blocker B2: this is the server's unfiltered count. With `useAllAnalysesQuery`
-  // (B4) `analyses` already spans the full corpus in one response, so this equals
-  // `analyses.length` in practice — kept as `pagination.total` (not derived) so it stays
-  // correct even if this page's fetch strategy changes again before #145 lands.
+  // Ticket #144 blocker B2: this is the server's unfiltered count. With the full-corpus fetch
+  // above (B4 / PR #203 review blocker 1), `analyses` already spans the full corpus in one
+  // response, so this equals `analyses.length` in practice — kept as `pagination.total` (not
+  // derived) so it stays correct even if this page's fetch strategy changes again before #145
+  // lands.
   const serverTotalCount = data?.pagination.total ?? 0;
 
   const {
@@ -47,7 +69,7 @@ export function AnalysesContent() {
     clearAll,
     anyActive,
   } = useAnalysisFilters();
-  // B4 fix: `analyses` is the full corpus (see `useAllAnalysesQuery` above), so `filtered`/
+  // B4 fix: `analyses` is the full corpus (see the `useAnalysesQuery` call above), so `filtered`/
   // `counts` search every row, not just one server-paginated page. This client-side filtering
   // approach is a bridge for the OLD page only — #145 replaces it with server-side filtering.
   const { filtered, counts, totalCount } = useFilteredAnalyses(
@@ -162,18 +184,21 @@ export function AnalysesContent() {
           </div>
         )}
 
-        {/* Ticket #145 — the table now owns its own fetch (server-side pagination/sort,
-            OR-8) and renders all four states (loading/empty/error) inside its own frame
-            with the header intact (design §7), so it is rendered unconditionally here.
-            `hasActiveFilters`/`onClearFilters` bridge this page's existing client-side
-            filter bar (above) into the table's two distinct empty states; wiring real
-            filters into the table's own server-side query is ticket #149's scope. */}
+        {/* Ticket #145 — the table owns its own fetch and renders all four states (loading/
+            empty/error) inside its own frame with the header intact (design §7). Ticket #149 —
+            `filters` (this page's URL-sourced filter state, `useAnalysisFilters` above) is now
+            applied for real inside the table (see `AnalysisDataTable`'s own doc comment for the
+            fetch-strategy trade this makes); `onClearFilters` still drives the empty-no-match
+            state's action. */}
         <AnalysisDataTable
           onAnalysisClick={handleOpenDetail}
           onNewAnalysis={() => setModalOpen(true)}
           openAnalysisId={detailId}
-          hasActiveFilters={anyActive}
           onClearFilters={clearAll}
+          filters={filters}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          onSortChange={handleSortChange}
         />
 
         <NewAnalysisModal

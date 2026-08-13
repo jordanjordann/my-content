@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 
 import { useAllAnalysesQuery, useAnalysesQuery } from "@/lib/api/analyses/hooks";
+import { ANALYSES_FETCH_ALL_PAGE_SIZE } from "@/lib/api/analyses/constants";
 import type { AnalysesListResponse, AnalysisListItem } from "@/lib/api/analyses/types";
 
 /**
@@ -53,6 +54,7 @@ function makeAnalysis(index: number): AnalysisListItem {
     title: null,
     createdAt: postDate,
     performance: null,
+    style: null,
   };
 }
 
@@ -119,5 +121,71 @@ describe("B4 — the OLD /app/analyses page's fetch-all bridge (useAllAnalysesQu
     expect(usernames).toHaveLength(TOTAL_ROWS);
     expect(usernames).toContain(TARGET_ACCOUNT);
     expect(result.current.data?.pagination.total).toBe(TOTAL_ROWS);
+  });
+});
+
+/**
+ * PR #203 review, blocker 1 — `AnalysesContent` (filter-bar counts) and `AnalysisDataTable`
+ * (the table's own rows) both need the full corpus and both call `useAnalysesQuery` directly
+ * (see each component's own doc comment for why `AnalysisDataTable` was moved off the retired
+ * `useAllAnalysesQuery` bridge). This reproduces those two real call sites — same params shape,
+ * same `QueryClient` (React Query lives at the app root, same as in the real page tree) — and
+ * asserts TanStack Query's query-key hashing dedupes them into ONE network request. Before the
+ * fix (params objects that didn't structurally match), this fired two.
+ */
+describe("PR #203 review, blocker 1 — the full-corpus fetch is not doubled", () => {
+  it("two call sites requesting the SAME { sortBy, sortDir, pageSize } params share ONE network request", async () => {
+    let fetchCallCount = 0;
+    const baseFetch = buildFetchMock();
+    globalThis.fetch = (async (input: unknown) => {
+      fetchCallCount += 1;
+      return baseFetch(input);
+    }) as unknown as typeof fetch;
+
+    const wrapper = createWrapper();
+    const params = { sortBy: "posted" as const, sortDir: "desc" as const, pageSize: ANALYSES_FETCH_ALL_PAGE_SIZE };
+
+    // Two independent hook consumers (mirrors `AnalysesContent` and `AnalysisDataTable`, both
+    // mounted under the same page-level `QueryClient`).
+    const contentSite = renderHook(() => useAnalysesQuery(params), { wrapper });
+    const tableSite = renderHook(() => useAnalysesQuery(params), { wrapper });
+
+    await waitFor(() => expect(contentSite.result.current.isSuccess).toBe(true));
+    await waitFor(() => expect(tableSite.result.current.isSuccess).toBe(true));
+
+    expect(fetchCallCount).toBe(1);
+    expect(contentSite.result.current.data?.analyses).toHaveLength(TOTAL_ROWS);
+    expect(tableSite.result.current.data?.analyses).toHaveLength(TOTAL_ROWS);
+  });
+
+  it("REGRESSION GUARD — mismatched params (the pre-fix shape) genuinely produce TWO requests, proving the assertion above is not vacuous", async () => {
+    let fetchCallCount = 0;
+    const baseFetch = buildFetchMock();
+    globalThis.fetch = (async (input: unknown) => {
+      fetchCallCount += 1;
+      return baseFetch(input);
+    }) as unknown as typeof fetch;
+
+    const wrapper = createWrapper();
+
+    // Pre-fix shape: `AnalysesContent` called the bare bridge (no `sortBy`/`sortDir`), while
+    // `AnalysisDataTable` forwarded its own local sort state — two different query keys.
+    const contentSite = renderHook(() => useAnalysesQuery({ pageSize: ANALYSES_FETCH_ALL_PAGE_SIZE }), {
+      wrapper,
+    });
+    const tableSite = renderHook(
+      () =>
+        useAnalysesQuery({
+          sortBy: "posted" as const,
+          sortDir: "desc" as const,
+          pageSize: ANALYSES_FETCH_ALL_PAGE_SIZE,
+        }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(contentSite.result.current.isSuccess).toBe(true));
+    await waitFor(() => expect(tableSite.result.current.isSuccess).toBe(true));
+
+    expect(fetchCallCount).toBe(2);
   });
 });

@@ -4,7 +4,13 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import type { AnalysisListItemIndexed } from "@/lib/api/analyses/types";
-import { KEYWORD_DEBOUNCE_MS, PLATFORM_OPTIONS, STATUS_OPTIONS } from "@/app/app/analyses/constants";
+import {
+  CONTENT_KIND_OPTIONS,
+  KEYWORD_DEBOUNCE_MS,
+  PLATFORM_OPTIONS,
+  STATUS_OPTIONS,
+  TIER_OPTIONS,
+} from "@/app/app/analyses/constants";
 import {
   anyActive,
   buildFilterQueryString,
@@ -107,7 +113,7 @@ export function useAnalysisFilters() {
 
   const clearAll = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    writeFilters({ account: [], platform: [], status: [], q: "" });
+    writeFilters({ account: [], platform: [], contentKind: [], tier: [], status: [], q: "" });
   }, [writeFilters]);
 
   return {
@@ -136,8 +142,10 @@ export function useAnalysisFilters() {
  *
  * Ticket #144 introduced server-side pagination (`ANALYSES_PAGE_SIZE`/page) for the future 3C
  * table, which would have silently capped this page's filters at one page. B4 (PR #196 review)
- * fixes that for THIS page specifically: the caller uses `useAllAnalysesQuery` to fetch the full
- * corpus in one response, so `analyses` here is the full corpus again, same as pre-#144.
+ * fixes that for THIS page specifically: the caller (`AnalysesContent`) fetches the full corpus
+ * in one response — PR #203 review blocker 1 — via `useAnalysesQuery({ sortBy, sortDir, pageSize:
+ * ANALYSES_FETCH_ALL_PAGE_SIZE })`, the same params `AnalysisDataTable` itself now builds, so
+ * `analyses` here is the full corpus again, same as pre-#144, without a second independent fetch.
  * `totalCount` is still passed in separately from `pagination.total` rather than derived as
  * `analyses.length`, so this stays correct even if the caller's fetch strategy changes again.
  */
@@ -179,6 +187,20 @@ export function useFilteredAnalyses(
         value: option.value,
         label: option.label,
         count: countFor("status", option.value, (item) => item.status),
+      })),
+      contentKind: CONTENT_KIND_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.label,
+        count: countFor("contentKind", option.value, (item) => item.mediaType),
+      })),
+      // Tier's `getValue` reads `performance.computed.tierUsed`, falling back to a sentinel
+      // that matches no option's `value` for rows with no `performance` block at all — those
+      // rows are excluded from every Tier count the same way `matchesDimensions` excludes them
+      // from every Tier match (helpers.ts).
+      tier: TIER_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.label,
+        count: countFor("tier", option.value, (item) => item.performance?.computed.tierUsed ?? "__NONE__"),
       })),
     };
 

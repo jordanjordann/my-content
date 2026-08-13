@@ -4,19 +4,24 @@ import type {
   AnalysisListItemIndexed,
   AnalysisPlatform,
   AnalysisStatus,
+  Tier,
 } from "@/lib/api/analyses/types";
 import { normalize } from "@/lib/api/analyses/helpers";
 import {
+  CONTENT_KIND_OPTIONS,
   FILTER_PARAM_KEYS,
   MAX_SCORE,
   PLATFORM_OPTIONS,
   SCORE_BAND_WORDS,
   STATUS_OPTIONS,
+  TIER_OPTIONS,
 } from "@/app/app/analyses/constants";
 import type { AnalysisFilters, FilterDimension, ScoreBand } from "@/app/app/analyses/types";
 
 const PLATFORM_VALUES = new Set<string>(PLATFORM_OPTIONS.map((option) => option.value));
 const STATUS_VALUES = new Set<string>(STATUS_OPTIONS.map((option) => option.value));
+const CONTENT_KIND_VALUES = new Set<string>(CONTENT_KIND_OPTIONS.map((option) => option.value));
+const TIER_VALUES = new Set<string>(TIER_OPTIONS.map((option) => option.value));
 
 export { normalize };
 
@@ -56,9 +61,17 @@ export function parseFiltersFromParams(params: ReadonlyURLSearchParams): Analysi
     STATUS_VALUES.has(value),
   ) as AnalysisStatus[];
 
+  const contentKind = parseListParam(params.get(FILTER_PARAM_KEYS.contentKind)).filter((value) =>
+    CONTENT_KIND_VALUES.has(value),
+  ) as AnalysisListItemIndexed["mediaType"][];
+
+  const tier = parseListParam(params.get(FILTER_PARAM_KEYS.tier)).filter((value) =>
+    TIER_VALUES.has(value),
+  ) as Tier[];
+
   const q = params.get(FILTER_PARAM_KEYS.keyword) ?? "";
 
-  return { account, platform, status, q };
+  return { account, platform, contentKind, tier, status, q };
 }
 
 function setOrDeleteList(params: URLSearchParams, key: string, values: string[]): void {
@@ -79,6 +92,8 @@ export function buildFilterQueryString(current: URLSearchParams, next: AnalysisF
 
   setOrDeleteList(params, FILTER_PARAM_KEYS.account, next.account);
   setOrDeleteList(params, FILTER_PARAM_KEYS.platform, next.platform);
+  setOrDeleteList(params, FILTER_PARAM_KEYS.contentKind, next.contentKind);
+  setOrDeleteList(params, FILTER_PARAM_KEYS.tier, next.tier);
   setOrDeleteList(params, FILTER_PARAM_KEYS.status, next.status);
 
   if (next.q !== "") {
@@ -103,10 +118,17 @@ export function matchesKeyword(item: AnalysisListItemIndexed, q: string): boolea
 }
 
 /**
- * Dimension-only match (Account/Platform/Status), OR within a dimension, AND across dimensions.
- * A dimension with zero selections imposes no constraint. `exclude` skips one dimension's own
- * selections entirely — used to compute contextual per-option counts that ignore a dimension's
- * own current selections (see `useFilteredAnalyses`).
+ * Dimension-only match (Creator/Platform/Content kind/Tier/Status), OR within a dimension, AND
+ * across dimensions. A dimension with zero selections imposes no constraint. `exclude` skips one
+ * dimension's own selections entirely — used to compute contextual per-option counts that ignore
+ * a dimension's own current selections (see `useFilteredAnalyses`).
+ *
+ * Tier matches against `performance.computed.tierUsed` (DESIGN-3C §6.2) — a row with no
+ * `performance` block at all (failed/pending) never matches any Tier selection; the Status
+ * filter, not Tier, is the tool for isolating those rows (design's own distinction, §6.2's "the
+ * Status chip is now load-bearing" note). This never hides the absent-score REASON on a matched
+ * row (DESIGN-3C §6.2 "filters never hide the reason a row has no score") — filtering only
+ * changes which rows render; each row's own cells render exactly as they always do (design §5).
  */
 export function matchesDimensions(
   item: AnalysisListItemIndexed,
@@ -123,10 +145,20 @@ export function matchesDimensions(
     filters.platform.length === 0 ||
     filters.platform.includes(item.platform);
 
+  const contentKindMatch =
+    exclude === "contentKind" ||
+    filters.contentKind.length === 0 ||
+    filters.contentKind.includes(item.mediaType);
+
+  const tierMatch =
+    exclude === "tier" ||
+    filters.tier.length === 0 ||
+    (item.performance != null && filters.tier.includes(item.performance.computed.tierUsed));
+
   const statusMatch =
     exclude === "status" || filters.status.length === 0 || filters.status.includes(item.status);
 
-  return accountMatch && platformMatch && statusMatch;
+  return accountMatch && platformMatch && contentKindMatch && tierMatch && statusMatch;
 }
 
 /**
@@ -142,6 +174,8 @@ export function anyActive(filters: AnalysisFilters): boolean {
   return (
     filters.account.length > 0 ||
     filters.platform.length > 0 ||
+    filters.contentKind.length > 0 ||
+    filters.tier.length > 0 ||
     filters.status.length > 0 ||
     filters.q !== ""
   );

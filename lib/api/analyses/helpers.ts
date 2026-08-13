@@ -2,6 +2,7 @@ import { resolveUnavailableReasonCopy } from "@/lib/analysis/performance/render"
 import type {
   AbsentCountReason,
   AnalysisListItem,
+  AnalysisMode,
   AnalysisPerformance,
   AnalysisPlatform,
   AnalysisTableDerivedPerformance,
@@ -371,6 +372,21 @@ export function resolveAbsentScoreReasonText(computed: PerformanceComputed): str
 }
 
 /**
+ * Ticket #149 / DESIGN-3C §2.1 — the Content cell's mode chip (`Caption only` / `Images only`,
+ * AC-13). Parses the same `bucketKey` `bucketNoun()` above already parses
+ * (`platform:mediaType:analysisMode`) rather than adding a second stored/fetched field. `null`
+ * when `tier2` is `null` (no performance block) or the bucket key's third segment isn't one of
+ * the three known modes — the Content cell renders no chip rather than guess one (R-13.5.3a).
+ */
+function deriveAnalysisMode(tier2: PerformanceTier2 | null): AnalysisMode | null {
+  if (tier2 == null) {
+    return null;
+  }
+  const mode = tier2.bucketKey.split(":")[2];
+  return mode === "full_video" || mode === "images_only" || mode === "metadata_only" ? mode : null;
+}
+
+/**
  * Ticket #145 (PR #198 review, blocker 8) — the analyses table's per-row cell decisions,
  * computed once per row in `hooks.ts`'s `select` rather than on every render inside
  * `AnalysisTableRow`. `null` iff `performance` is `null` (failed/pending rows never reach this
@@ -398,5 +414,6 @@ export function deriveAnalysisTablePerformance(
     engagementReachCell: deriveEngagementCell(computed, "REACH", mediaType),
     engagementFollowersCell: deriveEngagementCell(computed, "FOLLOWERS", mediaType),
     disagreementLine: computeScoreMultiplierDisagreement(judgement.performanceScore, computed.tier2),
+    analysisMode: deriveAnalysisMode(computed.tier2),
   };
 }

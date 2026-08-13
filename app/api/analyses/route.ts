@@ -138,6 +138,9 @@ export async function GET(request: Request) {
       const parsed = parseResultContent(analysis.resultContent);
       const overallScore: number | null = typeof parsed.overallScore === "number" ? parsed.overallScore : null;
       const scorecard: ContentAnalysis["scorecard"] | null = parsed.scorecard ?? null;
+      // Ticket #149 — lifted the same way `overallScore`/`scorecard` already are. `resultContent`
+      // is already fetched and parsed above for those two fields; `style` costs nothing extra.
+      const style: ContentAnalysis["style"] | null = parsed.style ?? null;
 
       return {
         id: analysis.id,
@@ -149,6 +152,7 @@ export async function GET(request: Request) {
         username: analysis.username,
         overallScore,
         scorecard,
+        style,
         // Lets the UI degrade gracefully on a version it doesn't know how
         // to render (TDD §3.3, §8.2) — null on rows that predate the
         // redesign (migration 007, no backfill).

@@ -20,9 +20,9 @@ import type { AnalysisFilterSectionProps } from "@/app/app/analyses/components/s
 /**
  * Assembles the filter bar (control row + conditional chip row) from `FilterDropdown` /
  * `FilterChip` / `ActiveFilterRow` (#21), plus the persistent result-count live region left to
- * this ticket. Row order left → right (design §5.2): Account → Platform → Status → divider →
- * keyword input → Clear filters link. The view-toggle slot is intentionally left empty — #23 is
- * deferred and this ticket targets the table view only.
+ * this ticket. Row order left → right (DESIGN-3C §6.2, ticket #149): Creator → Platform →
+ * Content kind → Tier → Status → divider → keyword input → Clear filters link. The view-toggle
+ * slot is intentionally left empty — #23 is deferred and this ticket targets the table view only.
  */
 export function AnalysisFilterSection({
   filters,
@@ -79,6 +79,20 @@ export function AnalysisFilterSection({
           selected={filters.platform}
           onToggle={(value) => onToggle("platform", value)}
           onClearSelection={() => onClearSelection("platform")}
+        />
+        <FilterDropdown
+          label={DIMENSION_LABELS.contentKind}
+          options={counts.contentKind}
+          selected={filters.contentKind}
+          onToggle={(value) => onToggle("contentKind", value)}
+          onClearSelection={() => onClearSelection("contentKind")}
+        />
+        <FilterDropdown
+          label={DIMENSION_LABELS.tier}
+          options={counts.tier}
+          selected={filters.tier}
+          onToggle={(value) => onToggle("tier", value)}
+          onClearSelection={() => onClearSelection("tier")}
         />
         <FilterDropdown
           label={DIMENSION_LABELS.status}
@@ -138,7 +152,12 @@ export function AnalysisFilterSection({
         />
       )}
 
-      <span role="status" aria-live="polite" className="sr-only">
+      {/* DESIGN-3C §6.2 / TDD §9.6 — "Showing 24 of 118 analyses" renders ALWAYS, even
+          unfiltered (item #4): it is the fastest way for a user to notice a filter they forgot
+          about. Doubles as the bar's `aria-live="polite"` region — visible text and the
+          accessible announcement are the same string, so this never renders (or announces)
+          twice. */}
+      <span role="status" aria-live="polite" className="mt-1.5 px-1 text-xs text-muted-foreground">
         {buildResultCountAnnouncement(filteredCount, totalCount)}
       </span>
     </div>

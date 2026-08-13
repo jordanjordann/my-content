@@ -1,4 +1,5 @@
 import type { AnalysesSortField, AnalysisListItemIndexed, SortDirection } from "@/lib/api/analyses/types";
+import type { AnalysisFilters } from "@/app/app/analyses/types";
 
 export type AnalysisTableDensity = "comfortable" | "compact";
 
@@ -26,15 +27,27 @@ export type AnalysisDataTableProps = {
    * skeleton needs from the parent to satisfy the focus-return requirement.
    */
   openAnalysisId?: string | null;
-  /**
-   * Whether any filter is currently active — distinguishes the two empty states
-   * (design §7: "Empty — nothing analysed" vs "Empty — no rows match filters"). Real
-   * filters are ticket #149's scope; this ticket only needs to render the two states
-   * correctly. Defaults to `false` (no filters exist yet on this page).
-   */
-  hasActiveFilters?: boolean;
   /** "Clear all filters" action for the empty-no-match state. */
   onClearFilters?: () => void;
+  /**
+   * Ticket #149 — the active filter set (Creator/Platform/Content kind/Tier/Status/keyword),
+   * applied client-side against the full fetched corpus (see `AnalysisDataTable`'s own doc
+   * comment for why). Defaults to "no filters" so this table still renders standalone in tests
+   * that don't exercise filtering.
+   */
+  filters?: AnalysisFilters;
+  /**
+   * PR #203 review, blocker 1 — optional controlled sort. When the caller (`AnalysesContent`)
+   * supplies `sortBy`/`sortDir`/`onSortChange`, this table builds its own full-corpus
+   * `useAnalysesQuery` call from those SAME values instead of local state, so the caller's own
+   * full-corpus fetch (for the filter bar's counts) and this table's fetch produce an IDENTICAL
+   * query key and TanStack Query dedupes them into one network request. Omitted entirely, this
+   * table falls back to its own local sort state (unchanged standalone behaviour — every
+   * existing test that renders this table without a parent keeps working).
+   */
+  sortBy?: AnalysesSortField;
+  sortDir?: SortDirection;
+  onSortChange?: (sortBy: AnalysesSortField, sortDir: SortDirection) => void;
 };
 
 /** Internal grouping of one loaded page's rows (design §3.3, §6.1 — R-S1/R-S2). */

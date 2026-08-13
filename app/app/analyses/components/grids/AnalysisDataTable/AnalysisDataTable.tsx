@@ -4,50 +4,102 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useAnalysesQuery } from "@/lib/api/analyses";
-import type { AnalysesSortField, SortDirection } from "@/lib/api/analyses/types";
+import { ANALYSES_FETCH_ALL_PAGE_SIZE } from "@/lib/api/analyses/constants";
+import type { AnalysesSortField, AnalysisListItemIndexed, SortDirection } from "@/lib/api/analyses/types";
 import { AnalysisTableColumnHeaders } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/headers/AnalysisTableColumnHeaders";
 import { AnalysisTableRow } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/rows/AnalysisTableRow";
 import { AnalysisTableSkeletonRow } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/rows/AnalysisTableSkeletonRow";
 import { AnalysisTableEmptyState } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/states/AnalysisTableEmptyState";
 import { AnalysisTableErrorState } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/states/AnalysisTableErrorState";
 import { AnalysisSinkDivider } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/dividers/AnalysisSinkDivider";
+import { AnalysisColumnsMenu } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/menus/AnalysisColumnsMenu";
+import type { AnalysisColumnsMenuColumn } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/menus/AnalysisColumnsMenu";
 import {
   ANALYSES_TABLE_COLUMNS,
+  ANALYSES_TABLE_PAGE_SIZE,
   DEFAULT_SORT_DIR,
   DEFAULT_SORT_FIELD,
+  DEFAULT_VISIBLE_COLUMN_IDS,
+  LOCKED_COLUMN_IDS,
   SKELETON_ROW_COUNT,
+  STYLE_COLUMN,
 } from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
 import { groupAnalysisRows } from "@/app/app/analyses/components/grids/AnalysisDataTable/helpers";
+import { matchesDimensions, matchesKeyword } from "@/app/app/analyses/helpers";
+import { EMPTY_ANALYSIS_FILTERS } from "@/app/app/analyses/constants";
 import type {
   AnalysisDataTableProps,
   AnalysisTableDensity,
 } from "@/app/app/analyses/components/grids/AnalysisDataTable/types";
 
+const ALL_COLUMNS = [...ANALYSES_TABLE_COLUMNS, STYLE_COLUMN];
+
 /**
- * Ticket #145 — the analyses table skeleton every cell ticket (#146/#147/#149) plugs
- * into: 9 columns (OR-1), the shared `Scores` group header, two density modes (OR-7),
- * server-side pagination and sort (OR-8), the sink group (R-S2), the four render states
- * (design §7), and full table/`aria-sort`/keyboard semantics (design §8-§10).
+ * Ticket #145 (skeleton) / #149 (filters, column menu) — the analyses table: 9 default columns
+ * plus the optional Style column (OR-1, OR-5), the shared `Scores` group header, two density
+ * modes (OR-7), the sink group (R-S2), the four render states (design §7), full table/
+ * `aria-sort`/keyboard semantics (design §8-§10) — and now real client-visible filtering and
+ * per-column visibility.
  *
- * Self-fetching (owns `useAnalysesQuery`) rather than taking rows as a prop — server-side
- * pagination/sort (OR-8) means the caller cannot own the row list without duplicating this
- * component's page/sort state.
+ * **Fetch strategy (ticket #149).** #145 self-fetched one server-paginated page at a time
+ * (`page`/`sortBy`/`sortDir`). Filtering changes that: the #144 API has no filter query params
+ * (this ticket's own Files Affected list does not touch `app/api/analyses/route.ts`'s query
+ * surface, and inventing filter params there is out of scope), so a filtered "Showing 24 of 118"
+ * count and a correctly filtered page can only be computed from the FULL corpus. This table now
+ * requests `ANALYSES_FETCH_ALL_PAGE_SIZE` rows — the same bridge `useAllAnalysesQuery` already
+ * uses for the OLD page — with `sortBy`/`sortDir` still forwarded, so the **server** still does
+ * the sort (identical null-sink behaviour, R-S1) over the *whole* corpus in one response; this
+ * component then filters that already-correctly-sorted array client-side and paginates the
+ * *filtered* result at `ANALYSES_TABLE_PAGE_SIZE` locally. That keeps sort order, the filtered
+ * count, and the true unfiltered total (`data.pagination.total`) all honest — the trade is one
+ * larger fetch instead of N small ones, acceptable for this dataset size and explicitly
+ * preferred over a filter bar that looks wired but silently only searches page 1 (the
+ * "confident-looking wrong number" the ticket's reliability rule warns against).
+ *
+ * PR #203 review, blocker 1 — `AnalysesContent` (this table's real-page caller) ALSO needs the
+ * full corpus for its own filter-bar counts, and independently called `useAllAnalysesQuery`
+ * with a different query key, so the page fired two 5000-row fetches on every load. Fixed by
+ * making `sortBy`/`sortDir` controllable (see `AnalysisDataTableProps`) — `AnalysesContent` now
+ * owns the single source of truth for those two values and builds its own `useAnalysesQuery`
+ * call with the exact same `{ sortBy, sortDir, pageSize }` shape this table builds below, so
+ * TanStack Query's key hashing dedupes the two hook calls into one network request.
  */
 export function AnalysisDataTable({
   onAnalysisClick,
   onNewAnalysis,
   openAnalysisId,
-  hasActiveFilters = false,
   onClearFilters,
+  filters = EMPTY_ANALYSIS_FILTERS,
+  sortBy: controlledSortBy,
+  sortDir: controlledSortDir,
+  onSortChange: controlledOnSortChange,
 }: AnalysisDataTableProps) {
   const [page, setPage] = useState(1);
-  const [sortBy, setSortBy] = useState<AnalysesSortField>(DEFAULT_SORT_FIELD);
-  const [sortDir, setSortDir] = useState<SortDirection>(DEFAULT_SORT_DIR);
+  // PR #203 review, blocker 1 — local fallback state, only used when the caller doesn't
+  // control sort (see this component's own `AnalysisDataTableProps.sortBy` doc comment). When
+  // controlled, `sortBy`/`sortDir` below always resolve to the caller's values so this table's
+  // `useAnalysesQuery` call builds the EXACT same params object `AnalysesContent` builds for its
+  // own full-corpus fetch, letting TanStack Query dedupe the two into one network request.
+  const [localSortBy, setLocalSortBy] = useState<AnalysesSortField>(DEFAULT_SORT_FIELD);
+  const [localSortDir, setLocalSortDir] = useState<SortDirection>(DEFAULT_SORT_DIR);
+  const sortBy = controlledSortBy ?? localSortBy;
+  const sortDir = controlledSortDir ?? localSortDir;
   // OR-5 / DESIGN-3C §6.3 (superseded 2026-08-09) — plain React state, no persistence of
   // any kind. Comfortable is the owner-ruled default (OR-7).
   const [density, setDensity] = useState<AnalysisTableDensity>("comfortable");
+  // OR-5 / DESIGN-3C §6.3 (superseded 2026-08-09, scope addition on #149) — Style starts
+  // hidden on EVERY load, plain React state, no `localStorage`/`sessionStorage`/URL param/
+  // per-user storage of any kind. Locked columns are always in this set (never removed —
+  // `toggleColumn` below refuses to touch a locked id).
+  const [visibleColumnIds, setVisibleColumnIds] = useState<Set<string>>(
+    () => new Set(DEFAULT_VISIBLE_COLUMN_IDS),
+  );
 
-  const { data, isPending, isError, error, refetch } = useAnalysesQuery({ page, sortBy, sortDir });
+  const { data, isPending, isError, error, refetch } = useAnalysesQuery({
+    sortBy,
+    sortDir,
+    pageSize: ANALYSES_FETCH_ALL_PAGE_SIZE,
+  });
 
   const rowRefs = useRef(new Map<string, HTMLTableRowElement>());
   const lastOpenedIdRef = useRef<string | null>(null);
@@ -66,17 +118,81 @@ export function AnalysisDataTable({
   }, [openAnalysisId]);
 
   const handleSortChange = (field: AnalysesSortField) => {
-    if (field === sortBy) {
-      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+    const nextDir: SortDirection =
+      field === sortBy
+        ? sortDir === "asc"
+          ? "desc"
+          : "asc"
+        : (ANALYSES_TABLE_COLUMNS.find((c) => c.sortField === field)?.defaultSortDir ?? "desc");
+
+    if (controlledOnSortChange) {
+      controlledOnSortChange(field, nextDir);
     } else {
-      const column = ANALYSES_TABLE_COLUMNS.find((c) => c.sortField === field);
-      setSortBy(field);
-      setSortDir(column?.defaultSortDir ?? "desc");
+      setLocalSortBy(field);
+      setLocalSortDir(nextDir);
     }
     setPage(1);
   };
 
-  const groups = useMemo(() => groupAnalysisRows(data?.analyses ?? []), [data?.analyses]);
+  const toggleColumn = (id: string) => {
+    // PR #203 review, blocker 3 — only `Style` is genuinely interactive (see
+    // `AnalysisColumnsMenuColumn.interactive`'s own doc comment for why the other five default
+    // columns, including all four `LOCKED_COLUMN_IDS`, are checked-and-disabled). `id !== "style"`
+    // alone already excludes every locked id (a locked id is never `"style"`) — this is the
+    // second, redundant guard behind the Columns menu's own `disabled` button, which is what
+    // actually stops the click at the DOM level (belt and braces, not the only line of defence).
+    if (id !== "style") {
+      return;
+    }
+    setVisibleColumnIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const displayColumns = useMemo(
+    () => ALL_COLUMNS.filter((column) => visibleColumnIds.has(column.id)),
+    [visibleColumnIds],
+  );
+
+  const menuColumns: AnalysisColumnsMenuColumn[] = useMemo(
+    () =>
+      ALL_COLUMNS.map((column) => ({
+        id: column.id,
+        // "Content" (col 1) and "Content score" (col 5's sub-label) share the header label
+        // "Content" by design (the Scores group header disambiguates them in-table) — the
+        // Columns menu has no group header, so this disambiguates them here specifically.
+        label: column.id === "contentScore" ? "Content score" : column.label,
+        locked: LOCKED_COLUMN_IDS.has(column.id),
+        interactive: column.id === "style",
+      })),
+    [],
+  );
+
+  // Ticket #149 — client-side filter over the full, server-sorted corpus (see the module doc
+  // comment above). Never re-sorts: `data.analyses` already arrives in the server's own order.
+  const filteredRows: AnalysisListItemIndexed[] = useMemo(() => {
+    const rows = data?.analyses ?? [];
+    return rows.filter((row) => matchesDimensions(row, filters) && matchesKeyword(row, filters.q));
+  }, [data?.analyses, filters]);
+
+  const totalCount = data?.pagination.total ?? 0;
+  const filteredCount = filteredRows.length;
+  const totalPages = Math.max(1, Math.ceil(filteredCount / ANALYSES_TABLE_PAGE_SIZE));
+  // Pure derivation (never `setPage` from an effect) — if a filter change makes the current
+  // page point past the end, this clamps the SLICE without a stale-then-corrected extra render.
+  const safePage = Math.min(page, totalPages);
+  const pageRows = filteredRows.slice(
+    (safePage - 1) * ANALYSES_TABLE_PAGE_SIZE,
+    safePage * ANALYSES_TABLE_PAGE_SIZE,
+  );
+
+  const groups = useMemo(() => groupAnalysisRows(pageRows), [pageRows]);
+
+  const noMatch = !isPending && !isError && totalCount > 0 && filteredCount === 0;
+  const noneAtAll = !isPending && !isError && totalCount === 0;
 
   const bodyContent = (() => {
     if (isPending) {
@@ -94,11 +210,17 @@ export function AnalysisDataTable({
       );
     }
 
-    if (!data || data.pagination.total === 0) {
-      return hasActiveFilters ? (
+    if (noneAtAll) {
+      return <AnalysisTableEmptyState variant="nothing-analysed" onNewAnalysis={onNewAnalysis} />;
+    }
+
+    // DESIGN-3C §6.2 — "filters never hide the reason a row has no score": `noMatch` only ever
+    // means zero rows matched the filter SET, never that a matched row's own absent-score
+    // reason is suppressed — every matched row below still renders through the unchanged #145/
+    // #147 cell pipeline (`AnalysisTableRow`), reason text included.
+    if (noMatch) {
+      return (
         <AnalysisTableEmptyState variant="no-match" onClearFilters={onClearFilters ?? (() => {})} />
-      ) : (
-        <AnalysisTableEmptyState variant="nothing-analysed" onNewAnalysis={onNewAnalysis} />
       );
     }
 
@@ -106,6 +228,7 @@ export function AnalysisDataTable({
       <AnalysisTableRow
         key={row.id}
         row={row}
+        columns={displayColumns}
         density={density}
         onOpen={onAnalysisClick}
         rowRef={(el) => {
@@ -120,6 +243,7 @@ export function AnalysisDataTable({
         {groups.scored.map(rowNode)}
         {groups.scoreless.length > 0 && (
           <AnalysisSinkDivider
+            colSpan={displayColumns.length}
             label={`${groups.scoreless.length} post${groups.scoreless.length === 1 ? "" : "s"} with no performance score — sorted separately`}
           />
         )}
@@ -132,7 +256,7 @@ export function AnalysisDataTable({
             failed` is §3.3's own approved row-level string). Flagged for a design ruling on the
             exact failed-group divider sentence before this ships as prose. */}
         {groups.nonCompleted.length > 0 && (
-          <AnalysisSinkDivider label={`Analysis failed — ${groups.nonCompleted.length}`} />
+          <AnalysisSinkDivider colSpan={displayColumns.length} label={`Analysis failed — ${groups.nonCompleted.length}`} />
         )}
         {groups.nonCompleted.map(rowNode)}
       </>
@@ -142,6 +266,7 @@ export function AnalysisDataTable({
   return (
     <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
       <div className="flex items-center justify-end gap-2 border-b p-2">
+        <AnalysisColumnsMenu columns={menuColumns} visibleColumnIds={visibleColumnIds} onToggle={toggleColumn} />
         <span className="text-xs text-muted-foreground">Density</span>
         <div className="inline-flex rounded-md border">
           <Button
@@ -173,27 +298,31 @@ export function AnalysisDataTable({
             Analyses — every analysed post, its content and performance scores, and how it
             compares against the creator&apos;s own past posts.
           </caption>
-          <AnalysisTableColumnHeaders sortBy={sortBy} sortDir={sortDir} onSortChange={handleSortChange} />
+          <AnalysisTableColumnHeaders
+            columns={displayColumns}
+            sortBy={sortBy}
+            sortDir={sortDir}
+            onSortChange={handleSortChange}
+          />
           <tbody>{bodyContent}</tbody>
         </table>
       </div>
 
-      {data && data.pagination.total > 0 && (
+      {!isPending && !isError && totalCount > 0 && (
         <div className="flex items-center justify-between border-t p-3 text-sm text-muted-foreground">
           {/* R-D1 (TDD §9.2, DESIGN-3C §4.1) — no aggregate/total/"typical engagement" row
               exists anywhere in this table (R-12.3.3). Where a user might reasonably expect
               one, the footer says so in words, exactly as specified. */}
           <span className="text-xs">No totals — these posts are measured against different things.</span>
           <span>
-            Page {data.pagination.page} of {data.pagination.totalPages} — {data.pagination.total}{" "}
-            analyses
+            Page {safePage} of {totalPages} — {filteredCount} of {totalCount} analyses
           </span>
           <div className="flex gap-2">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              disabled={data.pagination.page <= 1}
+              disabled={safePage <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
             >
               Previous
@@ -202,8 +331,8 @@ export function AnalysisDataTable({
               type="button"
               variant="outline"
               size="sm"
-              disabled={data.pagination.page >= data.pagination.totalPages}
-              onClick={() => setPage((p) => Math.min(data.pagination.totalPages, p + 1))}
+              disabled={safePage >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             >
               Next
             </Button>
