@@ -72,9 +72,9 @@ describe("AnalysesContent — full-corpus fetch is not doubled (PR #203 review, 
   it("mounting the real page fires exactly ONE full-corpus network request, not two", async () => {
     let fetchCallCount = 0;
     const baseFetch = buildFetchMock();
-    globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    globalThis.fetch = (async () => {
       fetchCallCount += 1;
-      return baseFetch.call(null, input as never, init as never);
+      return baseFetch();
     }) as unknown as typeof fetch;
 
     const queryClient = new QueryClient({
