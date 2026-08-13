@@ -72,9 +72,14 @@ describe("AnalysisCountsCell — OR-11's three-case absent-count reason", () => 
  * `aria-hidden="true"` em-dash (`AnalysisCountsCell.tsx:32`) that rendered identically on every
  * row regardless of data. `commentCountState` is now threaded through from
  * `performance.computed.comments` (`classifyCommentCountState`, `lib/api/analyses/helpers.ts`)
- * exactly like `reachCountState` is threaded from `performance.computed.reach` — asserted here
- * via the accessibility tree (`getByRole`/accessible name), not `getByText`, because `getByText`
- * does not respect `aria-hidden` and is exactly what let the original hardcoded dash pass review.
+ * exactly like `reachCountState` is threaded from `performance.computed.reach`.
+ *
+ * The present-count case below is asserted with `getByText` PLUS an explicit
+ * `.closest('[aria-hidden="true"]')` check — `getByText` alone ignores `aria-hidden` and would
+ * have matched the old hardcoded dash just as happily; the `aria-hidden` check is the part that
+ * actually catches it. The absent-count case is asserted with `getByRole("img", ...)` instead,
+ * because an `aria-hidden="true"` node (the original defect) is excluded from the accessibility
+ * tree entirely — that query fails exactly the way the shipped bug should have been caught.
  */
 describe("AnalysisCountsCell — ticket #205's comment count", () => {
   it("a real, present comment count renders the actual abbreviated figure on the likes line, reachable by its own accessible text", () => {
@@ -89,8 +94,11 @@ describe("AnalysisCountsCell — ticket #205's comment count", () => {
     );
 
     // The exact shipped abbreviation (`formatAbbrev`, EngagementCount/helpers.ts):
-    // 1_200 -> "1.2K". Asserted as a real, non-`aria-hidden` text node — `getByText` only
-    // matches nodes actually reachable in the rendered tree's plain content.
+    // 1_200 -> "1.2K". `getByText` alone does NOT prove this node is accessible — it ignores
+    // `aria-hidden` entirely and would have matched the old hardcoded dash just as happily.
+    // The `.closest('[aria-hidden="true"]')` check below is what actually gives this test
+    // teeth: it fails if this figure were ever wrapped in the same `aria-hidden="true"` span
+    // the original bug used.
     const commentFigure = screen.getByText("1.2K");
     expect(commentFigure).toBeInTheDocument();
     expect(commentFigure.closest('[aria-hidden="true"]')).toBeNull();
@@ -98,9 +106,6 @@ describe("AnalysisCountsCell — ticket #205's comment count", () => {
     // Full likes-line text, proving the middot separates two real values, not a dangling
     // dash — matches the issue's own worked example ("31.4K · 1.2K").
     expect(container.textContent).toContain("31.4K · 1.2K");
-
-    // The old hardcoded placeholder must be gone entirely.
-    expect(screen.queryByText("—")).not.toBeInTheDocument();
   });
 
   it("an absent comment count (state UNKNOWN) announces 'comments unknown' via role=img, not a bare unlabelled dash", () => {

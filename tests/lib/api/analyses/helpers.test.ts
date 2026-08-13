@@ -151,6 +151,25 @@ describe("classifyLikeCount", () => {
       value: 31_400,
     });
   });
+
+  /**
+   * PR #210 review — the `-1` sentinel (OR-20, `lib/server/analysis/performance/
+   * availability.ts`): a genuinely counts-disabled Instagram post can carry
+   * `edge_media_preview_like.count: -1`, present and populated. If `likeAndViewCountsDisabled`
+   * is itself absent on that payload, this negative guard is the only thing standing between
+   * that sentinel and a fabricated on-screen count.
+   */
+  it("a negative likeCount (the -1 sentinel, OR-20) resolves to unknown, never a negative count or a clamped zero", () => {
+    expect(classifyLikeCount({ likeCount: -1, likeAndViewCountsDisabled: false })).toEqual({
+      kind: "unknown",
+    });
+  });
+
+  it("a negative likeCount with likeAndViewCountsDisabled absent (null) is still unknown, not hidden and not a fabricated count", () => {
+    expect(classifyLikeCount({ likeCount: -1, likeAndViewCountsDisabled: null })).toEqual({
+      kind: "unknown",
+    });
+  });
 });
 
 /**
@@ -347,6 +366,26 @@ describe("deriveAnalysisTablePerformance — commentCountState (ticket #205)", (
       computed: { ...base.computed, comments: { value: null, state: "UNKNOWN" } },
     };
     const derived = deriveAnalysisTablePerformance(withUnknownComments, "reel", null);
+    expect(derived?.commentCountState).toEqual({ kind: "unknown" });
+  });
+
+  /**
+   * PR #210 review N1/N2 — `comments.state` is never `HIDDEN` in practice
+   * (`like_and_view_counts_disabled` deliberately never gates comments), but the union type
+   * is exhaustive over `HIDDEN`/`UNKNOWN`/`ZERO`/`AVAILABLE`, and this was the one arm with no
+   * test. `EngagementCount`'s `hidden` treatment renders the shared, likes/views-specific
+   * tooltip copy, which is the wrong explanation for a hidden comment figure — so `HIDDEN`
+   * degrades to `unknown` here rather than `hidden`, and this is the assertion that would fail
+   * if a future change ever reintroduced that mismatch.
+   */
+  it("comments.state HIDDEN degrades to unknown, never 'hidden' — there is no approved hidden-comment-count copy", () => {
+    const base = performanceWith(4, 3.2);
+    if (base == null) throw new Error("performanceWith never returns null in this fixture");
+    const withHiddenComments: AnalysisPerformance = {
+      ...base,
+      computed: { ...base.computed, comments: { value: null, state: "HIDDEN" } },
+    };
+    const derived = deriveAnalysisTablePerformance(withHiddenComments, "reel", null);
     expect(derived?.commentCountState).toEqual({ kind: "unknown" });
   });
 });

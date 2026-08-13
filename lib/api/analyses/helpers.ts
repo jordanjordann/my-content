@@ -93,13 +93,23 @@ export function classifyViewCount(input: {
  * Classifies a like count into a `CountState` (TDD §4.2). Likes have no `plays`
  * equivalent — that `kind` is unreachable here by construction, which is correct
  * (design §2: likes only ever render Hidden / 0 / — / count).
+ *
+ * PR #210 review — `likeCount` here is the RAW client-side field (`analysis.likeCount`), the
+ * same one `resolveInstagramLikeAvailability`'s OR-20 rule 2 (`lib/server/analysis/performance/
+ * availability.ts`) guards server-side: a genuinely counts-disabled Instagram post can carry a
+ * `-1` sentinel in `edge_media_preview_like.count`, present and populated. If the
+ * `like_and_view_counts_disabled` flag is itself absent/stripped on a payload carrying that
+ * sentinel, this function is the only remaining guard before `-1` reaches the UI as a
+ * fabricated count. Mirrors OR-20 rule 2 exactly: non-finite AND `< 0` both resolve to
+ * `unknown`, never a negative "count" and never clamped to `0`.
  */
 export function classifyLikeCount(input: {
   likeCount: number | null;
   likeAndViewCountsDisabled: boolean | null;
 }): CountState {
   if (input.likeAndViewCountsDisabled === true) return { kind: "hidden" };
-  if (input.likeCount == null) return { kind: "unknown" };
+  if (input.likeCount == null || !Number.isFinite(input.likeCount)) return { kind: "unknown" };
+  if (input.likeCount < 0) return { kind: "unknown" };
   if (input.likeCount === 0) return { kind: "zero" };
   return { kind: "count", value: input.likeCount };
 }
@@ -160,12 +170,19 @@ export function classifyReachCountState(reach: PerformanceComputed["reach"]): Co
  * must never branch on `computed.comments` directly. Comments have no `plays` equivalent
  * (design §2: like counts only ever render Hidden / 0 / — / count, and comments follow the
  * same four-state grammar) and, per `availability.ts`'s own comment, are never `HIDDEN` in
- * practice (`like_and_view_counts_disabled` deliberately never gates comments) — the `hidden`
- * branch below only exists so this stays exhaustive over the shared `PerformanceAvailabilityState`
- * type rather than assuming that invariant holds forever.
+ * practice (`like_and_view_counts_disabled` deliberately never gates comments).
+ *
+ * PR #210 review N1 — `EngagementCount`'s `hidden` treatment renders the SHARED
+ * `ENGAGEMENT_HIDDEN_TOOLTIP_COPY` ("The creator turned off view and like counts..."), which is
+ * the wrong explanation for a hidden COMMENT figure — that copy is authored for the
+ * likes/views flag only, and there is no owner-approved comment-specific wording to substitute.
+ * Rather than let a structurally-unreachable-in-practice state accidentally render an
+ * incorrect, unapproved-for-this-metric sentence if that invariant ever breaks, `HIDDEN` is
+ * deliberately degraded to `unknown` here (the same "no value, no verdict" treatment absent
+ * comments already get) instead of `hidden`.
  */
 export function classifyCommentCountState(comments: PerformanceComputed["comments"]): CountState {
-  if (comments.state === "HIDDEN") return { kind: "hidden" };
+  if (comments.state === "HIDDEN") return { kind: "unknown" };
   if (comments.state === "UNKNOWN") return { kind: "unknown" };
   if (comments.state === "ZERO") return { kind: "zero" };
   // AVAILABLE — a value must exist by construction; if it somehow doesn't, degrade to
