@@ -49,9 +49,10 @@ describe("contrast — ticket #149's new badges, real dark tokens, §8.4.6 metho
 
 /**
  * Ticket #217 (M4, L2) — DESIGN-3C §9.2 puts the reach/follower colour on the QUALIFIER line,
- * not the value line. Ratios below are computed from the REAL `.dark { --accent }` /
- * `.dark { --teal }` oklch token values in `app/globals.css` (via `DARK_TOKENS`), not from the
- * hex the design doc names — a doc-hex assertion cannot fail when the token changes.
+ * not the value line. Ratios below are computed from `DARK_TOKENS.accent`/`.teal`, which
+ * `tests/helpers/contrast.ts` PARSES LIVE out of the real `.dark { ... }` block in
+ * `app/globals.css` at module load — not a hand-copied fixture, and not the hex the design doc
+ * names. Changing either token in `globals.css` changes what these assertions measure.
  */
 describe("contrast — ticket #217, engagement qualifier colour (M4 inversion fix, L2 teal token)", () => {
   it("reach-denominated qualifier (text-accent, FULL opacity) clears 4.5:1 on all four surfaces", () => {
@@ -99,17 +100,21 @@ describe("contrast — ticket #217, colour sits on the qualifier element, not th
     render(<AnalysisEngagementCell cell={REACH_CELL} denominator="REACH" />);
     const value = screen.getByText("4.1%");
     const qualifier = screen.getByText("of 482.1K views");
-    expect(qualifier.className).toMatch(/\btext-accent\b/);
-    expect(value.className).not.toMatch(/\btext-accent\b/);
-    expect(value.className).toMatch(/\btext-foreground\b/);
+    // `toHaveClass` matches a class TOKEN (whitespace-split) exactly, unlike a `\btext-accent\b`
+    // regex — `\b` matches on both sides of a hyphen, so it would also match `text-accent-500`.
+    expect(qualifier).toHaveClass("text-accent");
+    expect(value).not.toHaveClass("text-accent");
+    expect(value).toHaveClass("text-foreground");
   });
 
   it("a follower-denominated row: the qualifier ('of 284K followers') carries text-teal, the value ('≈16.2%') does not", () => {
     render(<AnalysisEngagementCell cell={FOLLOWER_CELL} denominator="FOLLOWERS" />);
     const value = screen.getByText("≈16.2%");
     const qualifier = screen.getByText("of 284.0K followers");
-    expect(qualifier.className).toMatch(/\btext-teal\b/);
-    expect(value.className).not.toMatch(/\btext-teal\b/);
-    expect(value.className).toMatch(/\btext-foreground\b/);
+    // Same rationale as above: `toHaveClass` is a token-exact match, so a leftover
+    // `text-teal-500` (the old, unmeasured Tailwind class) fails this, unlike a `\b` regex.
+    expect(qualifier).toHaveClass("text-teal");
+    expect(value).not.toHaveClass("text-teal");
+    expect(value).toHaveClass("text-foreground");
   });
 });

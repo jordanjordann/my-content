@@ -9,6 +9,9 @@
  * surface ratios in a real test, instead of a PR body claim nobody re-checks on the next change.
  */
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 export type Srgb255 = [number, number, number];
 
 export function oklchToSrgb255(L: number, C: number, H: number): Srgb255 {
@@ -60,7 +63,56 @@ export function contrastRatio(a: Srgb255, b: Srgb255): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-/** This app's real `.dark` tokens (`app/globals.css`) — re-derive here, never re-guess. */
+/**
+ * Reads `app/globals.css` off disk and returns the raw declaration body of its `.dark { ... }`
+ * block. The file has no nested braces inside `.dark` (only flat `--token: value;` declarations),
+ * so a non-greedy match up to the first `}` after `.dark {` is exactly the block's contents.
+ */
+function readDarkBlock(): string {
+  // `process.cwd()` is vitest's project root (where `vitest.config.ts` lives), not this file's
+  // own directory — more robust than resolving off `import.meta.url`, which vitest's transform
+  // does not always expose as a real `file:` URL.
+  const globalsCssPath = resolve(process.cwd(), "app/globals.css");
+  const css = readFileSync(globalsCssPath, "utf8");
+  const match = css.match(/\.dark\s*\{([^}]*)\}/);
+  if (!match) {
+    throw new Error(`Could not find a ".dark { ... }" block in ${globalsCssPath}`);
+  }
+  return match[1];
+}
+
+/**
+ * Parses a single `--name: oklch(L C H);` (or `oklch(L C H / A%)`) declaration out of a CSS
+ * block's raw text and returns its `[L, C, H]` triple. Ignores any trailing `/ alpha` segment —
+ * none of the tokens this helper reads (`--accent`, `--teal`) carry one.
+ */
+function parseOklchToken(blockText: string, varName: string): [number, number, number] {
+  const pattern = new RegExp(`--${varName}\\s*:\\s*oklch\\(([^)]+)\\)`);
+  const match = blockText.match(pattern);
+  if (!match) {
+    throw new Error(`Could not find "--${varName}: oklch(...)" in the .dark block of app/globals.css`);
+  }
+  const [L, C, H] = match[1]
+    .split("/")[0]
+    .trim()
+    .split(/\s+/)
+    .map(Number);
+  if ([L, C, H].some((n) => Number.isNaN(n))) {
+    throw new Error(`Could not parse oklch(${match[1]}) for --${varName} in the .dark block`);
+  }
+  return [L, C, H];
+}
+
+const DARK_BLOCK = readDarkBlock();
+const [ACCENT_L, ACCENT_C, ACCENT_H] = parseOklchToken(DARK_BLOCK, "accent");
+const [TEAL_L, TEAL_C, TEAL_H] = parseOklchToken(DARK_BLOCK, "teal");
+
+/**
+ * This app's real `.dark` tokens (`app/globals.css`) — `accent` and `teal` are parsed live from
+ * the file above (never hand-copied), so a token edit in `globals.css` changes what this helper
+ * measures. The remaining entries are static stand-ins for tokens this table doesn't gate on a
+ * `--teal`/`--accent`-style single source of truth check; re-derive them here rather than guess.
+ */
 export const DARK_TOKENS = {
   background: oklchToSrgb255(0.105, 0.026, 255),
   cardRaw: oklchToSrgb255(0.15, 0.032, 255), // --card carries its own 86% alpha
@@ -68,9 +120,9 @@ export const DARK_TOKENS = {
   mutedOpaque: oklchToSrgb255(0.2, 0.038, 255),
   mutedForeground: oklchToSrgb255(0.72, 0.03, 250),
   // `.dark { --accent }` — reach-denominated qualifier colour (DESIGN-3C §9.2, ticket #217).
-  accent: oklchToSrgb255(0.75, 0.18, 58),
+  accent: oklchToSrgb255(ACCENT_L, ACCENT_C, ACCENT_H),
   // `.dark { --teal }` — follower-denominated qualifier colour (DESIGN-3C §9.2, L2, ticket #217).
-  teal: oklchToSrgb255(0.777, 0.124, 181.13),
+  teal: oklchToSrgb255(TEAL_L, TEAL_C, TEAL_H),
 } as const;
 
 export const CARD = compositeGamma(DARK_TOKENS.cardRaw, DARK_TOKENS.background, 0.86);
