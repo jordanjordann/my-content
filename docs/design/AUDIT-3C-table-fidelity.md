@@ -148,6 +148,8 @@ The next five findings share one cause and would be one ticket: the table's typo
 
 **Resolution.** Add an optional per-column class to `AnalysisTableColumnDef` and set `text-accent` / the teal token on columns 8 and 9. Fix alongside M4 — they are the same colour decision at two ends of the same column.
 
+> **AMENDED 2026-08-14 — this finding was under-specified, and `DESIGN-3C` **§9.2.1** (**R-D18** / **R-D19**) is now the authority.** The resolution above says *where* the colour goes and is unchanged; what it never said — because the mockup it was read off draws the headers as **static text with no sort button** — is what the colour does once the label sits inside a real sort control. The shipped control's `hover:text-foreground` and active-sort `text-foreground` are the button's own `color` and **override an inherited header colour**, so building M3 as written makes the colour disappear on hover and while that column is sorted. **The owner has ruled the colour is kept in ALL states**, and §9.2.1 also specifies the replacement hover affordance (a colour-free underline) and rules that the **sort arrow alone** carries the sorted state. **The `headerColorClassName` mechanism this finding proposed is approved** and is not reopened.
+
 ---
 
 #### M4 — The engagement colour is on the wrong line: the figure is coloured, the qualifier is muted
