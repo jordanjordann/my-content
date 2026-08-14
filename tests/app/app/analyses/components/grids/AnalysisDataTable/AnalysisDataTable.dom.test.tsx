@@ -469,11 +469,58 @@ describe("AnalysisDataTable — default render (OR-1, OR-7, OR-8)", () => {
     expect(capturedUrls.every((u) => u.includes("pageSize=5000"))).toBe(true);
   });
 
-  it("R-D1 — the footer states there is no totals row, exactly as specified, with no interaction", async () => {
+  it("R-D1 (amendment A5) — the footer states there is no totals row, exactly as specified, with no interaction", async () => {
     renderTable();
     expect(
-      await screen.findByText("No totals — these posts are measured against different things."),
+      await screen.findByText(
+        "No totals — some posts are measured against views or plays, others against follower count. The two can't be added or averaged.",
+      ),
     ).toBeInTheDocument();
+  });
+
+  // R-D11 — the R-D1 footer sentence must be free to wrap, never clamped, and must never be
+  // genuinely clipped by an ancestor either — `overflow-hidden` on the footer bar or any
+  // ancestor up to the table's root would clip the sentence even with a clean class list on
+  // the span itself, so this walks the full ancestor chain (not just the span's own
+  // `className`) and fails if any of it carries a clipping class.
+  it("R-D11 — the footer sentence carries no truncation classes anywhere in its ancestor chain", async () => {
+    renderTable();
+    const sentence = await screen.findByText(
+      "No totals — some posts are measured against views or plays, others against follower count. The two can't be added or averaged.",
+    );
+    expect(sentence.className).not.toMatch(/truncate|text-ellipsis|overflow-hidden|line-clamp/);
+
+    let ancestor: HTMLElement | null = sentence.parentElement;
+    while (ancestor && ancestor !== document.body) {
+      expect(ancestor.className).not.toMatch(/truncate|text-ellipsis|overflow-hidden|line-clamp/);
+      ancestor = ancestor.parentElement;
+    }
+  });
+
+  // R-D11's actual mechanism: the footer BAR itself stays a single row (no `flex-wrap`) and
+  // the pagination side gets `min-w-0` so IT shrinks and yields the sentence room to wrap.
+  // `flex-wrap` on the bar is the wrong mechanism — flex line-breaking compares each item's
+  // max-content width before any text wraps, so once the sentence's own max-content width
+  // (~750px at this length/size) plus the pagination group's (~350px) exceeds the bar's
+  // width, `flex-wrap` pushes the whole pagination group onto its own row, and because
+  // `justify-between` puts one item per line, it lands left-aligned instead of right-aligned.
+  // This assertion is proven to fail on the wrong mechanism: reintroducing `flex-wrap` on the
+  // footer bar (Edit tool revert, observed failing, Edit tool restore, observed green — see
+  // PR description) makes this test fail without touching the string or the condition.
+  it("R-D11 — the footer bar does not wrap to a second row; the pagination side shrinks via min-w-0 instead, staying right-aligned", async () => {
+    renderTable();
+    const sentence = await screen.findByText(
+      "No totals — some posts are measured against views or plays, others against follower count. The two can't be added or averaged.",
+    );
+    const footerBar = sentence.parentElement;
+    expect(footerBar?.className).not.toMatch(/flex-wrap/);
+    expect(footerBar?.className).toMatch(/justify-between/);
+
+    const paginationSide = screen.getByText(/^Page \d+ of \d+/).closest("div");
+    expect(paginationSide?.className).toMatch(/min-w-0/);
+    // The pagination side must be the footer bar's own direct child (not nested further),
+    // so `justify-between` on the bar is what keeps it pinned to the end of the row.
+    expect(paginationSide?.parentElement).toBe(footerBar);
   });
 
   it("renders the shared Scores group header spanning columns 5-6, with Content/Performance sub-labels", async () => {
@@ -609,11 +656,13 @@ describe("AnalysisDataTable — Eng. / reach reason text does not collapse reel 
   });
 });
 
-describe("AnalysisDataTable — Eng. / followers 'no follower measure here' (PR #200 review, S4 coverage gap)", () => {
-  it("a reel whose Tier 1 resolved against REACH (not FOLLOWERS) reads 'no follower measure here' in the Eng. / followers column", async () => {
+describe("AnalysisDataTable — Eng. / followers 'measured against reach instead' (PR #200 review, S4 coverage gap; copy amended by A5, issue #207/#216)", () => {
+  it("a reel whose Tier 1 resolved against REACH (not FOLLOWERS) reads 'measured against reach instead' in the Eng. / followers column", async () => {
     renderTable([ROW_A_SCORED]);
     const row = (await screen.findByText("Nasi Goreng Kampung")).closest("tr") as HTMLElement;
-    expect(within(row).getByText("no follower measure here")).toBeInTheDocument();
+    // Exact text match — this fails both if the withdrawn A5 string ever comes back and if
+    // the branch is deleted outright (there would be no element with this text at all).
+    expect(within(row).getByText("measured against reach instead")).toBeInTheDocument();
   });
 });
 

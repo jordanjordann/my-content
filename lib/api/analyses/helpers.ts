@@ -358,13 +358,15 @@ function deriveMultiplierCell(computed: PerformanceComputed): AnalysisTableMulti
  * columns; the other renders a plain-language reason, never a blank.
  *
  * The "wrong-denominator" reasons are DESIGN-3C's own worked examples, verbatim, not
- * invented: `no follower measure here` (§4, Eng. / followers, reel row) and, for Eng. /
- * reach, one of two strings depending on the row's actual content kind — collapsing them
- * is exactly what R-13.5.2 (§5.4) forbids: `not published for image posts` (§4, all-image-
- * carousel row) for genuinely image-only content, or `no post-level reach` (§5.4 line 293)
- * for video content (a reel, a video-bearing carousel) whose reach happens to be
- * unavailable — that post DOES publish counts, so the image-posts string would be false
- * (PR #198 review, round 3, blocker: the fix must not pick the string by denominator alone).
+ * invented: `measured against reach instead` (§4, Eng. / followers, reel row — amendment
+ * A5; the string it withdrew and replaced is preserved in DESIGN-3C §4, not repeated here)
+ * and, for Eng. / reach, one of two strings depending on the row's actual content kind —
+ * collapsing them is exactly what R-13.5.2 (§5.4) forbids: `not published for image posts`
+ * (§4, all-image-carousel row) for genuinely image-only content, or `no post-level reach`
+ * (§5.4 line 293) for video content (a reel, a video-bearing carousel) whose reach happens
+ * to be unavailable — that post DOES publish counts, so the image-posts string would be
+ * false (PR #198 review, round 3, blocker: the fix must not pick the string by denominator
+ * alone).
  */
 function deriveEngagementCell(
   computed: PerformanceComputed,
@@ -408,7 +410,7 @@ function deriveEngagementCell(
           ? VIDEO_MEDIA_TYPES.has(mediaType)
             ? "no post-level reach"
             : "not published for image posts"
-          : "no follower measure here",
+          : "measured against reach instead",
     };
   }
 
