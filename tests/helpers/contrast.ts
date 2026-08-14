@@ -161,3 +161,40 @@ export function badgeRatiosOnAllSurfaces(tint: Srgb255, alpha: number): Record<k
   }
   return result;
 }
+
+/**
+ * Ticket #221, B3 — guards the token→utility wiring the ratio checks above cannot see.
+ * `DARK_TOKENS.teal`/`.accent` are read straight off the `--teal`/`--accent` CUSTOM PROPERTY in
+ * the `.dark` block — that correctly measures the token's own colour, but says nothing about
+ * whether `@theme inline`'s `--color-teal: var(--teal);` line (the mapping that actually makes
+ * the `.text-teal` Tailwind utility exist and paint that colour) is still wired to it. Two real
+ * mutations were reproduced and both pass every ratio assertion in this suite AND `npm run build`:
+ *   1. Re-pointing `--color-teal: var(--destructive);` in `@theme inline` — `.text-teal` still
+ *      compiles and ships, but paints red. The ratio checks above still measure the now-unused
+ *      `--teal` value and see nothing wrong.
+ *   2. Deleting the `--color-teal: var(--teal);` line entirely — Tailwind emits no `.text-teal`
+ *      rule at all, and `toHaveClass("text-teal")` DOM assertions still pass, because they only
+ *      check the className STRING on the element, never that a stylesheet rule paints it.
+ * This reads `app/globals.css` a second time (the whole file, not just `.dark`) and asserts the
+ * literal `--color-<name>: var(--<name>);` line is present, unedited, in `@theme inline` — for
+ * every token this table colour-codes a header or cell by. Throws at import time, same
+ * fail-loud contract as `parseOklchToken` above.
+ */
+function assertThemeMapping(varName: string): void {
+  const globalsCssPath = resolve(process.cwd(), "app/globals.css");
+  const css = readFileSync(globalsCssPath, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const themeMatch = css.match(/@theme inline\s*\{([^}]*)\}/);
+  if (!themeMatch) {
+    throw new Error(`Could not find an "@theme inline { ... }" block in ${globalsCssPath}`);
+  }
+  const pattern = new RegExp(`--color-${varName}\\s*:\\s*var\\(--${varName}\\)\\s*;`);
+  if (!pattern.test(themeMatch[1])) {
+    throw new Error(
+      `"@theme inline" in ${globalsCssPath} does not map --color-${varName} to var(--${varName}) ` +
+        `— the .text-${varName} utility is either missing or repointed at a different token.`,
+    );
+  }
+}
+
+assertThemeMapping("teal");
+assertThemeMapping("accent");

@@ -13,7 +13,7 @@ export function AnalysisSinkDivider({ label, colSpan }: AnalysisSinkDividerProps
   return (
     <tr aria-hidden="false">
       <td colSpan={colSpan} className="border-b bg-muted/30 px-3 py-1.5">
-        <span className="text-xs font-medium text-muted-foreground">{label}</span>
+        <span className="text-[10.5px] uppercase tracking-wider text-muted-foreground">{label}</span>
       </td>
     </tr>
   );

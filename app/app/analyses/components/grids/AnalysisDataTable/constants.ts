@@ -46,6 +46,7 @@ export const ANALYSES_TABLE_COLUMNS: AnalysisTableColumnDef[] = [
     width: 116,
     sortField: "engagementReach",
     defaultSortDir: "desc",
+    headerColorClassName: "text-accent",
   },
   {
     id: "engagementFollowers",
@@ -53,6 +54,7 @@ export const ANALYSES_TABLE_COLUMNS: AnalysisTableColumnDef[] = [
     width: 124,
     sortField: "engagementFollowers",
     defaultSortDir: "desc",
+    headerColorClassName: "text-teal",
   },
 ];
 

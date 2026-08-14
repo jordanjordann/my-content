@@ -46,7 +46,7 @@ export function AnalysisTableColumnHeaders({
                 key="scores-group"
                 colSpan={2}
                 scope="colgroup"
-                className="border-b px-3 py-1 text-center text-xs font-semibold text-muted-foreground"
+                className="border-b px-3 py-1 text-center text-[10px] font-semibold uppercase tracking-wider text-primary"
               >
                 Scores
               </th>
@@ -61,7 +61,10 @@ export function AnalysisTableColumnHeaders({
               scope="col"
               style={{ width: column.width, minWidth: column.width }}
               aria-sort={ariaSortFor(column.sortField)}
-              className="border-b px-3 py-2 align-bottom text-left text-xs font-medium text-muted-foreground"
+              className={cn(
+                "border-b px-3 py-2 align-bottom text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground",
+                column.headerColorClassName,
+              )}
             >
               <ColumnHeaderLabel
                 column={column}
@@ -81,7 +84,10 @@ export function AnalysisTableColumnHeaders({
             scope="col"
             style={{ width: column.width, minWidth: column.width }}
             aria-sort={ariaSortFor(column.sortField)}
-            className="border-b px-3 py-1 text-left text-xs font-medium text-muted-foreground"
+            className={cn(
+              "border-b px-3 py-1 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground",
+              column.headerColorClassName,
+            )}
           >
             <ColumnHeaderLabel
               column={column}
