@@ -65,15 +65,18 @@ export function contrastRatio(a: Srgb255, b: Srgb255): number {
 
 /**
  * Reads `app/globals.css` off disk and returns the raw declaration body of its `.dark { ... }`
- * block. The file has no nested braces inside `.dark` (only flat `--token: value;` declarations),
- * so a non-greedy match up to the first `}` after `.dark {` is exactly the block's contents.
+ * block. `/* ... *\/` comments are stripped first — otherwise a comment that happens to contain
+ * literal `.dark {` / `}` text (e.g. one explaining this very token) would be mistaken for the
+ * real block. The file has no nested braces inside `.dark` itself (only flat `--token: value;`
+ * declarations), so a non-greedy match up to the first `}` after `.dark {` is exactly the
+ * block's contents once comments are gone.
  */
 function readDarkBlock(): string {
   // `process.cwd()` is vitest's project root (where `vitest.config.ts` lives), not this file's
   // own directory — more robust than resolving off `import.meta.url`, which vitest's transform
   // does not always expose as a real `file:` URL.
   const globalsCssPath = resolve(process.cwd(), "app/globals.css");
-  const css = readFileSync(globalsCssPath, "utf8");
+  const css = readFileSync(globalsCssPath, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   const match = css.match(/\.dark\s*\{([^}]*)\}/);
   if (!match) {
     throw new Error(`Could not find a ".dark { ... }" block in ${globalsCssPath}`);
