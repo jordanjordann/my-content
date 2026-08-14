@@ -309,18 +309,26 @@ export function AnalysisDataTable({
       </div>
 
       {!isPending && !isError && totalCount > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t p-3 text-sm text-muted-foreground">
+        <div className="flex items-center justify-between gap-2 border-t p-3 text-sm text-muted-foreground">
           {/* R-D1 (TDD §9.2, DESIGN-3C §4.1), amended by A5 (R-D11) — no aggregate/total/
               "typical engagement" row exists anywhere in this table (R-12.3.3). Where a user
               might reasonably expect one, the footer says so in words, exactly as specified.
               R-D11: always-visible plain text, never a tooltip/popover; it may wrap to a
-              second line and must never be truncated or ellipsised. */}
+              second line and must never be truncated or ellipsised. The footer bar itself
+              stays a single row (no `flex-wrap`) — see R-D11's own mechanism below. */}
           <span className="text-xs">
             No totals — some posts are measured against views or plays, others against follower count. The two
             can&apos;t be added or averaged.
           </span>
-          {/* R-D11 — the pagination side gets `min-w-0` so it can shrink and yield the
-              footer sentence the room to wrap, instead of forcing a horizontal overflow. */}
+          {/* R-D11 — the footer bar is NOT `flex-wrap`: wrapping the bar itself would let
+              flex line-breaking (which compares max-content widths before any text wraps)
+              push the whole pagination group onto its own row and left-align it, once the
+              sentence's ~750px max-content width plus the pagination's ~350px exceeds the
+              footer's width (around 1140px — inside ordinary 1280/1366px laptop widths).
+              Instead, only the pagination side gets `min-w-0` so IT can shrink below its
+              content width, which is what actually gives the sentence room to wrap to a
+              second line while the bar itself stays one row and pagination stays
+              right-aligned via the bar's own `justify-between`. */}
           <div className="flex min-w-0 items-center gap-4">
             <span>
               Page {safePage} of {totalPages} — {filteredCount} of {totalCount} analyses

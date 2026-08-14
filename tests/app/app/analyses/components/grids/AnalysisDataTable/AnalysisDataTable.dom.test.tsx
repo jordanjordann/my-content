@@ -478,18 +478,49 @@ describe("AnalysisDataTable — default render (OR-1, OR-7, OR-8)", () => {
     ).toBeInTheDocument();
   });
 
-  // R-D11 — the R-D1 footer sentence must be free to wrap, never clamped. Asserting the
-  // class list (rather than measured layout, which jsdom cannot lay out) is what actually
-  // fails if someone reaches for `truncate`/`text-ellipsis`/`overflow-hidden` on this span,
-  // or removes the pagination side's `min-w-0` that gives it the room to wrap.
-  it("R-D11 — the footer sentence carries no truncation classes, and the pagination side yields it room via min-w-0", async () => {
+  // R-D11 — the R-D1 footer sentence must be free to wrap, never clamped, and must never be
+  // genuinely clipped by an ancestor either — `overflow-hidden` on the footer bar or any
+  // ancestor up to the table's root would clip the sentence even with a clean class list on
+  // the span itself, so this walks the full ancestor chain (not just the span's own
+  // `className`) and fails if any of it carries a clipping class.
+  it("R-D11 — the footer sentence carries no truncation classes anywhere in its ancestor chain", async () => {
     renderTable();
     const sentence = await screen.findByText(
       "No totals — some posts are measured against views or plays, others against follower count. The two can't be added or averaged.",
     );
     expect(sentence.className).not.toMatch(/truncate|text-ellipsis|overflow-hidden|line-clamp/);
+
+    let ancestor: HTMLElement | null = sentence.parentElement;
+    while (ancestor && ancestor !== document.body) {
+      expect(ancestor.className).not.toMatch(/truncate|text-ellipsis|overflow-hidden|line-clamp/);
+      ancestor = ancestor.parentElement;
+    }
+  });
+
+  // R-D11's actual mechanism: the footer BAR itself stays a single row (no `flex-wrap`) and
+  // the pagination side gets `min-w-0` so IT shrinks and yields the sentence room to wrap.
+  // `flex-wrap` on the bar is the wrong mechanism — flex line-breaking compares each item's
+  // max-content width before any text wraps, so once the sentence's own max-content width
+  // (~750px at this length/size) plus the pagination group's (~350px) exceeds the bar's
+  // width, `flex-wrap` pushes the whole pagination group onto its own row, and because
+  // `justify-between` puts one item per line, it lands left-aligned instead of right-aligned.
+  // This assertion is proven to fail on the wrong mechanism: reintroducing `flex-wrap` on the
+  // footer bar (Edit tool revert, observed failing, Edit tool restore, observed green — see
+  // PR description) makes this test fail without touching the string or the condition.
+  it("R-D11 — the footer bar does not wrap to a second row; the pagination side shrinks via min-w-0 instead, staying right-aligned", async () => {
+    renderTable();
+    const sentence = await screen.findByText(
+      "No totals — some posts are measured against views or plays, others against follower count. The two can't be added or averaged.",
+    );
+    const footerBar = sentence.parentElement;
+    expect(footerBar?.className).not.toMatch(/flex-wrap/);
+    expect(footerBar?.className).toMatch(/justify-between/);
+
     const paginationSide = screen.getByText(/^Page \d+ of \d+/).closest("div");
     expect(paginationSide?.className).toMatch(/min-w-0/);
+    // The pagination side must be the footer bar's own direct child (not nested further),
+    // so `justify-between` on the bar is what keeps it pinned to the end of the row.
+    expect(paginationSide?.parentElement).toBe(footerBar);
   });
 
   it("renders the shared Scores group header spanning columns 5-6, with Content/Performance sub-labels", async () => {
