@@ -97,11 +97,17 @@ const ROW_8_NO_JUDGEMENT = baseRow({
  * `row.tableDerived == null` (`deriveAnalysisTablePerformance` returns `null` iff
  * `performance == null`). `isNonCompletedRow(row) === false` because `status` is
  * `"completed"` — this must NOT get the failed-row treatment.
+ *
+ * Deliberately a schema-3 row (inherits `baseRow`'s `schemaVersion: 3`) whose performance
+ * step simply never ran — the second, previously-untested history behind row 9. The other
+ * history is a pre-schema-3 row, which never had a performance step to run at all; that
+ * distinction only shows up in `schemaVersion`, never in `performance` (both are `null`
+ * either way), so a guard that keys off `schemaVersion` instead of `performance` would pass
+ * every test that only exercises the pre-schema-3 history.
  */
 const ROW_9_NO_PERFORMANCE_BLOCK = baseRow({
   id: "row-9-no-performance-block",
   title: "Never scored at all",
-  schemaVersion: null,
   performance: null,
 });
 
