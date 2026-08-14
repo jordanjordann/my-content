@@ -30,6 +30,7 @@
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
+  --color-teal: var(--teal);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -64,6 +65,12 @@
   --muted-foreground: oklch(0.48 0.038 252);
   --accent: oklch(0.72 0.18 55);
   --accent-foreground: oklch(0.16 0.025 255);
+  /* Unmeasured, effectively dead: `app/layout.tsx` hardcodes the `dark` class on <html>, so
+     this light-mode value never renders and has no contrast guard (ticket #217 review). It is a
+     hand-picked, unmeasured placeholder in the same teal hue family in case light mode ships
+     later — NOT numerically in sync with the dark-mode teal token's hue/chroma (0.13/181 here
+     vs 0.124/181.13 there) — see `.dark`'s `--teal` declaration below. */
+  --teal: oklch(0.7 0.13 181);
   --destructive: oklch(0.64 0.21 25);
   --border: oklch(0.88 0.025 252);
   --input: oklch(0.88 0.025 252);
@@ -103,6 +110,10 @@
   --muted-foreground: oklch(0.72 0.03 250);
   --accent: oklch(0.75 0.18 58);
   --accent-foreground: oklch(0.105 0.026 255);
+  /* DESIGN-3C §9.2 (M4/L2, ticket #217) — follower-denominated qualifier colour. Target
+     #3fd0bb; oklch(0.777 0.124 181.13) round-trips to #40d0bb (1 unit off on the red channel),
+     re-measured per §9.1's gamma-encoded sRGB method — see contrast.dom.test.tsx. */
+  --teal: oklch(0.777 0.124 181.13);
   --destructive: oklch(0.68 0.22 25);
   --border: oklch(0.98 0.008 248 / 12%);
   --input: oklch(0.98 0.008 248 / 16%);

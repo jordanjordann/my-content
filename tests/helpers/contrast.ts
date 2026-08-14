@@ -9,6 +9,9 @@
  * surface ratios in a real test, instead of a PR body claim nobody re-checks on the next change.
  */
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 export type Srgb255 = [number, number, number];
 
 export function oklchToSrgb255(L: number, C: number, H: number): Srgb255 {
@@ -60,16 +63,86 @@ export function contrastRatio(a: Srgb255, b: Srgb255): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-/** This app's real `.dark` tokens (`app/globals.css`) — re-derive here, never re-guess. */
+/**
+ * Reads `app/globals.css` off disk and returns the raw declaration body of its `.dark { ... }`
+ * block. `/* ... *\/` comments are stripped first — otherwise a comment that happens to contain
+ * literal `.dark {` / `}` text (e.g. one explaining this very token) would be mistaken for the
+ * real block. The file has no nested braces inside `.dark` itself (only flat `--token: value;`
+ * declarations), so a non-greedy match up to the first `}` after `.dark {` is exactly the
+ * block's contents once comments are gone.
+ */
+function readDarkBlock(): string {
+  // `process.cwd()` is vitest's project root (where `vitest.config.ts` lives), not this file's
+  // own directory — more robust than resolving off `import.meta.url`, which vitest's transform
+  // does not always expose as a real `file:` URL.
+  const globalsCssPath = resolve(process.cwd(), "app/globals.css");
+  const css = readFileSync(globalsCssPath, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const match = css.match(/\.dark\s*\{([^}]*)\}/);
+  if (!match) {
+    throw new Error(`Could not find a ".dark { ... }" block in ${globalsCssPath}`);
+  }
+  return match[1];
+}
+
+/**
+ * Parses a single `--name: oklch(L C H);` (or `oklch(L C H / A%)`) declaration out of a CSS
+ * block's raw text and returns its `{ L, C, H, alpha }`. `alpha` defaults to `1` when the
+ * declaration carries no `/ ...` segment; when it does (e.g. `--card`'s `/ 86%`), a trailing `%`
+ * is read as a percentage and anything else as a bare 0-1 fraction.
+ */
+function parseOklchToken(blockText: string, varName: string): { L: number; C: number; H: number; alpha: number } {
+  const pattern = new RegExp(`--${varName}\\s*:\\s*oklch\\(([^)]+)\\)`);
+  const match = blockText.match(pattern);
+  if (!match) {
+    throw new Error(`Could not find "--${varName}: oklch(...)" in the .dark block of app/globals.css`);
+  }
+  const [triple, alphaRaw] = match[1].split("/").map((part) => part.trim());
+  const [L, C, H] = triple.split(/\s+/).map(Number);
+  const alpha = alphaRaw === undefined
+    ? 1
+    : alphaRaw.endsWith("%")
+      ? Number(alphaRaw.slice(0, -1)) / 100
+      : Number(alphaRaw);
+  if ([L, C, H, alpha].some((n) => Number.isNaN(n))) {
+    throw new Error(`Could not parse oklch(${match[1]}) for --${varName} in the .dark block`);
+  }
+  return { L, C, H, alpha };
+}
+
+const DARK_BLOCK = readDarkBlock();
+const accentToken = parseOklchToken(DARK_BLOCK, "accent");
+const tealToken = parseOklchToken(DARK_BLOCK, "teal");
+const backgroundToken = parseOklchToken(DARK_BLOCK, "background");
+const cardToken = parseOklchToken(DARK_BLOCK, "card");
+const mutedToken = parseOklchToken(DARK_BLOCK, "muted");
+const primaryToken = parseOklchToken(DARK_BLOCK, "primary");
+const mutedForegroundToken = parseOklchToken(DARK_BLOCK, "muted-foreground");
+
+/**
+ * This app's real `.dark` tokens (`app/globals.css`), parsed live from the file above — never
+ * hand-copied. `background`, `cardRaw` and `mutedOpaque` are the three SURFACE tokens the
+ * contrast ratios below actually composite against (`FOUR_SURFACES`, `CARD`, `ROW_HOVER`); a
+ * token edit to any of them (including `--card`'s `/ 86%` alpha, read into `CARD_ALPHA` below)
+ * changes what every ratio in this suite measures. `primary` and `mutedForeground` are FOREGROUND
+ * colours read the same live way, used only as the text side of ratios in tests unrelated to the
+ * #217 qualifier-colour guard (the ticket-#149 canary and existing badge tests).
+ */
 export const DARK_TOKENS = {
-  background: oklchToSrgb255(0.105, 0.026, 255),
-  cardRaw: oklchToSrgb255(0.15, 0.032, 255), // --card carries its own 86% alpha
-  primary: oklchToSrgb255(0.68, 0.18, 255),
-  mutedOpaque: oklchToSrgb255(0.2, 0.038, 255),
-  mutedForeground: oklchToSrgb255(0.72, 0.03, 250),
+  background: oklchToSrgb255(backgroundToken.L, backgroundToken.C, backgroundToken.H),
+  cardRaw: oklchToSrgb255(cardToken.L, cardToken.C, cardToken.H),
+  primary: oklchToSrgb255(primaryToken.L, primaryToken.C, primaryToken.H),
+  mutedOpaque: oklchToSrgb255(mutedToken.L, mutedToken.C, mutedToken.H),
+  mutedForeground: oklchToSrgb255(mutedForegroundToken.L, mutedForegroundToken.C, mutedForegroundToken.H),
+  // `.dark { --accent }` — reach-denominated qualifier colour (DESIGN-3C §9.2, ticket #217).
+  accent: oklchToSrgb255(accentToken.L, accentToken.C, accentToken.H),
+  // `.dark { --teal }` — follower-denominated qualifier colour (DESIGN-3C §9.2, L2, ticket #217).
+  teal: oklchToSrgb255(tealToken.L, tealToken.C, tealToken.H),
 } as const;
 
-export const CARD = compositeGamma(DARK_TOKENS.cardRaw, DARK_TOKENS.background, 0.86);
+/** `--card`'s own `/ 86%` alpha, parsed live — see `parseOklchToken`'s `alpha` field. */
+const CARD_ALPHA = cardToken.alpha;
+
+export const CARD = compositeGamma(DARK_TOKENS.cardRaw, DARK_TOKENS.background, CARD_ALPHA);
 /** Row hover surface (`hover:bg-muted/50`), composited over the already-composited card. */
 export const ROW_HOVER = compositeGamma(DARK_TOKENS.mutedOpaque, CARD, 0.5);
 
