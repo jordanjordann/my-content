@@ -38,11 +38,32 @@ export const SCORE_EXPLAIN_OPERANDS_HEADING = "What went into this";
 export const SCORE_EXPLAIN_DRIVERS_HEADING = "Why it did what it did";
 
 /**
- * TDD §9.4 item 6 / DESIGN-3B §4.5 — the unconditional footer. `{date}` is interpolated by
- * the caller; the sentence otherwise renders on every open, no condition (R-13.3.2).
+ * DESIGN-3B §4.5.1 (amendment B6) — the frozen clause shared, byte-identical, by both footer
+ * variants (F1's whole sentence, and F2's first sentence and the whole of its second sentence
+ * up to the em-dash). Exported only so `scoreExplainFooter` can build both variants from one
+ * template; never rendered directly.
  */
-export function scoreExplainFooter(date: string): string {
-  return `Measured ${date}. These numbers are frozen at the time of analysis and don't update.`;
+const SCORE_EXPLAIN_FOOTER_FROZEN_CLAUSE =
+  "These numbers are frozen at the time of analysis and don't update";
+
+/**
+ * TDD §9.4 item 6 / DESIGN-3B §4.5.1 (amendment B6) — the popover footer, now two variants
+ * built from one template with an optional tail so a future re-wording of the shared clause
+ * is inherited by both (§4.5.1's binding rule). `{date}` is interpolated by the caller.
+ *
+ * F1 (`coldStartBucketNoun == null`) renders on every popover except the cold-start state and
+ * is byte-identical to the string this function returned before this amendment. F2 renders
+ * only when the row's `vs their usual` state is cold start (`tier2` present, `tier2.multiplier
+ * === null`) — the caller passes the SAME bucket noun the cell renders (`multiplierCell.kind
+ * === "cold-start" ? multiplierCell.bucketNoun : null`), never a re-derived one (PR #198
+ * blocker 8). F2 carries no numeral and no duration (R-13.3.4, R-13.4.4).
+ */
+export function scoreExplainFooter(date: string, coldStartBucketNoun: string | null = null): string {
+  const prefix = `Measured ${date}. ${SCORE_EXPLAIN_FOOTER_FROZEN_CLAUSE}`;
+  if (coldStartBucketNoun == null) {
+    return `${prefix}.`;
+  }
+  return `${prefix} — except the count of ${coldStartBucketNoun} analysed so far, which is read from your library as it stands now.`;
 }
 
 /**
