@@ -114,6 +114,14 @@ describe("AnalysisTableColumnHeaders — ticket #221", () => {
     // `color` for `:hover` to introduce — `text-accent` is the button's own unconditional class.
     expect(reachButton).toHaveClass("text-accent");
     expect(reachButton).not.toHaveClass("hover:text-foreground");
+
+    // PR #229 re-review blocker A — R-D19 (the hover underline) was rejected on the premise that
+    // the focus-visible ring and the active-sort arrow remain the only sort affordances on these
+    // two headers. Pin the ring here so a later class-string tidy-up cannot silently drop it.
+    expect(reachButton).toHaveClass("focus-visible:ring-2");
+    expect(reachButton).toHaveClass("focus-visible:ring-ring");
+    // Idle (not the active-sort column here — sortBy="posted"): no direction arrow rendered.
+    expect(reachButton?.querySelector("svg")).toBeNull();
   });
 
   it("(M3, PR #229 blocker 1) ACTIVE-SORT state — sorting by an engagement column keeps its header colour on the button", () => {
@@ -139,6 +147,13 @@ describe("AnalysisTableColumnHeaders — ticket #221", () => {
     expect(reachButton).not.toHaveClass("text-foreground");
     const reachHeader = container.querySelector('th[data-column-id="engagementReach"]');
     expect(reachHeader).toHaveClass("text-accent");
+
+    // PR #229 re-review blocker A — same guard as the HOVER test, in the active-sort state: the
+    // focus-visible ring and the direction arrow are the only surviving sort affordances on this
+    // colour-carrying column (R-D19 rejected the hover underline on the premise both remain).
+    expect(reachButton).toHaveClass("focus-visible:ring-2");
+    expect(reachButton).toHaveClass("focus-visible:ring-ring");
+    expect(reachButton?.querySelector("svg")).not.toBeNull();
   });
 
   it("(M3, PR #229 blocker 1) non-engagement headers keep their existing hover/active text-foreground behaviour, unaffected", () => {
