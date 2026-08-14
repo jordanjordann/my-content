@@ -66,9 +66,10 @@
   --accent: oklch(0.72 0.18 55);
   --accent-foreground: oklch(0.16 0.025 255);
   /* Unmeasured, effectively dead: `app/layout.tsx` hardcodes the `dark` class on <html>, so
-     this light-mode value never renders and has no contrast guard (ticket #217 review). Kept in
-     sync with the dark-mode teal token's hue/chroma as a placeholder in case light mode ships
-     later — see `.dark`'s `--teal` declaration below. */
+     this light-mode value never renders and has no contrast guard (ticket #217 review). It is a
+     hand-picked, unmeasured placeholder in the same teal hue family in case light mode ships
+     later — NOT numerically in sync with the dark-mode teal token's hue/chroma (0.13/181 here
+     vs 0.124/181.13 there) — see `.dark`'s `--teal` declaration below. */
   --teal: oklch(0.7 0.13 181);
   --destructive: oklch(0.64 0.21 25);
   --border: oklch(0.88 0.025 252);

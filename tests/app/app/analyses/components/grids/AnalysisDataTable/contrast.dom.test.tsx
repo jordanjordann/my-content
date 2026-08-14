@@ -103,6 +103,10 @@ describe("contrast — ticket #217, colour sits on the qualifier element, not th
     // `toHaveClass` matches a class TOKEN (whitespace-split) exactly, unlike a `\btext-accent\b`
     // regex — `\b` matches on both sides of a hyphen, so it would also match `text-accent-500`.
     expect(qualifier).toHaveClass("text-accent");
+    // Pins the qualifier's font size — nothing else in this suite asserts it, and this PR also
+    // dropped `text-muted-foreground` from the qualifier, so `text-xs` is now the only assertion
+    // standing between "quiet, small qualifier line" and a silent regression to `text-sm`.
+    expect(qualifier).toHaveClass("text-xs");
     expect(value).not.toHaveClass("text-accent");
     expect(value).toHaveClass("text-foreground");
   });
@@ -114,6 +118,8 @@ describe("contrast — ticket #217, colour sits on the qualifier element, not th
     // Same rationale as above: `toHaveClass` is a token-exact match, so a leftover
     // `text-teal-500` (the old, unmeasured Tailwind class) fails this, unlike a `\b` regex.
     expect(qualifier).toHaveClass("text-teal");
+    // See the reach-denominated case above — pins the font size the same way.
+    expect(qualifier).toHaveClass("text-xs");
     expect(value).not.toHaveClass("text-teal");
     expect(value).toHaveClass("text-foreground");
   });
