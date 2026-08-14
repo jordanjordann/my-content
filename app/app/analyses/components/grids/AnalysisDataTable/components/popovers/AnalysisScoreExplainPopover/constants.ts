@@ -14,6 +14,20 @@ export const SCORE_EXPLAIN_HEADING = "How this score was reached";
 export const SCORE_EXPLAIN_JUDGEMENT_INTRO =
   "The 1–5 is a judgement of the numbers below, not a number we measured. The measured figures are the percentage and the multiplier.";
 
+/**
+ * DESIGN-3B §5.5 (amendment B8) — row 8 only. Swaps in for `SCORE_EXPLAIN_HEADING` when the
+ * popover opens on a row whose judgement returned no 1–5 (`performanceCell.kind ===
+ * "no-judgement"`); every other row keeps the heading above unchanged.
+ */
+export const SCORE_EXPLAIN_NO_JUDGEMENT_HEADING = "Why there's no 1–5 here";
+
+/**
+ * DESIGN-3B §5.5 (amendment B8), §5 row 8's L2 — row 8 only. Swaps in for
+ * `SCORE_EXPLAIN_JUDGEMENT_INTRO`, which asserts a score that is not there.
+ */
+export const SCORE_EXPLAIN_NO_JUDGEMENT_INTRO =
+  "The 1–5 is a judgement, and none was returned for this post. The measurements are unaffected and are shown as normal. We can't tell why no judgement was reached, so we're not going to guess.";
+
 /** DESIGN-3B §3.1 — "Both readings, side by side." */
 export const SCORE_EXPLAIN_MEASURED_HEADING = "Both readings, side by side";
 

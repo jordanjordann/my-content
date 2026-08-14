@@ -140,6 +140,17 @@ export type AnalysisPerformance = {
  * `formatAbbrev`, template literals) — that is presentation, not derivation, and stays in the
  * component per AGENTS.md's own carve-out.
  */
+/**
+ * DESIGN-3B §5.5 (amendment B8) — the three states that used to collapse into
+ * `{ kind: "reason"; text: null }` are now distinguishable at the type level:
+ * - `"no-judgement"` — row 8. A performance block exists, no `unavailableReason` is stored,
+ *   and `performanceScore` is `null`. Renders `No 1–5 for this post` and keeps the row's
+ *   single `ⓘ`.
+ * - `"dash"` — `INSUFFICIENT_HISTORY`, declared on `UnavailableReason` but never produced.
+ *   No approved copy exists for it (§5.5); it keeps the muted `—` on purpose.
+ * - `"reason"` — every other `UnavailableReason` with approved copy. `text` is always a real
+ *   string here; the two `null`-shaped states above have their own discriminants instead.
+ */
 export type AnalysisTablePerformanceCell =
   | {
       kind: "score";
@@ -148,7 +159,9 @@ export type AnalysisTablePerformanceCell =
       isTier3: boolean;
       confidenceWord: string | null;
     }
-  | { kind: "reason"; text: string | null };
+  | { kind: "reason"; text: string }
+  | { kind: "no-judgement" }
+  | { kind: "dash" };
 
 export type AnalysisTableMultiplierCell =
   | { kind: "measured"; multiplier: number; sampleSize: number; bucketNoun: string }

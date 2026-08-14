@@ -18,6 +18,7 @@ import {
 } from "@/app/app/analyses/components/grids/AnalysisDataTable/helpers";
 import { AnalysisCountsCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisCountsCell";
 import { AnalysisEngagementCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisEngagementCell";
+import { AnalysisScoreExplainPopover } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/popovers/AnalysisScoreExplainPopover";
 
 type AnalysisTableRowProps = {
   row: AnalysisListItemIndexed;
@@ -174,19 +175,37 @@ function PerformanceCell({ row, failed }: { row: AnalysisListItemIndexed; failed
     return <span className="text-sm text-muted-foreground">Not analysed</span>;
   }
 
-  const cell = row.tableDerived?.performanceCell;
+  if (row.tableDerived == null) {
+    // Row 9 (DESIGN-3B §5.5) — a completed analysis with no performance block at all. NOT
+    // the failed treatment: nothing failed, so no rose edge and no "Not analysed" (that
+    // string is row 7's). There is no computed block for a popover to show, so this row
+    // carries no `ⓘ` — the affordance must never open onto an empty popover.
+    return <p className="text-xs text-muted-foreground">Performance wasn&apos;t measured</p>;
+  }
 
-  if (cell == null || cell.kind === "reason") {
-    // `cell?.text` is `null` for two genuine states: `INSUFFICIENT_HISTORY` (no approved
-    // copy exists for it, DESIGN-3B §5.2 — `resolveUnavailableReasonCopy` returns `null`
-    // on purpose) and `row.tableDerived == null` (a pre-schema-3 row). Neither state may
-    // borrow another row's sentence (PR #198 review, round 3, blocker 2) — the same muted
-    // "—" this table already uses for every other absent metric (`AnalysisScoreCell`,
-    // `MultiplierCell`'s `dash` kind) is the honest placeholder here too.
-    if (cell?.text != null) {
-      return <p className="text-xs text-muted-foreground">{cell.text}</p>;
-    }
+  const cell = row.tableDerived.performanceCell;
+
+  if (cell.kind === "dash") {
+    // `INSUFFICIENT_HISTORY` — declared on `UnavailableReason`, never produced (DESIGN-3B
+    // §5.5). No approved copy exists for it; the muted "—" stays, on purpose.
     return <span className="text-sm text-muted-foreground">—</span>;
+  }
+
+  if (cell.kind === "no-judgement") {
+    // Row 8 (DESIGN-3B §5.5) — a performance block exists and the model declined to score
+    // it. The row keeps its single `ⓘ`: a computed block exists, so the popover has real
+    // content. `AnalysisScoreExplainPopover` is reused directly (not duplicated) because
+    // `AnalysisScoreCell`'s "performance" variant — the popover's other call site — only
+    // renders when a score exists, which row 8 does not have.
+    return (
+      <p className="text-xs text-muted-foreground">
+        No 1–5 for this post <AnalysisScoreExplainPopover row={row} />
+      </p>
+    );
+  }
+
+  if (cell.kind === "reason") {
+    return <p className="text-xs text-muted-foreground">{cell.text}</p>;
   }
 
   return (

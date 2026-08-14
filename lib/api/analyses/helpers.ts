@@ -306,23 +306,40 @@ function computeScoreMultiplierDisagreement(
   return null;
 }
 
-/** Col 6 (Performance) — score + tier phrase/confidence, or the absent-score reason. */
+/**
+ * Col 6 (Performance) — score + tier phrase/confidence, or one of the three absent-score
+ * states DESIGN-3B §5.5 (amendment B8) rules cannot share a sentence:
+ * - Row 8 (`"no-judgement"`) — `unavailableReason == null` and `score == null`: the judgement
+ *   returned no 1–5 over an intact computed block.
+ * - `"dash"` — `unavailableReason === "INSUFFICIENT_HISTORY"`, declared but never produced;
+ *   `resolveAbsentScoreReasonText` returns `null` for it on purpose (no approved copy).
+ * - `"reason"` — every other stored `unavailableReason`, which always has approved copy.
+ */
 function derivePerformanceCell(
   computed: PerformanceComputed,
   score: number | null,
 ): AnalysisTablePerformanceCell {
-  if (score == null) {
-    return { kind: "reason", text: resolveAbsentScoreReasonText(computed) };
+  if (score != null) {
+    const phrase = tierPhrase(computed.tierUsed, computed.tier1?.denominator ?? null);
+    return {
+      kind: "score",
+      score,
+      tierPhrase: phrase,
+      isTier3: computed.tierUsed === "AUDIENCE_FALLBACK",
+      confidenceWord: confidenceWord(computed.confidence),
+    };
   }
 
-  const phrase = tierPhrase(computed.tierUsed, computed.tier1?.denominator ?? null);
-  return {
-    kind: "score",
-    score,
-    tierPhrase: phrase,
-    isTier3: computed.tierUsed === "AUDIENCE_FALLBACK",
-    confidenceWord: confidenceWord(computed.confidence),
-  };
+  if (computed.unavailableReason == null) {
+    return { kind: "no-judgement" };
+  }
+
+  const text = resolveAbsentScoreReasonText(computed);
+  if (text == null) {
+    return { kind: "dash" };
+  }
+
+  return { kind: "reason", text };
 }
 
 /**

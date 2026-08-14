@@ -629,14 +629,15 @@ describe("AnalysisDataTable — Performance cell never borrows another row's rea
     expect(within(performanceCell).getByText("—")).toBeInTheDocument();
   });
 
-  it("a pre-schema-3 row (`performance: null`, status completed — `tableDerived == null`) renders '—', never row 3's sentence", async () => {
+  it("a pre-schema-3 row (`performance: null`, status completed — `tableDerived == null`) renders row 9's sentence (DESIGN-3B §5.5), never row 3's sentence or a bare '—'", async () => {
     renderTable([ROW_H_PRE_SCHEMA_3]);
     const row = (await screen.findByText("Pre-redesign row")).closest("tr") as HTMLElement;
     const scoped = within(row);
     expect(scoped.queryByText("No performance data published")).not.toBeInTheDocument();
     const cells = row.querySelectorAll("td");
     const performanceCell = cells[5] as HTMLElement;
-    expect(within(performanceCell).getByText("—")).toBeInTheDocument();
+    expect(within(performanceCell).getByText("Performance wasn't measured")).toBeInTheDocument();
+    expect(within(performanceCell).queryByText("—")).not.toBeInTheDocument();
   });
 });
 
