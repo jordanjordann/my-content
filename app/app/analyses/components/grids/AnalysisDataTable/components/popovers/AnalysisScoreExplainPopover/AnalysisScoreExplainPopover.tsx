@@ -9,6 +9,8 @@ import {
   SCORE_EXPLAIN_HEADING,
   SCORE_EXPLAIN_JUDGEMENT_INTRO,
   SCORE_EXPLAIN_MEASURED_HEADING,
+  SCORE_EXPLAIN_NO_JUDGEMENT_HEADING,
+  SCORE_EXPLAIN_NO_JUDGEMENT_INTRO,
   SCORE_EXPLAIN_OPERANDS_HEADING,
   SCORE_EXPLAIN_TRIGGER_LABEL,
   scoreExplainFooter,
@@ -59,6 +61,11 @@ export function AnalysisScoreExplainPopover({ row }: AnalysisScoreExplainPopover
   const drivers = row.performance?.judgement.drivers ?? [];
   const disagreementLine = row.tableDerived?.disagreementLine ?? null;
   const multiplierCell = row.tableDerived?.multiplierCell ?? null;
+  // DESIGN-3B §5.5 (amendment B8) — row 8 only: the judgement returned no 1–5 over an
+  // otherwise-intact computed block. Swaps the heading/intro; every other block below is
+  // unchanged and renders on its existing conditions (the disagreement line's own
+  // precondition — a present score — already keeps it from firing here).
+  const isNoJudgement = row.tableDerived?.performanceCell.kind === "no-judgement";
   const bucketNoun =
     multiplierCell?.kind === "measured" || multiplierCell?.kind === "cold-start"
       ? multiplierCell.bucketNoun
@@ -121,8 +128,12 @@ export function AnalysisScoreExplainPopover({ row }: AnalysisScoreExplainPopover
             className="w-80 space-y-3 rounded-md border bg-popover p-3 text-xs text-popover-foreground shadow-md"
           >
             <div className="space-y-1">
-              <p className="text-sm font-semibold">{SCORE_EXPLAIN_HEADING}</p>
-              <p className="text-muted-foreground">{SCORE_EXPLAIN_JUDGEMENT_INTRO}</p>
+              <p className="text-sm font-semibold">
+                {isNoJudgement ? SCORE_EXPLAIN_NO_JUDGEMENT_HEADING : SCORE_EXPLAIN_HEADING}
+              </p>
+              <p className="text-muted-foreground">
+                {isNoJudgement ? SCORE_EXPLAIN_NO_JUDGEMENT_INTRO : SCORE_EXPLAIN_JUDGEMENT_INTRO}
+              </p>
             </div>
 
             {(measuredEngagementLine != null || measuredMultiplierLine != null) && (
