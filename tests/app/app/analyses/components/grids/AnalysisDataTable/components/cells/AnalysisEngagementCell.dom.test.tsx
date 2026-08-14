@@ -65,18 +65,20 @@ const UNKNOWN_KIND_REACH_CELL: AnalysisTableEngagementCell = {
 };
 
 describe("AnalysisEngagementCell — Direction A value rendering (AC-21, AC-25, no interaction)", () => {
-  it("a reach-denominated value shows its qualifier with no hover/focus needed, amber colour, no ≈ prefix", () => {
+  it("a reach-denominated value shows its qualifier with no hover/focus needed, amber colour on the qualifier (§9.2, ticket #217), no ≈ prefix", () => {
     render(<AnalysisEngagementCell cell={REEL_REACH_CELL} denominator="REACH" />);
     expect(screen.getByText("4.1%")).toBeInTheDocument();
     expect(screen.getByText("of 482.1K views")).toBeInTheDocument();
-    expect(screen.getByText("4.1%").className).toMatch(/text-accent/);
+    expect(screen.getByText("of 482.1K views").className).toMatch(/text-accent/);
+    expect(screen.getByText("4.1%").className).not.toMatch(/text-accent/);
   });
 
-  it("a follower-denominated value carries the mandatory ≈ prefix, its own distinct qualifier text, and the teal colour", () => {
+  it("a follower-denominated value carries the mandatory ≈ prefix, its own distinct qualifier text, and the teal colour on the qualifier (§9.2, ticket #217)", () => {
     render(<AnalysisEngagementCell cell={FOLLOWER_CELL} denominator="FOLLOWERS" />);
     expect(screen.getByText("≈16.2%")).toBeInTheDocument();
     expect(screen.getByText("of 284.0K followers")).toBeInTheDocument();
-    expect(screen.getByText("≈16.2%").className).toMatch(/text-teal-500/);
+    expect(screen.getByText("of 284.0K followers").className).toMatch(/text-teal/);
+    expect(screen.getByText("≈16.2%").className).not.toMatch(/text-teal/);
     // Reach and follower qualifiers are never the same string (AC-25/AC-21 distinguisher).
     expect(screen.queryByText("of 482.1K views")).not.toBeInTheDocument();
   });

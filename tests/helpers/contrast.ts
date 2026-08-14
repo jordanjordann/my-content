@@ -67,6 +67,10 @@ export const DARK_TOKENS = {
   primary: oklchToSrgb255(0.68, 0.18, 255),
   mutedOpaque: oklchToSrgb255(0.2, 0.038, 255),
   mutedForeground: oklchToSrgb255(0.72, 0.03, 250),
+  // `.dark { --accent }` — reach-denominated qualifier colour (DESIGN-3C §9.2, ticket #217).
+  accent: oklchToSrgb255(0.75, 0.18, 58),
+  // `.dark { --teal }` — follower-denominated qualifier colour (DESIGN-3C §9.2, L2, ticket #217).
+  teal: oklchToSrgb255(0.777, 0.124, 181.13),
 } as const;
 
 export const CARD = compositeGamma(DARK_TOKENS.cardRaw, DARK_TOKENS.background, 0.86);

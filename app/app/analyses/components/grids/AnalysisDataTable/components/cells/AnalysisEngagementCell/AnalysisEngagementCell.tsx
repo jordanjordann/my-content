@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { ENGAGEMENT_CELL_VALUE_CLASSNAME } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisEngagementCell/constants";
+import { ENGAGEMENT_CELL_QUALIFIER_CLASSNAME } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisEngagementCell/constants";
 import {
   formatEngagementAccessiblePhrase,
   formatEngagementQualifierLabel,
@@ -20,8 +20,9 @@ import type { AnalysisEngagementCellProps } from "@/app/app/analyses/components/
  *
  * Three always-on distinguishers, all rendered with no hover and no legend (R-8.4.7):
  * different qualifier text per cell (`helpers.ts`), the mandatory `≈` prefix on every
- * follower-denominated figure, and the amber/teal colour families as a redundant third
- * channel only (`constants.ts`) — never the only signal (WCAG 1.4.1).
+ * follower-denominated figure, and the amber/teal colour families on the QUALIFIER line as a
+ * redundant third channel only (`constants.ts`, §9.2) — never the only signal (WCAG 1.4.1).
+ * The value line (the percentage) always renders in the default foreground colour.
  */
 export function AnalysisEngagementCell({ cell, denominator }: AnalysisEngagementCellProps) {
   if (cell.kind === "dash") {
@@ -51,13 +52,10 @@ export function AnalysisEngagementCell({ cell, denominator }: AnalysisEngagement
     // codebase — so a screen reader announces "4.1 percent of 482,100 views" as a single
     // phrase, never the value and the qualifier as two detached fragments.
     <div role="img" aria-label={accessiblePhrase}>
-      <p
-        aria-hidden="true"
-        className={cn("text-sm font-medium tabular-nums", ENGAGEMENT_CELL_VALUE_CLASSNAME[denominator])}
-      >
+      <p aria-hidden="true" className="text-sm font-medium tabular-nums text-foreground">
         {valueLabel}
       </p>
-      <p aria-hidden="true" className="text-xs text-muted-foreground">
+      <p aria-hidden="true" className={cn("text-xs", ENGAGEMENT_CELL_QUALIFIER_CLASSNAME[denominator])}>
         {qualifierLabel}
       </p>
     </div>
