@@ -50,7 +50,10 @@ import type { AnalysisScoreExplainPopoverProps } from "@/app/app/analyses/compon
  *   1. the judgement disclaimer, 2. the measured figures, 3. the operand list (no worked
  *   division, R-13.3.4), 4. the disagreement line (precomputed in `hooks.ts`'s `select`
  *   layer, never here), 5. `drivers[]` under "Why it did what it did" in Gemini's
- *   Indonesian, unedited, 6. the unconditional footer.
+ *   Indonesian, unedited, 6. the footer — F1 on every row except cold start, F2 (F1 plus one
+ *   clause naming the live progress count) on cold-start rows only (DESIGN-3B §4.5.1,
+ *   amendment B6). Not unconditional: which variant renders is conditioned on the row's
+ *   cold-start state.
  */
 export function AnalysisScoreExplainPopover({ row }: AnalysisScoreExplainPopoverProps) {
   const [open, setOpen] = useState(false);
@@ -71,6 +74,11 @@ export function AnalysisScoreExplainPopover({ row }: AnalysisScoreExplainPopover
       ? multiplierCell.bucketNoun
       : null;
   const multiplier = multiplierCell?.kind === "measured" ? multiplierCell.multiplier : null;
+  // DESIGN-3B §4.5.1 (amendment B6) — the footer's F2 carve-out fires ONLY in the cold-start
+  // state (tier2 present, multiplier null), read from the same `multiplierCell` the cell
+  // itself renders — never re-derived (PR #198 blocker 8). A MEASURED row's sample size stays
+  // on F1 (`bucketNoun` above), which is a separate, intentionally unrelated value.
+  const coldStartBucketNoun = multiplierCell?.kind === "cold-start" ? multiplierCell.bucketNoun : null;
 
   if (computed == null) {
     return null;
@@ -175,7 +183,7 @@ export function AnalysisScoreExplainPopover({ row }: AnalysisScoreExplainPopover
             )}
 
             <p className="border-t pt-2 text-muted-foreground">
-              {scoreExplainFooter(formatMeasuredDate(row.createdAt))}
+              {scoreExplainFooter(formatMeasuredDate(row.createdAt), coldStartBucketNoun)}
             </p>
           </PopoverPrimitive.Popup>
         </PopoverPrimitive.Positioner>

@@ -5,6 +5,9 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { AnalysisScoreExplainPopover } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/popovers/AnalysisScoreExplainPopover";
+import { BASELINE_MIN_SAMPLE_DISPLAY } from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
+import { scoreExplainFooter } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/popovers/AnalysisScoreExplainPopover/constants";
+import { formatMeasuredDate } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/popovers/AnalysisScoreExplainPopover/helpers";
 import { deriveAnalysisTablePerformance } from "@/lib/api/analyses/helpers";
 import type { AnalysisListItemIndexed, AnalysisPerformance } from "@/lib/api/analyses/types";
 
@@ -71,6 +74,31 @@ const AGREEING_PERFORMANCE: AnalysisPerformance = {
 const DISAGREEING_PERFORMANCE: AnalysisPerformance = {
   ...AGREEING_PERFORMANCE,
   judgement: { performanceScore: 2, verdict: "Weak content, strong reach.", drivers: ["Konten kurang kuat."] },
+};
+
+/** Cold start — tier2 present, multiplier `null` (ticket #220 / DESIGN-3B §4.5.1 amendment B6).
+ * Bucket key is a carousel so the footer's F2 noun can be checked against the cell's own
+ * noun, both read from the same `bucketKey` (the "carousels-above-reels" bug DESIGN-3B names
+ * by name). */
+const COLD_START_PERFORMANCE: AnalysisPerformance = {
+  ...AGREEING_PERFORMANCE,
+  computed: {
+    ...AGREEING_PERFORMANCE.computed,
+    tier2: { median: 151_000, sampleSize: 2, bucketKey: "instagram:carousel:full_video", multiplier: null },
+  },
+  judgement: { performanceScore: 4, verdict: "Strong hook.", drivers: ["Hook kuat sejak detik pertama."] },
+};
+
+/** Same computed block as the AGREEING fixture, but `MEASURED` (multiplier present) with a
+ * carousel bucket — asserts a MEASURED row is never routed to F2 even though it carries a
+ * sample size (DESIGN-3B §4.5.1: "the trigger is the multiplier being null, not the presence
+ * of a sample size"). */
+const MEASURED_CAROUSEL_PERFORMANCE: AnalysisPerformance = {
+  ...AGREEING_PERFORMANCE,
+  computed: {
+    ...AGREEING_PERFORMANCE.computed,
+    tier2: { median: 151_000, sampleSize: 7, bucketKey: "instagram:carousel:full_video", multiplier: 3.2 },
+  },
 };
 
 const D2_TEXT =
@@ -144,12 +172,76 @@ describe("AnalysisScoreExplainPopover — Indonesian drivers, unedited (TDD §9.
   });
 });
 
-describe("AnalysisScoreExplainPopover — the unconditional footer (TDD §9.4 item 6)", () => {
-  it("renders every time, using the exact approved sentence", () => {
+describe("AnalysisScoreExplainPopover — the footer, F1 default (DESIGN-3B §4.5.1, amendment B6)", () => {
+  it("a MEASURED row (non-cold-start) renders F1, byte for byte, unchanged", () => {
     const popup = openPopover(buildRow(AGREEING_PERFORMANCE));
     expect(popup.textContent).toContain(
       "Measured 12 Jul 2026. These numbers are frozen at the time of analysis and don't update.",
     );
+  });
+
+  it("a MEASURED row carrying a carousel sample size still renders F1, never F2 — the trigger is the multiplier being null, not the presence of a sample size", () => {
+    const popup = openPopover(buildRow(MEASURED_CAROUSEL_PERFORMANCE));
+    const text = popup.textContent ?? "";
+    expect(text).toContain(
+      "Measured 12 Jul 2026. These numbers are frozen at the time of analysis and don't update.",
+    );
+    expect(text).not.toContain("except the count of");
+  });
+});
+
+describe("AnalysisScoreExplainPopover — the footer, F2 cold-start carve-out (DESIGN-3B §4.5.1, amendment B6)", () => {
+  it("a cold-start row (tier2 present, multiplier null) renders F2, byte for byte", () => {
+    const popup = openPopover(buildRow(COLD_START_PERFORMANCE));
+    expect(popup.textContent).toContain(
+      "Measured 12 Jul 2026. These numbers are frozen at the time of analysis and don't update — except the count of carousels analysed so far, which is read from your library as it stands now.",
+    );
+  });
+
+  it("F2's text up to the em-dash is byte-identical to F1, asserted by construction from the F1 constant, not two hand-typed literals", () => {
+    const date = formatMeasuredDate("2026-07-12T00:00:00.000Z");
+    const f1 = scoreExplainFooter(date);
+    const f2 = scoreExplainFooter(date, "carousels");
+
+    // F1 ends in a period; F2's shared prefix drops it in favour of the em-dash clause.
+    const f1PrefixWithoutPeriod = f1.slice(0, -1);
+    expect(f2.startsWith(f1PrefixWithoutPeriod)).toBe(true);
+    expect(f2).toBe(`${f1PrefixWithoutPeriod} — except the count of carousels analysed so far, which is read from your library as it stands now.`);
+  });
+
+  it("the footer's noun matches the cell's own noun, both read from the same fixture's tier2.bucketKey — the 'carousels above reels' bug", () => {
+    const row = buildRow(COLD_START_PERFORMANCE);
+    const multiplierCell = row.tableDerived?.multiplierCell;
+    if (multiplierCell?.kind !== "cold-start") {
+      throw new Error("fixture must derive to a cold-start multiplier cell");
+    }
+
+    const popup = openPopover(row);
+    const expectedCellText = `${multiplierCell.sampleSize} of ${BASELINE_MIN_SAMPLE_DISPLAY} ${multiplierCell.bucketNoun}`;
+
+    expect(multiplierCell.bucketNoun).toBe("carousels");
+    expect(expectedCellText).toBe("2 of 5 carousels");
+    expect(popup.textContent).toContain(`except the count of ${multiplierCell.bucketNoun} analysed so far`);
+  });
+
+  it("the F2 clause itself (the tail past the em-dash, naming the count) contains no digit — the date it's appended to necessarily does (R-13.3.4)", () => {
+    const popup = openPopover(buildRow(COLD_START_PERFORMANCE));
+    const text = popup.textContent ?? "";
+    const clauseStart = text.indexOf("except the count of");
+    expect(clauseStart).toBeGreaterThanOrEqual(0);
+    const clause = text.slice(clauseStart);
+    expect(clause).not.toMatch(/\d/);
+  });
+
+  it("states no duration — no hours, days or cadence (R-13.4.4)", () => {
+    const popup = openPopover(buildRow(COLD_START_PERFORMANCE));
+    const text = (popup.textContent ?? "").toLowerCase();
+    expect(text).not.toMatch(/\d+\s*(hours?|h\b|days?)/i);
+  });
+
+  it("never contains the creator-scoped literal '5 posts' or its paraphrases (R-C1)", () => {
+    const popup = openPopover(buildRow(COLD_START_PERFORMANCE));
+    expect(popup.textContent).not.toContain("5 posts");
   });
 });
 
