@@ -51,14 +51,19 @@ export function AnalysisContentCell({
         </p>
         {failed && <p className="text-xs text-muted-foreground">{failedLabel}</p>}
         {!failed && modeChipLabel && (
-          <span className="mt-0.5 inline-block rounded bg-slate-300/10 px-1.5 py-0.5 text-[10px] font-medium text-slate-300">
+          <span className="mt-0.5 inline-block rounded bg-slate-300/10 px-1.5 py-0.5 text-[9px] font-medium text-slate-300">
             {modeChipLabel}
           </span>
         )}
-        {/* PR #198 review blocker 7 — line 2 is never truncated; the column widens instead if
-            the text doesn't fit. No `truncate` class here, deliberately. */}
-        {!failed && comfortable && caption && (
-          <p className="text-xs text-muted-foreground">{caption}</p>
+        {/* DESIGN-3C §2.2.1 (R-D17) — the caption snippet is clamped to two lines, ellipsised
+            where it clips. The clamp is a ceiling, never a floor: a short caption renders at
+            its natural height, with no ellipsis and no padding out to a two-line box. This is
+            scoped to the caption only — §3.1's "line 2 is never truncated" governs qualifiers
+            and does not bind here. Suppressed when `title` is falsy, because the fallback
+            ladder above has already promoted `caption` into the title slot (line 1); rendering
+            it again here would be the same sentence twice (L8). */}
+        {!failed && comfortable && caption && title && (
+          <p className="line-clamp-2 text-xs text-muted-foreground">{caption}</p>
         )}
       </div>
     </div>
