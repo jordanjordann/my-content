@@ -12,6 +12,13 @@ export type AnalysisTableColumnDef = {
   defaultSortDir?: SortDirection;
   /** Columns 5/6 share the `Scores` group header (`<th colspan="2">`, TDD §9.1). */
   group?: "scores";
+  /**
+   * Ticket #221 (M3, DESIGN-3C §4 distinguisher 3) — optional per-column header text colour,
+   * applied to columns 8/9 (`text-accent` / `text-teal`) so the reach- vs follower-denominated
+   * engagement headers carry the same colour-coding as their cells (ticket #217). Absent on
+   * every other column — colour stays a redundant third channel, never the only one (§9.5).
+   */
+  headerColorClassName?: string;
 };
 
 export type AnalysisDataTableProps = {

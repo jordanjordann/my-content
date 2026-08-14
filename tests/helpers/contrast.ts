@@ -161,3 +161,120 @@ export function badgeRatiosOnAllSurfaces(tint: Srgb255, alpha: number): Record<k
   }
   return result;
 }
+
+/**
+ * Ticket #221, B3 — guards the token→utility wiring the ratio checks above cannot see.
+ * `DARK_TOKENS.teal`/`.accent` are read straight off the `--teal`/`--accent` CUSTOM PROPERTY in
+ * the `.dark` block — that correctly measures the token's own colour, but says nothing about
+ * whether `@theme inline`'s `--color-teal: var(--teal);` declaration (the mapping that actually
+ * makes the `.text-teal` Tailwind utility exist and paint that colour) is still wired to it.
+ *
+ * Reproduced mutations this catches, and why each one needs the specific handling below:
+ *   1. Re-pointing `--color-teal: var(--destructive);` — `.text-teal` still compiles and ships,
+ *      but paints red. The ratio checks above still measure the now-unused `--teal` custom
+ *      property and see nothing wrong.
+ *   2. Deleting the `--color-teal: var(--teal);` line entirely — Tailwind emits no `.text-teal`
+ *      rule at all, and `toHaveClass("text-teal")` DOM assertions still pass, because they only
+ *      check the className STRING on the element, never that a stylesheet rule paints it.
+ *   3. Leaving the correct `--color-teal: var(--teal);` line in place and adding a SECOND,
+ *      later `--color-teal: var(--destructive);` declaration in the same block. In CSS the later
+ *      declaration wins, so `.text-teal` paints red even though a "does this string exist
+ *      anywhere in the block" check finds the correct line and passes. This function reads the
+ *      LAST declaration for the token, not "any" declaration, specifically to catch this.
+ *
+ * Extracts every `@theme inline { ... }` block in the file with brace-depth counting (not a
+ * `[^}]*` regex, which stops at the block's first `}` and would silently ignore a nested rule or
+ * a second `@theme inline` block later in the file), then finds the LAST `--color-<name>: ...;`
+ * declaration across all of them, in source order, and requires it to resolve to
+ * `var(--<name>)`. Whitespace inside the declaration (`var( --teal )`, a line break before the
+ * value, a missing trailing `;` on the block's last property) is normalised away — this checks
+ * the CSS meaning of the declaration, not its literal formatting.
+ *
+ * Throws at import time, same fail-loud contract as `parseOklchToken` above.
+ *
+ * **What this does not prove.** This is a source-file check. It proves the mapping declaration
+ * exists and resolves correctly in `app/globals.css`'s text — it does not prove Tailwind emits
+ * the `.text-<name>` rule from that declaration, and it cannot prove any element actually paints
+ * it (jsdom, which this suite runs under, applies no stylesheet). Real coverage for "the app
+ * paints the right colour" would mean asserting against the built CSS output or a computed
+ * style — worth a follow-up ticket, not more regex here.
+ */
+function extractThemeInlineBlocks(css: string): string[] {
+  const blocks: string[] = [];
+  const opener = /@theme\s+inline\s*\{/g;
+  let openerMatch: RegExpExecArray | null;
+  while ((openerMatch = opener.exec(css))) {
+    const start = openerMatch.index + openerMatch[0].length;
+    let depth = 1;
+    let i = start;
+    for (; i < css.length && depth > 0; i++) {
+      if (css[i] === "{") depth++;
+      else if (css[i] === "}") depth--;
+    }
+    // `i` now sits one past the matching close brace (or at `css.length` if unterminated).
+    blocks.push(css.slice(start, depth === 0 ? i - 1 : i));
+    opener.lastIndex = i;
+  }
+  return blocks;
+}
+
+/** Collapses all whitespace so `var(--teal)`, `var( --teal )` and a line-broken value compare equal. */
+function normaliseDeclarationValue(value: string): string {
+  return value.replace(/\s+/g, "");
+}
+
+/**
+ * Finds the LAST `--color-<varName>: <value>;` declaration across `blocks`, in source order
+ * (later blocks, and later declarations within a block, both override earlier ones — matching
+ * how the CSS cascade actually resolves a repeated custom property). Returns the raw, untrimmed
+ * value text, or `null` if the token is declared nowhere.
+ */
+function findLastColorDeclaration(blocks: string[], varName: string): string | null {
+  const pattern = new RegExp(`--color-${varName}\\s*:\\s*([^;}]+)\\s*;?`, "g");
+  let last: string | null = null;
+  for (const block of blocks) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(block))) {
+      last = match[1];
+    }
+  }
+  return last;
+}
+
+/**
+ * Pure form of the guard — operates on already-read CSS text so it can be exercised directly
+ * with a synthetic block, instead of only indirectly through whatever `app/globals.css` happens
+ * to contain right now.
+ */
+export function assertThemeMappingInCss(css: string, varName: string, sourceLabel: string): void {
+  const blocks = extractThemeInlineBlocks(css);
+  if (blocks.length === 0) {
+    throw new Error(`Could not find an "@theme inline { ... }" block in ${sourceLabel}`);
+  }
+  const lastDeclaration = findLastColorDeclaration(blocks, varName);
+  if (lastDeclaration === null) {
+    throw new Error(
+      `"@theme inline" in ${sourceLabel} declares no --color-${varName} mapping ` +
+        `— the .text-${varName} utility does not exist.`,
+    );
+  }
+  const expected = `var(--${varName})`;
+  if (normaliseDeclarationValue(lastDeclaration) !== normaliseDeclarationValue(expected)) {
+    throw new Error(
+      `"@theme inline" in ${sourceLabel}'s LAST --color-${varName} declaration resolves to ` +
+        `"${lastDeclaration.trim()}", not "${expected}" — the .text-${varName} utility is ` +
+        `either missing or repointed at a different token (later declarations win in CSS; ` +
+        `check for a duplicate).`,
+    );
+  }
+}
+
+/** Disk-reading wrapper — the one actually called at module load, below. */
+export function assertThemeMapping(varName: string): void {
+  const globalsCssPath = resolve(process.cwd(), "app/globals.css");
+  const css = readFileSync(globalsCssPath, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  assertThemeMappingInCss(css, varName, globalsCssPath);
+}
+
+assertThemeMapping("teal");
+assertThemeMapping("accent");
