@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { AnalysisTableColumnHeaders } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/headers/AnalysisTableColumnHeaders";
 import { ANALYSES_TABLE_COLUMNS } from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
+import type { AnalysesSortField } from "@/lib/api/analyses/types";
 import { DARK_TOKENS, badgeRatiosOnAllSurfaces } from "@/tests/helpers/contrast";
 
 /**
@@ -88,15 +89,15 @@ describe("AnalysisTableColumnHeaders — ticket #221", () => {
   });
 
   it("(§10) aria-sort appears only on the active header, the group header keeps colspan/scope, and clicking a sort button still sorts", () => {
-    const onSortChange = () => {};
-    const handleSortChange = (field: string) => onSortChange(field);
+    const sortEvents: AnalysesSortField[] = [];
+    const handleSortChange = (field: AnalysesSortField) => sortEvents.push(field);
     render(
       <table>
         <AnalysisTableColumnHeaders
           columns={ANALYSES_TABLE_COLUMNS}
           sortBy="posted"
           sortDir="desc"
-          onSortChange={handleSortChange as never}
+          onSortChange={handleSortChange}
         />
       </table>,
     );
@@ -114,6 +115,7 @@ describe("AnalysisTableColumnHeaders — ticket #221", () => {
     const creatorButton = screen.getByRole("button", { name: /sort by creator/i });
     expect(creatorButton.tagName).toBe("BUTTON");
     fireEvent.click(creatorButton);
+    expect(sortEvents).toEqual(["creator"]);
   });
 
   it("(AC-17) text-primary and the two engagement header colours clear 4.5:1 on all four surfaces (real tokens)", () => {
