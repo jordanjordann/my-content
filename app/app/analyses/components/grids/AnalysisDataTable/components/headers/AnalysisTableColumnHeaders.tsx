@@ -119,14 +119,25 @@ function ColumnHeaderLabel({
 
   const directionWord = active ? (sortDir === "asc" ? "ascending" : "descending") : "";
 
+  // Owner's ruling (#221 follow-up, PR #229 blocker 1) — the engagement column-header colour
+  // (`headerColorClassName`, e.g. `text-accent` / `text-teal`) must be kept in ALL button states:
+  // idle, hover, and active-sort. `hover:text-foreground` / `active && "text-foreground"` are the
+  // button's own explicit `color`, which always wins over the colour it would otherwise inherit
+  // from its `<th>` ancestor — so for a colour-carrying column, the foreground-swap classes are
+  // dropped entirely and the button instead carries `headerColorClassName` directly as its own
+  // class, unconditionally, so the colour never has to compete with anything. Every other
+  // (non-colour-carrying) header is unaffected: it keeps `hover:text-foreground` and the
+  // active-sort `text-foreground` swap exactly as before.
+  const colorClassName = column.headerColorClassName;
+
   return (
     <button
       type="button"
       onClick={() => onSortChange(column.sortField as AnalysesSortField)}
       aria-label={`Sort by ${column.label}${directionWord ? `, currently ${directionWord}` : ""}`}
       className={cn(
-        "inline-flex items-center gap-1 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        active && "text-foreground",
+        "inline-flex items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        colorClassName ? colorClassName : cn("hover:text-foreground", active && "text-foreground"),
       )}
     >
       {column.label}
