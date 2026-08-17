@@ -672,6 +672,33 @@ now settled by measurement and is not reopenable on a "the model could just do i
 | `LOW` | `sampleSize < BASELINE_MIN_SAMPLE` on a Tier 2 figure | |
 | `NONE` | `tierUsed = UNAVAILABLE` | |
 
+> **⚠️ Amendment, 2026-08-18 (tech lead) — two rows of the table above are SUPERSEDED. The table is kept verbatim; read it with these two corrections. The demotion rules themselves, their order, and `NONE` are unchanged and correct.**
+>
+> **Row 1 (`HIGH`) is SUPERSEDED.** As written it reads as though `HIGH` were a **property of Tier 2** — *"Tier 2 with
+> `sampleSize >= BASELINE_MIN_SAMPLE`, reach-denominated, `derivedFrom = TOP_LEVEL`"*. It is not.
+> `computeConfidence()` (`lib/server/analysis/performance/judgement.ts:232`) sets `let confidence: Confidence = "HIGH"`
+> as the **starting value for every scored post**, and the three demotions below it only ever lower it. So a **Tier 1**
+> row — `tierUsed = "REACH_ONLY"`, reach-denominated Tier 1 ratio, `reachDerivedFrom = "TOP_LEVEL"`, no
+> `FOLLOWERS` denominator — is **also `HIGH`**, with no Tier 2 baseline anywhere in sight. `computeBlock.ts:85`
+> already documents exactly that case (*"`tierUsed: "REACH_ONLY"` / `confidence: "HIGH"` with no demotion reason"*).
+> **The correct reading of row 1:** `HIGH` is what you get when **no demotion fires**, on any tier.
+> `DESIGN-3B` §5 is **not** wrong here and is not the document that changes — this table is.
+>
+> **Row 4 (`LOW`) is SUPERSEDED as a production state. It is UNREACHABLE by construction.** The row pairs
+> `tierUsed = CREATOR_BASELINE` with `sampleSize < BASELINE_MIN_SAMPLE`, and those two **cannot coexist**:
+> `computeBaseline()` returns `state: "COLD_START"` for any `sampleSize < BASELINE_MIN_SAMPLE`
+> (`baseline.ts:491-497`), and `determineTierUsed()` only selects `CREATOR_BASELINE` on a `MEASURED` baseline — so a
+> `CREATOR_BASELINE` row always carries `sampleSize >= BASELINE_MIN_SAMPLE`. The `LOW` branch
+> (`judgement.ts:245-248`) is **deliberate defence-in-depth**, and its own doc comment says so: it is *"exercised
+> directly by unit tests that pass a below-threshold sample size to this pure function"* and by nothing else.
+> **`THIN_SAMPLE` stays** (settled) — as a guard and as a declared `ConfidenceReason`, not as a state a user reaches.
+> The correct expectation is that **no stored analysis will ever carry `perf_confidence = 'LOW'`**, in the same way
+> `INSUFFICIENT_HISTORY` is declared and never produced (§5.3, `DESIGN-3B` §5.5). Anyone writing copy, a filter, or a
+> fixture off row 4 should treat it as unreachable and not design a user-visible surface for it.
+>
+> *(Both errors found while re-reading `judgement.ts` against this table; verified in code, not inferred from the
+> table's own wording. Recorded here rather than silently rewritten, per this document's header rule.)*
+
 **Each demotion records its cause** in `perf_confidence_reason` so Jessica's three L2 strings
 (design-3B §4.3) are renderable without re-deriving anything.
 
@@ -1777,6 +1804,25 @@ Applied:
 > affordance *"waits on OR-25"* — same error, but that is a design document and is the designer's to correct.
 
 ### 14.8b — `MATURITY_FLOOR_HOURS` evaluated against a frozen age is DEFECTIVE, not intended
+
+> **⚠️ Amendment, 2026-08-18 (tech lead) — this section is SHIPPED. It is kept as the record of the defect and of the reasoning; it is no longer a description of the code.**
+> **The fix landed in `b5045cd` / PR [#235](https://github.com/jordanjordann/my-content/pull/235) (ticket [#206](https://github.com/jordanjordann/my-content/issues/206), decision D2).**
+> `lib/server/analysis/performance/baseline.ts` now defines a single `LIVE_AGE_PREDICATE` —
+> `MAX(COALESCE((julianday('now') - julianday(post_date)) * 24.0, -1), COALESCE(perf_post_age_hours, -1)) >= ?`
+> — the **greater** of the live age and the frozen `perf_post_age_hours`, applied in **one** shared query used by
+> **both** the write path (`computeBaseline()`'s single-pool lookup) and the read path (the batched, grouped live
+> cold-start count, D3/D4). Every clause below that is written prescriptively — *"Candidate eligibility **uses** live
+> age"*, *"The filter **takes** the greater"*, *"Eligibility must also be **monotone**"* — is now a statement of what
+> the code does, not of what it must be changed to do. The distinction the section insists on is preserved in the
+> shipped code: the post's own `perf_post_age_hours`, `perf_provisional` and the `Early` badge remain **frozen**, and
+> a row can legitimately render `Early` while serving as a mature comparator for its siblings.
+> **The empirical paragraph below is now HISTORY, not a current reading.** *"three of the five `@giorrando` reels …
+> permanently ineligible as comparators, forever"* and *"the counter is capped at 2 and can never reach 5"* described
+> the dataset **under the defective frozen-age filter**. Under `LIVE_AGE_PREDICATE` those reels become eligible as
+> real-world time passes, and the cap no longer exists. The wording is preserved rather than rewritten, per this
+> document's header rule — read it as the evidence that produced the ruling, not as the state of the library today.
+> **Nothing in the ruling is reopened**, and **§14.8a's freeze is untouched**: the fix does not retroactively rewrite
+> stored medians, sample sizes or multipliers on `MEASURED` rows, exactly as the *Blast radius* paragraph requires.
 
 `computeBaseline()`'s candidate filter (`lib/server/analysis/performance/baseline.ts:291`) reads `AND perf_post_age_hours >= ?`. `perf_post_age_hours` is computed **once**, at analysis time (`computeBlock.ts:148-153` / `:212`), and is never recomputed. So the filter compares a **frozen** age against a floor that is meant to express "is this post old enough *now* to be a trustworthy comparator".
 
