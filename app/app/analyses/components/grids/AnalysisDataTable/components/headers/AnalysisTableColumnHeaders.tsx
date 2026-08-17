@@ -1,8 +1,23 @@
 import { ArrowDown, ArrowUp } from "lucide-react";
 
+import { AnalysisEngagementHeaderTooltip } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/headers/components/tooltips/AnalysisEngagementHeaderTooltip";
+import type { EngagementHeaderTooltipColumnId } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/headers/components/tooltips/AnalysisEngagementHeaderTooltip";
 import { cn } from "@/lib/utils";
 import type { AnalysisTableColumnDef } from "@/app/app/analyses/components/grids/AnalysisDataTable/types";
 import type { AnalysesSortField, SortDirection } from "@/lib/api/analyses/types";
+
+/**
+ * DESIGN-3C §4.2 (amendment A6), R-D5/R-D12 — the ONLY two column headers that carry the
+ * §4.2 explain tooltip. No other header may gain one via this list.
+ */
+const ENGAGEMENT_TOOLTIP_COLUMN_IDS: readonly EngagementHeaderTooltipColumnId[] = [
+  "engagementReach",
+  "engagementFollowers",
+];
+
+function isEngagementTooltipColumnId(id: string): id is EngagementHeaderTooltipColumnId {
+  return (ENGAGEMENT_TOOLTIP_COLUMN_IDS as readonly string[]).includes(id);
+}
 
 type AnalysisTableColumnHeadersProps = {
   /** Ticket #149 — the resolved, visibility-filtered display column list (table order). */
@@ -66,12 +81,28 @@ export function AnalysisTableColumnHeaders({
                 column.headerColorClassName,
               )}
             >
-              <ColumnHeaderLabel
-                column={column}
-                active={column.sortField === sortBy}
-                sortDir={sortDir}
-                onSortChange={onSortChange}
-              />
+              {isEngagementTooltipColumnId(column.id) ? (
+                // R-D6 — the tooltip trigger is a SIBLING of the sort button inside the same
+                // `<th>`, never nested inside it. `AnalysisEngagementHeaderTooltip` renders
+                // its own independent `<button>`; it is not passed into or wrapped by
+                // `ColumnHeaderLabel`'s sort `<button>`.
+                <div className="flex items-center gap-1">
+                  <ColumnHeaderLabel
+                    column={column}
+                    active={column.sortField === sortBy}
+                    sortDir={sortDir}
+                    onSortChange={onSortChange}
+                  />
+                  <AnalysisEngagementHeaderTooltip columnId={column.id} />
+                </div>
+              ) : (
+                <ColumnHeaderLabel
+                  column={column}
+                  active={column.sortField === sortBy}
+                  sortDir={sortDir}
+                  onSortChange={onSortChange}
+                />
+              )}
             </th>
           );
         })}

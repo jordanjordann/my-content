@@ -229,3 +229,130 @@ describe("AnalysisTableColumnHeaders — ticket #221", () => {
     expect(tealRatios.muted).toBeGreaterThanOrEqual(4.5);
   });
 });
+
+/**
+ * Ticket #223 (3C-F4, DESIGN-3C §4.2 amendment A6) — the two engagement column-header
+ * tooltip triggers. `AnalysisEngagementHeaderTooltip` itself is unit-tested in full under
+ * `tests/.../headers/components/tooltips/AnalysisEngagementHeaderTooltip/`; this block only
+ * covers what requires the REAL `<th>` DOM this file already renders: R-D6's sibling
+ * placement (not nested inside the sort button) and R-D12's "no third trigger" count.
+ */
+describe("AnalysisTableColumnHeaders — ticket #223 (3C-F4) tooltip trigger placement", () => {
+  const noop = () => {};
+
+  it("(R-D6) engagementReach: sort button and tooltip trigger are siblings under the same <th>, neither contains the other", () => {
+    render(
+      <table>
+        <AnalysisTableColumnHeaders
+          columns={ANALYSES_TABLE_COLUMNS}
+          sortBy="posted"
+          sortDir="desc"
+          onSortChange={noop}
+        />
+      </table>,
+    );
+
+    const th = document.querySelector('th[data-column-id="engagementReach"]') as HTMLTableCellElement;
+    const buttons = Array.from(th.querySelectorAll("button"));
+    expect(buttons).toHaveLength(2);
+
+    const sortButton = buttons.find((btn) => /^sort by eng\. \/ reach/i.test(btn.getAttribute("aria-label") ?? ""));
+    const tooltipTrigger = buttons.find(
+      (btn) => btn.getAttribute("aria-label") === "How is engagement against reach worked out?",
+    );
+    expect(sortButton).toBeDefined();
+    expect(tooltipTrigger).toBeDefined();
+
+    // Sibling, not ancestor/descendant, either direction.
+    expect(sortButton?.contains(tooltipTrigger as Node)).toBe(false);
+    expect(tooltipTrigger?.contains(sortButton as Node)).toBe(false);
+    expect(sortButton?.parentElement).toBe(tooltipTrigger?.parentElement);
+
+    // Clicking the sort button sorts; it does not open the tooltip.
+    fireEvent.click(sortButton as HTMLButtonElement);
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+
+  it("(R-D6) engagementFollowers: same sibling guarantee", () => {
+    render(
+      <table>
+        <AnalysisTableColumnHeaders
+          columns={ANALYSES_TABLE_COLUMNS}
+          sortBy="posted"
+          sortDir="desc"
+          onSortChange={noop}
+        />
+      </table>,
+    );
+
+    const th = document.querySelector('th[data-column-id="engagementFollowers"]') as HTMLTableCellElement;
+    const buttons = Array.from(th.querySelectorAll("button"));
+    expect(buttons).toHaveLength(2);
+
+    const sortButton = buttons.find((btn) =>
+      /^sort by eng\. \/ followers/i.test(btn.getAttribute("aria-label") ?? ""),
+    );
+    const tooltipTrigger = buttons.find(
+      (btn) => btn.getAttribute("aria-label") === "How is engagement against followers worked out?",
+    );
+    expect(sortButton).toBeDefined();
+    expect(tooltipTrigger).toBeDefined();
+    expect(sortButton?.contains(tooltipTrigger as Node)).toBe(false);
+    expect(tooltipTrigger?.contains(sortButton as Node)).toBe(false);
+    expect(sortButton?.parentElement).toBe(tooltipTrigger?.parentElement);
+  });
+
+  it("(R-D12) exactly two tooltip triggers exist table-wide, and every other header's <th> has exactly one button", () => {
+    render(
+      <table>
+        <AnalysisTableColumnHeaders
+          columns={ANALYSES_TABLE_COLUMNS}
+          sortBy="posted"
+          sortDir="desc"
+          onSortChange={noop}
+        />
+      </table>,
+    );
+
+    const tooltipTriggerNames = [
+      "How is engagement against reach worked out?",
+      "How is engagement against followers worked out?",
+    ];
+    for (const name of tooltipTriggerNames) {
+      expect(screen.getAllByRole("button", { name })).toHaveLength(1);
+    }
+
+    const allHeaders = Array.from(document.querySelectorAll<HTMLTableCellElement>("th[data-column-id]"));
+    for (const th of allHeaders) {
+      const buttonCount = th.querySelectorAll("button").length;
+      if (th.dataset.columnId === "engagementReach" || th.dataset.columnId === "engagementFollowers") {
+        expect(buttonCount).toBe(2);
+      } else if (th.dataset.columnId === "creator" || th.dataset.columnId === "posted") {
+        // sanity check on a couple of ordinary sortable columns
+        expect(buttonCount).toBe(1);
+      }
+    }
+  });
+
+  it("(R-D8) the sort button's own accessible name and aria-sort behaviour are unaffected by the tooltip trigger", () => {
+    render(
+      <table>
+        <AnalysisTableColumnHeaders
+          columns={ANALYSES_TABLE_COLUMNS}
+          sortBy="engagementFollowers"
+          sortDir="asc"
+          onSortChange={noop}
+        />
+      </table>,
+    );
+
+    const th = document.querySelector('th[data-column-id="engagementFollowers"]') as HTMLTableCellElement;
+    expect(th).toHaveAttribute("aria-sort", "ascending");
+    expect(
+      screen.getByRole("button", { name: "Sort by Eng. / followers, currently ascending" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "How is engagement against followers worked out?" }),
+    ).toBeInTheDocument();
+  });
+});
