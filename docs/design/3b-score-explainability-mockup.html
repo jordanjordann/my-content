@@ -140,8 +140,30 @@
       <div class="op"><span class="text-mutedfg">This post</span><span class="text-primary">1.8&times; their usual</span></div>
     </div>
     <p class="text-[11px] text-mutedfg mt-3 pt-2.5 border-t border-border">Follower count: 284,100, from a profile record cached 3 days ago. It may have changed since.<br/><b class="text-fg">Medium confidence</b> &mdash; measured against a follower count that may be up to a week old.</p>
-    <p class="text-[11px] text-mutedfg mt-2">Comparable only to this creator&rsquo;s own image carousels. Measured 9 Jul 2026 and frozen.</p>
+    <p class="text-[11px] text-mutedfg mt-2">Comparable only to this creator&rsquo;s own image carousels. Measured 9 Jul 2026. These numbers are frozen at the time of analysis and don&rsquo;t update.</p>
   </div>
+</section>
+
+<!-- =================== FOOTER VARIANTS F1 / F2 (§4.5.1, amendment B6) ===================
+     Added by amendment B11. The follower-denominated panel above also drew the unapproved short
+     form `Measured 9 Jul 2026 and frozen.` and is restored to F1 by the same amendment. -->
+
+<section class="rounded-xl border border-border bg-card p-5">
+  <h2 class="text-sm font-semibold">The popover footer &mdash; one sentence, one optional tail</h2>
+  <p class="text-xs text-mutedfg mt-1 max-w-4xl">The footer still renders on <b class="text-fg">every popover, every time</b>. What changed is that one number in this product is genuinely live: the Tier&nbsp;2 cold-start progress count (<code>TDD</code> §14.8a). <b class="text-fg">The frozen promise is not hedged to cover it</b> &mdash; it is given a named exception, which is a stronger statement than the original, not a softer one. Everything a user would quote in a client meeting stays inside the guarantee.</p>
+  <div class="grid grid-cols-2 gap-5 mt-4">
+    <div class="rounded-lg border border-border p-4">
+      <div class="lvl text-mutedfg">F1 &mdash; default, every row that is not cold start</div>
+      <p class="text-[11px] text-mutedfg mt-2.5 pt-2.5 border-t border-border">Measured 12 Jul 2026. These numbers are frozen at the time of analysis and don&rsquo;t update.</p>
+      <p class="text-[10.5px] text-mutedfg mt-3">Byte-identical to the sentence that shipped. Covers reach, likes, comments, the Tier&nbsp;1 percentage, the median, the sample size behind a <i>measured</i> multiplier, the multiplier, the 1&ndash;5, the verdict, the confidence and the follower count.</p>
+    </div>
+    <div class="rounded-lg border border-border p-4">
+      <div class="lvl text-mutedfg">F2 &mdash; cold start only (Tier&nbsp;2 present, multiplier <code>null</code>)</div>
+      <p class="text-[11px] text-mutedfg mt-2.5 pt-2.5 border-t border-border">Measured 12 Jul 2026. These numbers are frozen at the time of analysis and don&rsquo;t update <b class="text-fg">&mdash; except the count of carousels analysed so far, which is read from your library as it stands now.</b></p>
+      <p class="text-[10.5px] text-mutedfg mt-3">F2 is F1 plus one clause; identical up to the em dash. <b class="text-fg">No numeral</b> (the figure is in the cell) and <b class="text-fg">no duration</b> &mdash; no hours, no cadence (R-13.4.4). The format noun is the same bucket noun the cell renders (R-13.4.1 / OR-9); a footer saying <code>carousels</code> above a cell saying <code>reels</code> is a bug.</p>
+    </div>
+  </div>
+  <p class="text-[10.5px] text-rose mt-3"><b>Never a third string.</b> <code>Measured 12 Jul 2026 and frozen.</code> is <b class="text-fg">not</b> an approved abbreviation of F1 and must not appear anywhere &mdash; it drops the clause that does the actual work (<i>&ldquo;and don&rsquo;t update&rdquo;</i>). F1 and F2 are mutually exclusive and one of them always renders: never both, never neither.</p>
 </section>
 
 <!-- =================== ABSENT SCORE COPY SET =================== -->
