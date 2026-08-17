@@ -97,6 +97,11 @@ describe("AnalysisScoreCell — content variant (DESIGN-3C §5, TDD §9.3)", () 
     const filledPip = document.querySelector('[aria-hidden="true"] > span');
     expect(filledPip).toHaveClass("bg-muted-foreground");
   });
+
+  it("the Content numeral does NOT carry text-primary (DESIGN-3C §9.2, audit M5)", () => {
+    render(<AnalysisScoreCell variant="content" score={4} />);
+    expect(screen.getByText("4")).not.toHaveClass("text-primary");
+  });
 });
 
 describe("AnalysisScoreCell — performance variant (DESIGN-3C §5.1, TDD §9.3)", () => {
@@ -246,5 +251,67 @@ describe("AnalysisScoreCell — performance variant (DESIGN-3C §5.1, TDD §9.3)
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "How was this score worked out?" }));
     expect(screen.getByRole("tooltip")).toBeInTheDocument();
+  });
+
+  it("the Performance numeral DOES carry text-primary — distinct from the Content numeral (DESIGN-3C §9.2, audit M5)", () => {
+    render(
+      <AnalysisScoreCell
+        variant="performance"
+        score={4}
+        tierPhrase="vs their usual"
+        isTier3={false}
+        confidenceWord="high confidence"
+        row={ROW}
+      />,
+    );
+    expect(screen.getByText("4")).toHaveClass("text-primary");
+  });
+
+  it("the numeral weight is font-semibold, not font-medium (audit L3)", () => {
+    render(
+      <AnalysisScoreCell
+        variant="performance"
+        score={4}
+        tierPhrase="vs their usual"
+        isTier3={false}
+        confidenceWord="high confidence"
+        row={ROW}
+      />,
+    );
+    const numeral = screen.getByText("4");
+    expect(numeral).toHaveClass("font-semibold");
+    expect(numeral).not.toHaveClass("font-medium");
+  });
+
+  it("the unfilled pip track uses §9.4's explicit token, never an opacity modifier off muted-foreground (audit L3)", () => {
+    render(
+      <AnalysisScoreCell
+        variant="performance"
+        score={4}
+        tierPhrase="vs their usual"
+        isTier3={false}
+        confidenceWord="high confidence"
+        row={ROW}
+      />,
+    );
+    const emptyPip = document.querySelectorAll('[aria-hidden="true"] > span')[4];
+    expect(emptyPip).toHaveClass("bg-[#5c6c86]");
+    expect(emptyPip?.className).not.toMatch(/muted-foreground\//);
+  });
+
+  it("pips are 7px with 2px rounding, not the old 6px/1px step (audit L3)", () => {
+    render(
+      <AnalysisScoreCell
+        variant="performance"
+        score={4}
+        tierPhrase="vs their usual"
+        isTier3={false}
+        confidenceWord="high confidence"
+        row={ROW}
+      />,
+    );
+    const firstPip = document.querySelector('[aria-hidden="true"] > span');
+    expect(firstPip).toHaveClass("size-[7px]");
+    expect(firstPip).toHaveClass("rounded-[2px]");
   });
 });

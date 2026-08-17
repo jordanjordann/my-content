@@ -84,7 +84,7 @@ export function AnalysisTableRow({ row, columns, density, onOpen, rowRef }: Anal
       )}
     >
       {columns.map((column) => (
-        <td key={column.id} className="p-3 align-middle">
+        <td key={column.id} className="p-3 align-top">
           {renderCell(column.id, row, { failed, failedLabel, comfortable })}
         </td>
       ))}
@@ -115,16 +115,18 @@ function renderCell(
       return <AnalysisCreatorCell username={row.username} platform={row.platform} comfortable={ctx.comfortable} />;
 
     case "posted":
-      if (ctx.failed) return <span className="text-sm text-muted-foreground">—</span>;
+      if (ctx.failed) return <span className="text-[12.5px] text-muted-foreground">—</span>;
       return (
         <>
-          <p className="text-sm">{formatPostedDate(row.postDate) ?? "—"}</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-[12.5px]">{formatPostedDate(row.postDate) ?? "—"}</p>
+          <p className="text-[11px] text-muted-foreground">
             {formatPostedAge(row.postDate) ?? "—"}
             {row.performance?.computed.provisional && (
               <>
                 {" · "}
-                <span className="font-medium">Early</span>
+                <span className="rounded bg-accent/12 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+                  Early
+                </span>
               </>
             )}
           </p>
@@ -132,7 +134,7 @@ function renderCell(
       );
 
     case "counts":
-      if (ctx.failed || row.tableDerived == null) return <span className="text-sm text-muted-foreground">—</span>;
+      if (ctx.failed || row.tableDerived == null) return <span className="text-[12.5px] text-muted-foreground">—</span>;
       return (
         <AnalysisCountsCell
           reachCountState={row.tableDerived.reachCountState}
@@ -144,7 +146,7 @@ function renderCell(
       );
 
     case "contentScore":
-      if (ctx.failed || row.overallScore == null) return <span className="text-sm text-muted-foreground">—</span>;
+      if (ctx.failed || row.overallScore == null) return <span className="text-[12.5px] text-muted-foreground">—</span>;
       return <AnalysisScoreCell variant="content" score={row.overallScore} />;
 
     case "performance":
@@ -154,25 +156,25 @@ function renderCell(
       return <MultiplierCell row={row} failed={ctx.failed} />;
 
     case "engagementReach":
-      if (ctx.failed || row.tableDerived == null) return <span className="text-sm text-muted-foreground">—</span>;
+      if (ctx.failed || row.tableDerived == null) return <span className="text-[12.5px] text-muted-foreground">—</span>;
       return <AnalysisEngagementCell cell={row.tableDerived.engagementReachCell} denominator="REACH" />;
 
     case "engagementFollowers":
-      if (ctx.failed || row.tableDerived == null) return <span className="text-sm text-muted-foreground">—</span>;
+      if (ctx.failed || row.tableDerived == null) return <span className="text-[12.5px] text-muted-foreground">—</span>;
       return <AnalysisEngagementCell cell={row.tableDerived.engagementFollowersCell} denominator="FOLLOWERS" />;
 
     case "style":
-      if (ctx.failed) return <span className="text-sm text-muted-foreground">—</span>;
+      if (ctx.failed) return <span className="text-[12.5px] text-muted-foreground">—</span>;
       return <AnalysisStyleCell style={row.style} />;
 
     default:
-      return <span className="text-sm text-muted-foreground">—</span>;
+      return <span className="text-[12.5px] text-muted-foreground">—</span>;
   }
 }
 
 function PerformanceCell({ row, failed }: { row: AnalysisListItemIndexed; failed: boolean }) {
   if (failed) {
-    return <span className="text-sm text-muted-foreground">Not analysed</span>;
+    return <span className="text-[12.5px] text-muted-foreground">Not analysed</span>;
   }
 
   if (row.tableDerived == null) {
@@ -180,7 +182,7 @@ function PerformanceCell({ row, failed }: { row: AnalysisListItemIndexed; failed
     // the failed treatment: nothing failed, so no rose edge and no "Not analysed" (that
     // string is row 7's). There is no computed block for a popover to show, so this row
     // carries no `ⓘ` — the affordance must never open onto an empty popover.
-    return <p className="text-xs text-muted-foreground">Performance wasn&apos;t measured</p>;
+    return <p className="text-[11px] text-muted-foreground">Performance wasn&apos;t measured</p>;
   }
 
   const cell = row.tableDerived.performanceCell;
@@ -188,7 +190,7 @@ function PerformanceCell({ row, failed }: { row: AnalysisListItemIndexed; failed
   if (cell.kind === "dash") {
     // `INSUFFICIENT_HISTORY` — declared on `UnavailableReason`, never produced (DESIGN-3B
     // §5.5). No approved copy exists for it; the muted "—" stays, on purpose.
-    return <span className="text-sm text-muted-foreground">—</span>;
+    return <span className="text-[12.5px] text-muted-foreground">—</span>;
   }
 
   if (cell.kind === "no-judgement") {
@@ -198,14 +200,14 @@ function PerformanceCell({ row, failed }: { row: AnalysisListItemIndexed; failed
     // `AnalysisScoreCell`'s "performance" variant — the popover's other call site — only
     // renders when a score exists, which row 8 does not have.
     return (
-      <p className="text-xs text-muted-foreground">
+      <p className="text-[11px] text-muted-foreground">
         No 1–5 for this post <AnalysisScoreExplainPopover row={row} />
       </p>
     );
   }
 
   if (cell.kind === "reason") {
-    return <p className="text-xs text-muted-foreground">{cell.text}</p>;
+    return <p className="text-[11px] text-muted-foreground">{cell.text}</p>;
   }
 
   return (
@@ -222,35 +224,35 @@ function PerformanceCell({ row, failed }: { row: AnalysisListItemIndexed; failed
 
 function MultiplierCell({ row, failed }: { row: AnalysisListItemIndexed; failed: boolean }) {
   if (failed || row.tableDerived == null) {
-    return <span className="text-sm text-muted-foreground">—</span>;
+    return <span className="text-[12.5px] text-muted-foreground">—</span>;
   }
 
   const content = row.tableDerived.multiplierCell;
 
   if (content.kind === "dash") {
-    return <span className="text-sm text-muted-foreground">—</span>;
+    return <span className="text-[12.5px] text-muted-foreground">—</span>;
   }
   if (content.kind === "reason") {
     return content.text != null ? (
-      <p className="text-xs text-muted-foreground">{content.text}</p>
+      <p className="text-[11px] text-muted-foreground">{content.text}</p>
     ) : (
-      <span className="text-sm text-muted-foreground">—</span>
+      <span className="text-[12.5px] text-muted-foreground">—</span>
     );
   }
   if (content.kind === "cold-start") {
     return (
       <div>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[11px] text-muted-foreground">
           {content.sampleSize} of {BASELINE_MIN_SAMPLE_DISPLAY} {content.bucketNoun}
         </p>
-        <p className="text-xs text-muted-foreground">builds as you analyse more</p>
+        <p className="text-[11px] text-muted-foreground">builds as you analyse more</p>
       </div>
     );
   }
   return (
     <div>
-      <p className="text-sm font-medium tabular-nums">{content.multiplier.toFixed(1)}×</p>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-[12.5px] font-medium tabular-nums">{content.multiplier.toFixed(1)}×</p>
+      <p className="text-[11px] text-muted-foreground">
         based on {content.sampleSize} {content.bucketNoun}
       </p>
     </div>

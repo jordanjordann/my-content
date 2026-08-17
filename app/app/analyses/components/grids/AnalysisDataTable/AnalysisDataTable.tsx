@@ -293,7 +293,7 @@ export function AnalysisDataTable({
       </div>
 
       <div className="relative max-h-[720px] w-full overflow-auto">
-        <table className="w-full caption-bottom text-sm">
+        <table className="w-full caption-bottom text-[12.5px]">
           <caption className="sr-only">
             Analyses — every analysed post, its content and performance scores, and how it
             compares against the creator&apos;s own past posts.

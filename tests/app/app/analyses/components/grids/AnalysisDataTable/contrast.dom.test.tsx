@@ -5,7 +5,9 @@ import { AnalysisEngagementCell } from "@/app/app/analyses/components/grids/Anal
 import type { AnalysisTableEngagementCell } from "@/lib/api/analyses/types";
 import {
   DARK_TOKENS,
+  FOUR_SURFACES,
   badgeRatiosOnAllSurfaces,
+  contrastRatio,
   hexToSrgb255,
 } from "@/tests/helpers/contrast";
 
@@ -122,5 +124,34 @@ describe("contrast — ticket #217, colour sits on the qualifier element, not th
     expect(qualifier).toHaveClass("text-xs");
     expect(value).not.toHaveClass("text-teal");
     expect(value).toHaveClass("text-foreground");
+  });
+});
+
+/**
+ * Ticket #222 (M6, L3, AC-17) — the Early badge (`bg-accent/12 text-accent`) and the score
+ * pip track's unfilled step (`#5c6c86`, §9.4), both re-measured against all four real
+ * surfaces per RUNBOOK §8.4. The badge reuses `DARK_TOKENS.accent` (parsed live from
+ * `.dark { --accent }`, same token `AnalysisEngagementCell`'s reach qualifier uses) — it is
+ * composited fresh here because it is a NEW element for the colour (§9.1's re-measure rule):
+ * a `Posted`-column badge over the sticky/row surfaces, not the engagement qualifier line.
+ */
+describe("contrast — ticket #222, the Early badge (bg-accent/12 text-accent) and the pip track (#5c6c86)", () => {
+  it("the Early badge (bg-accent/12 text-accent) clears 4.5:1 on all four surfaces", () => {
+    const ratios = badgeRatiosOnAllSurfaces(DARK_TOKENS.accent, 0.12);
+    expect(ratios.background).toBeGreaterThanOrEqual(4.5);
+    expect(ratios.card).toBeGreaterThanOrEqual(4.5);
+    expect(ratios.hover).toBeGreaterThanOrEqual(4.5);
+    expect(ratios.muted).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("the unfilled pip track (#5c6c86, decorative/aria-hidden, §9.4's 3:1 non-text floor) clears 3:1 on card, hover and muted", () => {
+    // §9.4 measures against card / hover / muted, NOT background (the pips never render
+    // directly on the page background, only inside a table row). An opaque non-text colour,
+    // so `contrastRatio` against the real surface directly — not `badgeRatiosOnAllSurfaces`,
+    // which composites a TRANSLUCENT tint and would return 1:1 (itself vs itself) at alpha=1.
+    const track = hexToSrgb255("5c6c86");
+    expect(contrastRatio(track, FOUR_SURFACES.card)).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(track, FOUR_SURFACES.hover)).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(track, FOUR_SURFACES.muted)).toBeGreaterThanOrEqual(3);
   });
 });
