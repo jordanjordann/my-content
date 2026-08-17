@@ -220,6 +220,7 @@
                 <div class="flex justify-between"><span class="text-mutedfg">This post</span><span class="text-primary">3.2&times; their usual</span></div>
               </div>
               <div class="mt-2 text-mutedfg">Both readings: the people who saw it engaged, <i>and</i> it travelled. Strong on both.</div>
+              <!-- FOOTER VARIANT F1 (DESIGN-3B §4.5.1) — the default, on every row that is not cold start. -->
               <div class="mt-2 pt-2 border-t border-border text-mutedfg">Measured 12 Jul 2026. These numbers are frozen at the time of analysis and don&rsquo;t update.</div>
             </span></span>
           </div>
@@ -262,7 +263,10 @@
                 <div class="flex justify-between border-t border-border mt-1 pt-1"><span class="text-mutedfg">Engagement</span><span class="text-teal">&asymp;16.2% of followers</span></div>
               </div>
               <div class="mt-2 text-mutedfg">Follower count from a profile record cached 3 days ago. It may have changed since. <b class="text-fg">Medium confidence</b> &mdash; measured against a follower count that may be up to a week old.</div>
-              <div class="mt-2 pt-2 border-t border-border text-mutedfg">Comparable only to this creator&rsquo;s own image carousels. Measured 9 Jul 2026 and frozen.</div>
+              <!-- Corrected by amendment B11. FOOTER VARIANT F1 (DESIGN-3B §4.5.1) — not a cold-start row,
+                   so the default renders in full. `Measured {date} and frozen.` is NOT an approved short
+                   form of it. -->
+              <div class="mt-2 pt-2 border-t border-border text-mutedfg">Comparable only to this creator&rsquo;s own image carousels. Measured 9 Jul 2026. These numbers are frozen at the time of analysis and don&rsquo;t update.</div>
             </span></span>
           </div>
           <div class="text-[11px] text-mutedfg">medium confidence</div>
@@ -296,8 +300,14 @@
             <span class="pop" id="p3" role="tooltip">
               <b class="text-fg">Why the confidence is lower</b><br/>
               <span class="text-mutedfg">Instagram publishes views per slide, not per post. This uses the first slide&rsquo;s view count as the post&rsquo;s reach, which is why the confidence is one level lower.</span>
-              <div class="mt-2 text-mutedfg">&ldquo;vs their usual&rdquo; compares this post against the same creator&rsquo;s own past video carousels. Carousels and reels are measured in different units &mdash; views and plays &mdash; so they&rsquo;re counted separately and never pooled. @warungmbaksri has <b class="text-fg">2 of 5 video carousels</b> analysed so far. The comparison appears on its own once the fifth is in.</div>
-              <div class="mt-2 pt-2 border-t border-border text-mutedfg">Measured 6 Aug 2026 and frozen.</div>
+              <div class="mt-2 text-mutedfg">&ldquo;vs their usual&rdquo; compares this post against the same creator&rsquo;s own past carousels. Carousels and reels are measured in different units &mdash; views and plays &mdash; so they&rsquo;re counted separately and never pooled. @warungmbaksri has <b class="text-fg">2 of 5 carousels</b> analysed so far. The comparison appears on its own once the fifth is in.</div>
+              <!-- Corrected by amendment B11 (this drew `Measured 6 Aug 2026 and frozen.`, and the sentence
+                   above said `video carousels`, a noun outside the R-13.4.1 / OR-9 set).
+                   FOOTER VARIANT F2 (DESIGN-3B §4.5.1, amendment B6) — this row is COLD START, so the
+                   cold-start progress count in the sentence above is a LIVE figure (TDD §14.8a) and F1's
+                   unhedged claim would be false about it. F2 is F1 plus one clause, byte-identical up to
+                   the em-dash. The format noun is the SAME bucket noun this row's cell renders. -->
+              <div class="mt-2 pt-2 border-t border-border text-mutedfg">Measured 6 Aug 2026. These numbers are frozen at the time of analysis and don&rsquo;t update &mdash; except the count of carousels analysed so far, which is read from your library as it stands now.</div>
             </span></span>
           </div>
           <div class="text-[11px] text-mutedfg">medium confidence</div>
@@ -337,7 +347,9 @@
               <b class="text-fg">This is an early read</b><br/>
               <span class="text-mutedfg">This post is 2 days old and still picking up reach. The score is an early read and may change. We mark posts as early for their first few days.</span>
               <div class="mt-2 text-mutedfg">It reached 0.4&times; this creator&rsquo;s usual for reels &mdash; but 2 days is not long enough to call that.</div>
-              <div class="mt-2 pt-2 border-t border-border text-mutedfg">Measured 6 Aug 2026 and frozen. Early posts are excluded from other posts&rsquo; baselines.</div>
+              <!-- Corrected by amendment B11. FOOTER VARIANT F1 (DESIGN-3B §4.5.1) — provisional, but the
+                   multiplier IS measured, so this is not the cold-start state and F1 is correct. -->
+              <div class="mt-2 pt-2 border-t border-border text-mutedfg">Measured 6 Aug 2026. These numbers are frozen at the time of analysis and don&rsquo;t update. Early posts are excluded from other posts&rsquo; baselines.</div>
             </span></span>
           </div>
           <div class="text-[11px] text-mutedfg">low confidence</div>
