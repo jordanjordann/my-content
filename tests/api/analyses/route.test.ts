@@ -501,6 +501,57 @@ describe("GET /api/analyses — #206: tier2.sampleSize is LIVE (moves when the l
     expect(secondRow.performance.computed.tier2).toEqual(firstRow.performance.computed.tier2);
     expect(secondRow.performance.computed.tier2.sampleSize).toBe(6);
   });
+
+  /**
+   * Reviewer note (round-2 review, finding 1, PR #235): the detail endpoint
+   * (`app/api/analyses/[id]/route.ts`) duplicates this exact derivation,
+   * including the self-exclusion subtraction, but had zero coverage of its
+   * own — the list-route test above only exercises `listRoute.GET`. Mirror
+   * of the test above, driven through `detailRoute.GET` instead, so both
+   * routes are pinned equivalently.
+   */
+  it("mirror of the above through the detail endpoint: sampleSize increases after a new comparator is inserted between two reads", async () => {
+    const profileId = randomUUID();
+    await insertProfile(db, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    const observedId = await insertAnalysis(db, {
+      username: "creator-detail-live",
+      resultContent: { overallScore: 3, scorecard: {}, performance: { performanceScore: null, verdict: "", drivers: [] } },
+      perfReachValue: 1_000,
+      perfReachKind: "VIEWS",
+      perfReachDerivedFrom: "TOP_LEVEL",
+      perfBucketKey: bucketKey,
+      perfBaselineMedian: null,
+      perfBaselineSampleSize: 999,
+      perfMultiplier: null,
+      perfTierUsed: "REACH_ONLY",
+      perfConfidence: "HIGH",
+      perfPostAgeHours: 100,
+      profileId,
+      schemaVersion: SCHEMA_VERSION,
+    });
+
+    const firstBody = await (await detailRoute.GET(makeGetRequest(), makeDetailParams(observedId))).json();
+    // Only comparator candidate in the pool is itself, which is
+    // self-excluded — zero comparators exist yet.
+    expect(firstBody.performance.computed.tier2.sampleSize).toBe(0);
+
+    // Write a NEW qualifying analysis into the SAME pool, between the two reads.
+    await insertAnalysis(db, {
+      username: "creator-detail-live",
+      perfReachValue: 2_000,
+      perfBucketKey: bucketKey,
+      perfPostAgeHours: 100,
+      profileId,
+      schemaVersion: SCHEMA_VERSION,
+    });
+
+    const secondBody = await (await detailRoute.GET(makeGetRequest(), makeDetailParams(observedId))).json();
+
+    // The live field MOVED.
+    expect(secondBody.performance.computed.tier2.sampleSize).toBe(1);
+  });
 });
 
 describe("GET /api/analyses — D3: one grouped query per page, never per row", () => {
