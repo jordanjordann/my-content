@@ -146,4 +146,56 @@ describe("buildComputedPerformanceBlock — D8, byte-identical across two reads"
     expect(first).toEqual(second);
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
   });
+
+  /**
+   * Reviewer note on #206 (TDD §14.8a's "Consequential test note"): the
+   * assertion above proves determinism-given-unchanged-input, not freezing
+   * — `row` here is `MEASURED` (`perfMultiplier: 1.25` from `baseRow()`),
+   * so it was never a candidate for the live carve-out in the first place
+   * and stays green whether or not #206 lands. It is kept as-is (D8 is
+   * still literally true for a MEASURED row) rather than edited, per the
+   * TDD note's own instruction that only the cold-start field's carve-out
+   * is a legitimate edit, not a wider one.
+   */
+});
+
+describe("buildComputedPerformanceBlock — #206 carve-out, D8's actual boundary", () => {
+  it("a MEASURED row's tier2.sampleSize ignores the injected live value entirely — frozen unconditionally", () => {
+    const row = baseRow(); // perfMultiplier: 1.25, perfBaselineSampleSize: 7 — MEASURED.
+    const withoutLive = buildComputedPerformanceBlock(row);
+    const withLive = buildComputedPerformanceBlock(row, 999);
+
+    expect(withoutLive!.tier2!.sampleSize).toBe(7);
+    expect(withLive!.tier2!.sampleSize).toBe(7);
+    expect(withLive).toEqual(withoutLive);
+  });
+
+  it("a COLD_START row's tier2.sampleSize takes the injected live value, not the stored column", () => {
+    const row = baseRow({ perfMultiplier: null, perfBaselineMedian: null, perfBaselineSampleSize: 2 });
+
+    const first = buildComputedPerformanceBlock(row, 2);
+    const second = buildComputedPerformanceBlock(row, 5);
+
+    // Same row object, two calls — but a THIRD input (the injected live
+    // value) differs between them, so tier2.sampleSize legitimately
+    // differs. This is the field-scoped carve-out from TDD §14.8a: prove
+    // it moves on the one field it's allowed to move on...
+    expect(first!.tier2!.sampleSize).toBe(2);
+    expect(second!.tier2!.sampleSize).toBe(5);
+
+    // ...and prove every OTHER field is still byte-identical between the
+    // two calls, i.e. the carve-out did not leak into anything else.
+    const { tier2: tier2First, ...restFirst } = first!;
+    const { tier2: tier2Second, ...restSecond } = second!;
+    expect(restFirst).toEqual(restSecond);
+    expect(tier2First!.median).toBe(tier2Second!.median);
+    expect(tier2First!.bucketKey).toBe(tier2Second!.bucketKey);
+    expect(tier2First!.multiplier).toBe(tier2Second!.multiplier);
+  });
+
+  it("no injected value (undefined) falls back to the stored column — pre-#206 call sites are unaffected", () => {
+    const row = baseRow({ perfMultiplier: null, perfBaselineMedian: null, perfBaselineSampleSize: 2 });
+    const result = buildComputedPerformanceBlock(row);
+    expect(result!.tier2!.sampleSize).toBe(2);
+  });
 });

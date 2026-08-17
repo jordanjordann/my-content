@@ -29,6 +29,22 @@ import type {
  * call, never `new Date()`. That purity is what D8 ("byte-identical across
  * two reads of the same completed analysis") rests on.
  *
+ * **Ticket #206 (TDD §14.8a) — this function itself is still pure; the
+ * response it feeds is not, on exactly one field.** `buildComputedPerformanceBlock`
+ * gains an INJECTED `liveColdStartSampleSize` parameter, never an I/O call
+ * of its own. It is applied to `tier2.sampleSize` only when `tier2` exists
+ * (`perfBucketKey != null`) AND the row is cold start (`perfMultiplier ==
+ * null`) — every other field, and a `MEASURED` row's `tier2.sampleSize` in
+ * particular, is still read verbatim off the row and stays exactly as
+ * frozen as D8 always described. The live value itself is computed once
+ * per request, batched across the whole page (D3), by the caller —
+ * `baseline.ts`'s `fetchLiveEligibleComparatorIds` — and handed in here as
+ * a plain number. Do not infer from this file alone that the RESPONSE is
+ * byte-stable across two reads of an unchanged row: for a cold-start row it
+ * is not, by design (§14.8a), because the caller may pass a different
+ * `liveColdStartSampleSize` on the second call even though `row` itself
+ * hasn't changed.
+ *
  * Two fields are genuinely RECONSTRUCTED rather than stored, because
  * storing them would have required a migration this ticket is not allowed
  * to add:
@@ -153,17 +169,31 @@ function buildTier1Ratio(row: PerformanceBlockRow): Tier1Ratio | null {
   return { denominator: "REACH", ratio: row.perfTier1Ratio, reachKind: row.perfReachKind ?? "UNKNOWN" };
 }
 
-function buildTier2(row: PerformanceBlockRow): PerformanceTier2 | null {
+/**
+ * `liveColdStartSampleSize` — ticket #206 (TDD §14.8a). Applied ONLY when
+ * this row is cold start (`perfMultiplier == null`); a `MEASURED` row's
+ * `sampleSize` is an operand of a stored multiplier and stays frozen,
+ * unconditionally, regardless of what the caller passes in. `undefined`
+ * (not injected by the caller) falls back to the stored column, exactly
+ * the pre-#206 behaviour — this keeps every existing call site that
+ * doesn't pass the new parameter unaffected.
+ */
+function buildTier2(row: PerformanceBlockRow, liveColdStartSampleSize?: number | null): PerformanceTier2 | null {
   if (row.perfBucketKey == null) {
     return null;
   }
+  const isColdStart = row.perfMultiplier == null;
+  const sampleSize =
+    isColdStart && liveColdStartSampleSize != null
+      ? liveColdStartSampleSize
+      : // Never null in practice (see PerformanceTier2's doc) — `?? 0` is
+        // defence-in-depth only, matching the posture the performance module
+        // already takes elsewhere for facts that are "true by construction
+        // upstream, guarded again here anyway".
+        (row.perfBaselineSampleSize ?? 0);
   return {
     median: row.perfBaselineMedian,
-    // Never null in practice (see PerformanceTier2's doc) — `?? 0` is
-    // defence-in-depth only, matching the posture the performance module
-    // already takes elsewhere for facts that are "true by construction
-    // upstream, guarded again here anyway".
-    sampleSize: row.perfBaselineSampleSize ?? 0,
+    sampleSize,
     bucketKey: row.perfBucketKey,
     multiplier: row.perfMultiplier,
   };
@@ -176,7 +206,10 @@ function buildTier2(row: PerformanceBlockRow): PerformanceTier2 | null {
  * together, in the same `UPDATE`, in `pipeline/index.ts` — a `null`
  * `perfTierUsed` means that write never happened for this row.
  */
-export function buildComputedPerformanceBlock(row: PerformanceBlockRow): PerformanceComputed | null {
+export function buildComputedPerformanceBlock(
+  row: PerformanceBlockRow,
+  liveColdStartSampleSize?: number | null,
+): PerformanceComputed | null {
   if (row.perfTierUsed == null) {
     return null;
   }
@@ -200,7 +233,7 @@ export function buildComputedPerformanceBlock(row: PerformanceBlockRow): Perform
     },
     postAgeHours: row.perfPostAgeHours,
     tier1: buildTier1Ratio(row),
-    tier2: buildTier2(row),
+    tier2: buildTier2(row, liveColdStartSampleSize),
     tier3,
     tierUsed: row.perfTierUsed,
     confidence: row.perfConfidence ?? "NONE",

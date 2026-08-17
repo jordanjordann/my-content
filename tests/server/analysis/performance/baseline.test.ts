@@ -39,6 +39,7 @@ interface SeedAnalysis {
   status?: string;
   schemaVersion?: number;
   postAgeHours?: number;
+  postDate?: string | null;
   reachValue?: number | null;
   likeCount?: number | null;
   commentCount?: number | null;
@@ -50,8 +51,8 @@ async function insertAnalysis(client: Client, opts: SeedAnalysis): Promise<strin
     sql: `
       INSERT INTO analyses (
         id, url, platform, media_type, profile_id, status, schema_version,
-        perf_bucket_key, perf_post_age_hours, perf_reach_value, like_count, comment_count
-      ) VALUES (?, 'https://instagram.com/reel/x', 'instagram', 'reel', ?, ?, ?, ?, ?, ?, ?, ?)
+        perf_bucket_key, perf_post_age_hours, post_date, perf_reach_value, like_count, comment_count
+      ) VALUES (?, 'https://instagram.com/reel/x', 'instagram', 'reel', ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     args: [
       id,
@@ -60,12 +61,18 @@ async function insertAnalysis(client: Client, opts: SeedAnalysis): Promise<strin
       opts.schemaVersion ?? SCHEMA_VERSION,
       opts.bucketKey,
       opts.postAgeHours ?? 200,
+      opts.postDate ?? null,
       opts.reachValue ?? null,
       opts.likeCount ?? null,
       opts.commentCount ?? null,
     ],
   });
   return id;
+}
+
+/** ISO-8601 UTC timestamp `hoursAgo` hours before now — mirrors `fetcher/adapter.ts`'s stored shape. */
+function isoHoursAgo(hoursAgo: number): string {
+  return new Date(Date.now() - hoursAgo * 60 * 60 * 1000).toISOString();
 }
 
 let client: Client;
@@ -744,5 +751,165 @@ describe("computeBaseline — schema-version isolation", () => {
     });
 
     expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE - 1);
+  });
+});
+
+describe("computeBaseline — D2 (TDD §14.8b): candidate eligibility uses LIVE age, not just frozen age", () => {
+  it("a post analysed while under the floor (frozen age low) but now genuinely mature (post_date old) IS eligible", async () => {
+    const { computeBaseline } = await import("@/lib/server/analysis/performance/baseline");
+    const { BASELINE_MIN_SAMPLE } = await import("@/lib/server/analysis/performance/constants");
+    const profileId = randomUUID();
+    await insertProfile(client, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    for (let i = 0; i < BASELINE_MIN_SAMPLE - 1; i++) {
+      await insertAnalysis(client, { profileId, bucketKey, reachValue: 1_000, postAgeHours: 200 });
+    }
+    // Analysed at 20h old (frozen, well under the 72h floor) but posted
+    // long ago in wall-clock time — the Part 2 regression this ticket
+    // fixes. Empirically the exact @giorrando shape (TDD §14.8b).
+    await insertAnalysis(client, {
+      profileId,
+      bucketKey,
+      reachValue: 5_000,
+      postAgeHours: 20,
+      postDate: isoHoursAgo(300),
+    });
+
+    const result = await computeBaseline({
+      profileId,
+      bucketKey,
+      schemaVersion: SCHEMA_VERSION,
+      excludeAnalysisId: randomUUID(),
+      minPostAgeHours: 72,
+      currentPost: { reachValue: 1_000, likeCount: null, commentCount: null },
+    });
+
+    expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE);
+  });
+
+  it("monotonicity: a candidate already eligible under the frozen age stays eligible when post_date is NULL/unparseable", async () => {
+    const { computeBaseline } = await import("@/lib/server/analysis/performance/baseline");
+    const { BASELINE_MIN_SAMPLE } = await import("@/lib/server/analysis/performance/constants");
+    const profileId = randomUUID();
+    await insertProfile(client, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    // Frozen age is above the floor; post_date is absent (NULL). A naive
+    // "use live age only" implementation would compute julianday(NULL) ->
+    // NULL and could silently drop this candidate. MAX(-1, frozen) must
+    // keep it in.
+    for (let i = 0; i < BASELINE_MIN_SAMPLE; i++) {
+      await insertAnalysis(client, { profileId, bucketKey, reachValue: 1_000, postAgeHours: 200, postDate: null });
+    }
+
+    const result = await computeBaseline({
+      profileId,
+      bucketKey,
+      schemaVersion: SCHEMA_VERSION,
+      excludeAnalysisId: randomUUID(),
+      minPostAgeHours: 72,
+      currentPost: { reachValue: 1_000, likeCount: null, commentCount: null },
+    });
+
+    expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE);
+  });
+
+  it("a post that is neither frozen-mature nor live-mature stays excluded (both signals genuinely young)", async () => {
+    const { computeBaseline } = await import("@/lib/server/analysis/performance/baseline");
+    const { BASELINE_MIN_SAMPLE } = await import("@/lib/server/analysis/performance/constants");
+    const profileId = randomUUID();
+    await insertProfile(client, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    for (let i = 0; i < BASELINE_MIN_SAMPLE; i++) {
+      await insertAnalysis(client, { profileId, bucketKey, reachValue: 1_000, postAgeHours: 200 });
+    }
+    // Genuinely young by both measures — must stay excluded.
+    await insertAnalysis(client, {
+      profileId,
+      bucketKey,
+      reachValue: 999_999,
+      postAgeHours: 10,
+      postDate: isoHoursAgo(10),
+    });
+
+    const result = await computeBaseline({
+      profileId,
+      bucketKey,
+      schemaVersion: SCHEMA_VERSION,
+      excludeAnalysisId: randomUUID(),
+      minPostAgeHours: 72,
+      currentPost: { reachValue: 1_000, likeCount: null, commentCount: null },
+    });
+
+    expect(result.sampleSize).toBe(BASELINE_MIN_SAMPLE);
+  });
+});
+
+describe("fetchLiveEligibleComparatorIds — D3/D4: the batched, grouped live count", () => {
+  it("returns the eligible id set per requested (profileId, bucketKey, schemaVersion) pool, classified via the same metricFor() rules", async () => {
+    const { fetchLiveEligibleComparatorIds, candidatePoolKey } = await import(
+      "@/lib/server/analysis/performance/baseline"
+    );
+    const profileId = randomUUID();
+    await insertProfile(client, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    const eligibleId = await insertAnalysis(client, { profileId, bucketKey, reachValue: 1_000, postAgeHours: 200 });
+    // Reach-hidden — must be classified out, exactly like computeBaseline's own metricFor() would.
+    await insertAnalysis(client, { profileId, bucketKey, reachValue: null, postAgeHours: 200 });
+
+    const pool = { profileId, bucketKey, schemaVersion: SCHEMA_VERSION };
+    const result = await fetchLiveEligibleComparatorIds([pool], 72);
+
+    const ids = result.get(candidatePoolKey(pool));
+    expect(ids).toBeDefined();
+    expect([...ids!]).toEqual([eligibleId]);
+  });
+
+  it("an empty pool list issues no query and returns an empty map", async () => {
+    const { fetchLiveEligibleComparatorIds } = await import("@/lib/server/analysis/performance/baseline");
+    const executeSpy = vi.spyOn(client, "execute");
+
+    const result = await fetchLiveEligibleComparatorIds([], 72);
+
+    expect(result.size).toBe(0);
+    expect(executeSpy).not.toHaveBeenCalled();
+  });
+
+  it("every requested pool gets an entry, even one with zero eligible candidates", async () => {
+    const { fetchLiveEligibleComparatorIds, candidatePoolKey } = await import(
+      "@/lib/server/analysis/performance/baseline"
+    );
+    const profileId = randomUUID();
+    await insertProfile(client, profileId);
+    const pool = { profileId, bucketKey: "instagram:reel:full_video", schemaVersion: SCHEMA_VERSION };
+
+    const result = await fetchLiveEligibleComparatorIds([pool], 72);
+
+    expect(result.get(candidatePoolKey(pool))).toEqual(new Set());
+  });
+
+  it("one call covers multiple distinct pools without cross-contaminating their eligible sets", async () => {
+    const { fetchLiveEligibleComparatorIds, candidatePoolKey } = await import(
+      "@/lib/server/analysis/performance/baseline"
+    );
+    const profileA = randomUUID();
+    const profileB = randomUUID();
+    await insertProfile(client, profileA);
+    await insertProfile(client, profileB);
+    const bucketKey = "instagram:reel:full_video";
+
+    const idA = await insertAnalysis(client, { profileId: profileA, bucketKey, reachValue: 1_000, postAgeHours: 200 });
+    const idB1 = await insertAnalysis(client, { profileId: profileB, bucketKey, reachValue: 2_000, postAgeHours: 200 });
+    const idB2 = await insertAnalysis(client, { profileId: profileB, bucketKey, reachValue: 3_000, postAgeHours: 200 });
+
+    const poolA = { profileId: profileA, bucketKey, schemaVersion: SCHEMA_VERSION };
+    const poolB = { profileId: profileB, bucketKey, schemaVersion: SCHEMA_VERSION };
+    const result = await fetchLiveEligibleComparatorIds([poolA, poolB], 72);
+
+    expect([...result.get(candidatePoolKey(poolA))!].sort()).toEqual([idA].sort());
+    expect([...result.get(candidatePoolKey(poolB))!].sort()).toEqual([idB1, idB2].sort());
   });
 });
