@@ -260,6 +260,172 @@ export interface ComputeBaselineInput {
   currentPost: BaselinePostMetrics;
 }
 
+/** A `(profile_id, perf_bucket_key, schema_version)` triple identifying one Tier 2 candidate pool. */
+export interface CandidatePoolKey {
+  profileId: string;
+  bucketKey: string;
+  schemaVersion: number;
+}
+
+interface CandidateRow {
+  id: string;
+  profileId: string;
+  bucketKey: string;
+  schemaVersion: number;
+  reachValue: number | null;
+  likeCount: number | null;
+  commentCount: number | null;
+}
+
+/** Chunk size for `(profileId, bucketKey, schemaVersion)` OR-groups (D3's two guards: stay well under `SQLITE_MAX_VARIABLE_NUMBER`). */
+const POOL_CHUNK_SIZE = 100;
+
+/**
+ * D2 — the candidate-eligibility age predicate (TDD §14.8b). Compares the
+ * GREATER of live age (derived at query time from `post_date`) and frozen
+ * age (`perf_post_age_hours`) against the floor, so eligibility is
+ * monotone: an unparseable/absent `post_date` (`julianday()` -> `NULL`,
+ * `COALESCE`d to `-1`, always beaten by a real frozen age) can only ever
+ * fail to ADD a comparator, never REMOVE one that was already eligible
+ * under the frozen age. `MAX` with 2+ scalar args is SQLite's scalar max,
+ * not the aggregate.
+ */
+const LIVE_AGE_PREDICATE = `
+  MAX(
+    COALESCE((julianday('now') - julianday(post_date)) * 24.0, -1),
+    COALESCE(perf_post_age_hours, -1)
+  ) >= ?
+`;
+
+/**
+ * D4 — the single query + row shape shared by `computeBaseline()`'s
+ * write-path single-pool lookup and the batched, grouped live-count read
+ * path (D3). Every candidate-eligibility rule (`status`, `schema_version`,
+ * bucket key, D2's live/frozen maturity floor) lives here exactly once;
+ * `computeBaseline()` must not grow a second `WHERE` clause that happens to
+ * match. `excludeAnalysisId`, when given, drops exactly that row —
+ * `computeBaseline()`'s "excluded from its own candidate pool" rule. The
+ * batched caller omits it: no single row is "self" across many pools.
+ */
+async function fetchCandidateRows(
+  pools: CandidatePoolKey[],
+  minPostAgeHours: number,
+  excludeAnalysisId?: string,
+): Promise<CandidateRow[]> {
+  if (pools.length === 0) {
+    return [];
+  }
+
+  const rows: CandidateRow[] = [];
+  for (let i = 0; i < pools.length; i += POOL_CHUNK_SIZE) {
+    const chunk = pools.slice(i, i + POOL_CHUNK_SIZE);
+    const poolClause = chunk
+      .map(() => "(profile_id = ? AND perf_bucket_key = ? AND schema_version = ?)")
+      .join(" OR ");
+    const poolArgs = chunk.flatMap((pool) => [pool.profileId, pool.bucketKey, pool.schemaVersion]);
+    const excludeClause = excludeAnalysisId ? "AND id != ?" : "";
+
+    const result = await db.execute({
+      sql: `
+        SELECT id, profile_id, perf_bucket_key, schema_version, perf_reach_value, like_count, comment_count
+        FROM analyses
+        WHERE (${poolClause})
+          AND status = 'completed'
+          ${excludeClause}
+          AND ${LIVE_AGE_PREDICATE}
+      `,
+      args: [
+        ...poolArgs,
+        ...(excludeAnalysisId ? [excludeAnalysisId] : []),
+        minPostAgeHours,
+      ],
+    });
+
+    for (const row of result.rows) {
+      rows.push({
+        id: row.id as string,
+        profileId: row.profile_id as string,
+        bucketKey: row.perf_bucket_key as string,
+        schemaVersion: Number(row.schema_version),
+        reachValue: row.perf_reach_value == null ? null : Number(row.perf_reach_value),
+        likeCount: row.like_count == null ? null : Number(row.like_count),
+        commentCount: row.comment_count == null ? null : Number(row.comment_count),
+      });
+    }
+  }
+  return rows;
+}
+
+/** Exported so callers (the read path) can look up a row's own pool in the `fetchLiveEligibleComparatorIds()` result map without re-deriving the key format. */
+export function candidatePoolKey(pool: CandidatePoolKey): string {
+  return [pool.profileId, pool.bucketKey, pool.schemaVersion].join(" ");
+}
+const poolKeyOf = candidatePoolKey;
+
+/**
+ * D3 — one grouped query per request, never per row. Given the distinct
+ * `(profileId, bucketKey, schemaVersion)` pools a page's COLD_START rows
+ * need a live count for, returns the SET of analysis ids that count as an
+ * eligible Tier 2 comparator right now, keyed by `poolKeyOf()`. The caller
+ * (the read path, per row) derives that row's live sample size as
+ * `eligibleIds.size - (eligibleIds.has(thisRow.id) ? 1 : 0)` — exact,
+ * because self-exclusion is the only per-row difference from the shared
+ * predicate `fetchCandidateRows()` already applies (D3 step 4). Classifies
+ * with the SAME `metricFor()` `computeBaseline()` uses (TR-1/D4), not a
+ * copy. Every requested pool gets an entry, even an empty `Set`, so a
+ * caller never has to distinguish "not fetched" from "fetched, zero
+ * eligible".
+ */
+export async function fetchLiveEligibleComparatorIds(
+  pools: CandidatePoolKey[],
+  minPostAgeHours: number,
+): Promise<Map<string, Set<string>>> {
+  const uniquePools = new Map<string, CandidatePoolKey>();
+  for (const pool of pools) {
+    uniquePools.set(poolKeyOf(pool), pool);
+  }
+
+  const result = new Map<string, Set<string>>();
+  for (const key of uniquePools.keys()) {
+    result.set(key, new Set());
+  }
+  if (uniquePools.size === 0) {
+    return result;
+  }
+
+  const rows = await fetchCandidateRows([...uniquePools.values()], minPostAgeHours);
+
+  for (const row of rows) {
+    // Reconstruct which requested pool this row belongs to from the exact
+    // (profileId, bucketKey, schemaVersion) triple carried on the row
+    // itself — SQLite only guarantees a returned row satisfied SOME
+    // OR-branch of `fetchCandidateRows()`'s pool clause, not WHICH one, so
+    // matching on `schemaVersion` here (not just profileId/bucketKey) is
+    // required, not redundant. A single map lookup per row, O(rows) rather
+    // than O(rows × pools).
+    const key = poolKeyOf({
+      profileId: row.profileId,
+      bucketKey: row.bucketKey,
+      schemaVersion: row.schemaVersion,
+    });
+    if (!uniquePools.has(key)) {
+      continue;
+    }
+    const denominator = denominatorForBucket(row.bucketKey);
+    const metric = metricFor(denominator, {
+      reachValue: row.reachValue,
+      likeCount: row.likeCount,
+      commentCount: row.commentCount,
+    });
+    if (metric == null) {
+      continue;
+    }
+    result.get(key)!.add(row.id);
+  }
+
+  return result;
+}
+
 /**
  * Tier 2 baseline (TDD §6). One extra DB read (PRD §9.1), no transaction
  * (RUNBOOK / dispatch hazard note — `@libsql/client`'s local sqlite3
@@ -278,33 +444,29 @@ export interface ComputeBaselineInput {
  * through a correct call path — it is kept as the same defence-in-depth
  * assertion `ratios.ts`'s negative-count guard takes for a fact that is
  * "true by construction upstream, guarded again here anyway" (module doc).
+ *
+ * **D2 (TDD §14.8b) — the candidate-eligibility filter uses live age, not
+ * frozen age.** Runs on the write path too (this function IS the write
+ * path's own lookup, via `fetchCandidateRows()`, D4), so every future
+ * analysis gets the corrected comparator set. It does not retroactively
+ * change already-stored medians/sample sizes/multipliers on `MEASURED`
+ * rows — those stay frozen (§14.8a).
  */
 export async function computeBaseline(input: ComputeBaselineInput): Promise<BaselineResult> {
   const denominator = denominatorForBucket(input.bucketKey);
 
-  const result = await db.execute({
-    sql: `
-      SELECT perf_tier1_ratio, perf_reach_value, like_count, comment_count
-      FROM analyses
-      WHERE profile_id = ? AND perf_bucket_key = ? AND status = 'completed'
-        AND schema_version = ? AND id != ?
-        AND perf_post_age_hours >= ?
-    `,
-    args: [
-      input.profileId,
-      input.bucketKey,
-      input.schemaVersion,
-      input.excludeAnalysisId,
-      input.minPostAgeHours,
-    ],
-  });
+  const rows = await fetchCandidateRows(
+    [{ profileId: input.profileId, bucketKey: input.bucketKey, schemaVersion: input.schemaVersion }],
+    input.minPostAgeHours,
+    input.excludeAnalysisId,
+  );
 
-  const candidateMetrics = result.rows
+  const candidateMetrics = rows
     .map((row): BaselineMetric | null =>
       metricFor(denominator, {
-        reachValue: row.perf_reach_value == null ? null : Number(row.perf_reach_value),
-        likeCount: row.like_count == null ? null : Number(row.like_count),
-        commentCount: row.comment_count == null ? null : Number(row.comment_count),
+        reachValue: row.reachValue,
+        likeCount: row.likeCount,
+        commentCount: row.commentCount,
       }),
     )
     .filter((metric): metric is BaselineMetric => metric !== null);

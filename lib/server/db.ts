@@ -203,7 +203,8 @@ export async function getAnalysesList(params: GetAnalysesListParams = {}) {
           a.perf_confidence_reason,
           a.perf_provisional,
           a.perf_unavailable_reason,
-          a.performance_score
+          a.performance_score,
+          a.profile_id
         FROM analyses a
         ${buildOrderByClause(sortBy, sortDir)}
         LIMIT ? OFFSET ?
@@ -256,6 +257,11 @@ export async function getAnalysesList(params: GetAnalysesListParams = {}) {
     perfProvisional: toNullableBoolean(row.perf_provisional),
     perfUnavailableReason: (row.perf_unavailable_reason as string) ?? null,
     performanceScore: row.performance_score == null ? null : Number(row.performance_score),
+    // Ticket #206 (D3 step 1) — the grouping key for the batched live
+    // cold-start count. Internal only: the route builds its own response
+    // object literal field-by-field and does not spread this, so it is
+    // never exposed in the API response shape.
+    profileId: (row.profile_id as string) ?? null,
   }));
 
   return {
@@ -290,7 +296,8 @@ export async function getAnalysisDetail(analysisId: string) {
              perf_bucket_key, perf_baseline_median, perf_baseline_sample_size,
              perf_multiplier, perf_post_age_hours, audience_source_fetched_at,
              perf_tier_used, perf_confidence, perf_confidence_reason,
-             perf_provisional, perf_unavailable_reason, performance_score
+             perf_provisional, perf_unavailable_reason, performance_score,
+             profile_id
       FROM analyses
       WHERE id = ?
       LIMIT 1
@@ -346,6 +353,8 @@ export async function getAnalysisDetail(analysisId: string) {
     perfUnavailableReason: (analysisRow.perf_unavailable_reason as string) ?? null,
     performanceScore:
       analysisRow.performance_score == null ? null : Number(analysisRow.performance_score),
+    // Ticket #206 (D3 step 1) — internal only, see the list query's identical comment.
+    profileId: (analysisRow.profile_id as string) ?? null,
   };
 }
 

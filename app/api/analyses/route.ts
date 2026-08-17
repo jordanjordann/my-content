@@ -9,7 +9,14 @@ import {
   type SortDirection,
 } from "@/lib/server/db";
 import { isAuthenticated } from "@/lib/server/auth";
-import { buildComputedPerformanceBlock, type PerformanceBlockRow } from "@/lib/server/analysis/performance";
+import {
+  buildComputedPerformanceBlock,
+  candidatePoolKey,
+  fetchLiveEligibleComparatorIds,
+  MATURITY_FLOOR_HOURS,
+  type CandidatePoolKey,
+  type PerformanceBlockRow,
+} from "@/lib/server/analysis/performance";
 import type { AnalysisPerformance, ContentAnalysis } from "@/lib/api/analyses/types";
 
 export const runtime = "nodejs";
@@ -81,8 +88,12 @@ function parseResultContent(resultContent: string | null): Partial<ContentAnalys
   }
 }
 
-function buildPerformance(row: PerformanceBlockRow, resultContent: string | null): AnalysisPerformance {
-  const computed = buildComputedPerformanceBlock(row);
+function buildPerformance(
+  row: PerformanceBlockRow,
+  resultContent: string | null,
+  liveColdStartSampleSize?: number | null,
+): AnalysisPerformance {
+  const computed = buildComputedPerformanceBlock(row, liveColdStartSampleSize);
   if (computed == null) {
     return null;
   }
@@ -134,6 +145,31 @@ export async function GET(request: Request) {
       getUniqueAccounts(),
     ]);
 
+    // Ticket #206 (D1/D3) — the server read path computes the live
+    // cold-start progress count, once per request, batched across the
+    // whole page. `readModel.ts` stays pure; the I/O happens here and the
+    // result is injected per row below. D3's second guard: skip the extra
+    // query entirely when the page has no cold-start rows to begin with.
+    const coldStartPools: CandidatePoolKey[] = [];
+    for (const analysis of analyses) {
+      if (
+        analysis.perfBucketKey != null &&
+        analysis.perfMultiplier == null &&
+        analysis.profileId != null &&
+        analysis.schemaVersion != null
+      ) {
+        coldStartPools.push({
+          profileId: analysis.profileId,
+          bucketKey: analysis.perfBucketKey,
+          schemaVersion: analysis.schemaVersion,
+        });
+      }
+    }
+    const liveEligibleIds =
+      coldStartPools.length > 0
+        ? await fetchLiveEligibleComparatorIds(coldStartPools, MATURITY_FLOOR_HOURS)
+        : new Map<string, Set<string>>();
+
     const analysesWithDetails = analyses.map((analysis) => {
       const parsed = parseResultContent(analysis.resultContent);
       const overallScore: number | null = typeof parsed.overallScore === "number" ? parsed.overallScore : null;
@@ -141,6 +177,28 @@ export async function GET(request: Request) {
       // Ticket #149 — lifted the same way `overallScore`/`scorecard` already are. `resultContent`
       // is already fetched and parsed above for those two fields; `style` costs nothing extra.
       const style: ContentAnalysis["style"] | null = parsed.style ?? null;
+
+      // D3 step 4 — exact per-row derivation: the eligible-id set already
+      // excludes nothing per-row, so this row's own id is subtracted off
+      // if (and only if) it is itself a member of its own eligible set.
+      let liveColdStartSampleSize: number | null = null;
+      if (
+        analysis.perfBucketKey != null &&
+        analysis.perfMultiplier == null &&
+        analysis.profileId != null &&
+        analysis.schemaVersion != null
+      ) {
+        const eligibleIds = liveEligibleIds.get(
+          candidatePoolKey({
+            profileId: analysis.profileId,
+            bucketKey: analysis.perfBucketKey,
+            schemaVersion: analysis.schemaVersion,
+          }),
+        );
+        if (eligibleIds != null) {
+          liveColdStartSampleSize = eligibleIds.size - (eligibleIds.has(analysis.id) ? 1 : 0);
+        }
+      }
 
       return {
         id: analysis.id,
@@ -194,6 +252,7 @@ export async function GET(request: Request) {
             perfUnavailableReason: analysis.perfUnavailableReason as PerformanceBlockRow["perfUnavailableReason"],
           },
           analysis.resultContent,
+          liveColdStartSampleSize,
         ),
       };
     });

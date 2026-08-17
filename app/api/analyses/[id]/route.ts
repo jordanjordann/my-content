@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 
 import { getAnalysisDetail } from "@/lib/server/db";
 import { isAuthenticated } from "@/lib/server/auth";
-import { buildComputedPerformanceBlock, type PerformanceBlockRow } from "@/lib/server/analysis/performance";
+import {
+  buildComputedPerformanceBlock,
+  candidatePoolKey,
+  fetchLiveEligibleComparatorIds,
+  MATURITY_FLOOR_HOURS,
+  type PerformanceBlockRow,
+} from "@/lib/server/analysis/performance";
 import type { AnalysisPerformance } from "@/lib/api/analyses/types";
 
 export const runtime = "nodejs";
@@ -32,6 +38,27 @@ export async function GET(
       }
     }
 
+    // Ticket #206 (D1/D3) — same batched-live-count derivation as the list
+    // endpoint, degenerate to a single-pool request here (one detail row).
+    let liveColdStartSampleSize: number | null = null;
+    if (
+      detail.perfBucketKey != null &&
+      detail.perfMultiplier == null &&
+      detail.profileId != null &&
+      detail.schemaVersion != null
+    ) {
+      const pool = {
+        profileId: detail.profileId,
+        bucketKey: detail.perfBucketKey,
+        schemaVersion: detail.schemaVersion,
+      };
+      const liveEligibleIds = await fetchLiveEligibleComparatorIds([pool], MATURITY_FLOOR_HOURS);
+      const eligibleIds = liveEligibleIds.get(candidatePoolKey(pool));
+      if (eligibleIds != null) {
+        liveColdStartSampleSize = eligibleIds.size - (eligibleIds.has(detail.id) ? 1 : 0);
+      }
+    }
+
     // Ticket #144 (TDD §7) — purely additive, verbatim same derivation as
     // `app/api/analyses/route.ts`'s list endpoint.
     const computed = buildComputedPerformanceBlock({
@@ -57,7 +84,7 @@ export async function GET(
       perfConfidenceReason: detail.perfConfidenceReason as PerformanceBlockRow["perfConfidenceReason"],
       perfProvisional: detail.perfProvisional,
       perfUnavailableReason: detail.perfUnavailableReason as PerformanceBlockRow["perfUnavailableReason"],
-    });
+    }, liveColdStartSampleSize);
 
     const resultsPerformance = (results as { performance?: { performanceScore: number | null; verdict: string; drivers: string[] } } | null)
       ?.performance;

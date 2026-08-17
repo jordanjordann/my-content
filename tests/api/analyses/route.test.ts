@@ -44,12 +44,25 @@ interface InsertOpts {
   perfBaselineMedian?: number | null;
   perfBaselineSampleSize?: number | null;
   perfMultiplier?: number | null;
+  perfPostAgeHours?: number;
   perfTierUsed?: string | null;
   perfConfidence?: string | null;
   perfUnavailableReason?: string | null;
   followerCount?: number | null;
   likeCount?: number | null;
   commentCount?: number | null;
+  /** Ticket #206 — the live cold-start count's grouping key. Unset (null) means "no creator", exactly `computeBlock.ts`'s own COLD_START/sampleSize:0 short-circuit. */
+  profileId?: string | null;
+  schemaVersion?: number | null;
+}
+
+const SCHEMA_VERSION = 3;
+
+async function insertProfile(db: Client, id: string): Promise<void> {
+  await db.execute({
+    sql: "INSERT INTO profiles (id, platform, username) VALUES (?, 'instagram', ?)",
+    args: [id, `creator-${id}`],
+  });
 }
 
 async function insertAnalysis(db: Client, opts: InsertOpts): Promise<string> {
@@ -63,8 +76,9 @@ async function insertAnalysis(db: Client, opts: InsertOpts): Promise<string> {
         perf_tier1_ratio, perf_tier1_denominator, perf_bucket_key,
         perf_baseline_median, perf_baseline_sample_size, perf_multiplier,
         perf_post_age_hours, audience_source_fetched_at, perf_tier_used,
-        perf_confidence, perf_provisional, perf_unavailable_reason
-      ) VALUES (?, 'p', 'https://instagram.com/reel/x', 'instagram', 'reel', ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        perf_confidence, perf_provisional, perf_unavailable_reason,
+        profile_id, schema_version
+      ) VALUES (?, 'p', 'https://instagram.com/reel/x', 'instagram', 'reel', ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     args: [
       id,
@@ -83,12 +97,14 @@ async function insertAnalysis(db: Client, opts: InsertOpts): Promise<string> {
       opts.perfBaselineMedian ?? null,
       opts.perfBaselineSampleSize ?? null,
       opts.perfMultiplier ?? null,
-      24,
+      opts.perfPostAgeHours ?? 24,
       "2026-08-01T00:00:00.000Z",
       opts.perfTierUsed ?? null,
       opts.perfConfidence ?? null,
       0,
       opts.perfUnavailableReason ?? null,
+      opts.profileId ?? null,
+      opts.schemaVersion ?? null,
     ],
   });
   return id;
@@ -100,6 +116,13 @@ function makeGetRequest(query = ""): Request {
 
 function makeDetailParams(id: string) {
   return { params: Promise.resolve({ id }) };
+}
+
+/** Structural D8 comparison helper (finding 3, PR #235 review) — drops `sampleSize` (the one deliberately live field) so every OTHER `tier2` field is compared without hand-listing them, and a future field is covered automatically. */
+function omitSampleSize<T extends { sampleSize: unknown }>(tier2: T): Omit<T, "sampleSize"> {
+  const clone: Partial<T> = { ...tier2 };
+  delete clone.sampleSize;
+  return clone as Omit<T, "sampleSize">;
 }
 
 let db: Client;
@@ -266,6 +289,17 @@ describe("GET /api/analyses — D8, byte-identical across two reads", () => {
 
     expect(first).toBe(second);
   });
+
+  /**
+   * Reviewer note (finding 6, PR #235 review — the twin of `readModel.test.ts`'s
+   * own D8 note): this proves determinism-given-unchanged-input, not
+   * freezing. This row has no `perfBucketKey`, so `tier2` is `null` and the
+   * #206 live carve-out never engages for it at all — two reads over an
+   * unchanged library return the same JSON whether or not the carve-out
+   * exists or is correct. The test that actually exercises and pins the
+   * carve-out's boundary is below, in the "#206: tier2.sampleSize is LIVE"
+   * describe block, which writes a new comparator BETWEEN two reads.
+   */
 });
 
 describe("GET /api/analyses — pagination and sorting", () => {
@@ -323,5 +357,244 @@ describe("GET /api/analyses/[id] — performance shape matches the list endpoint
     isAuthenticatedMock.mockResolvedValue(false);
     const response = await detailRoute.GET(makeGetRequest(), makeDetailParams(randomUUID()));
     expect(response.status).toBe(401);
+  });
+});
+
+/**
+ * Ticket #206 — the reviewer's required addition (issue #206 comment,
+ * raised on the #232 review). Neither existing D8 assertion above actually
+ * exercises the cold-start live count: `readModel.test.ts:141` calls the
+ * pure function twice with no injected value at all, and the `route.test.ts:251`
+ * D8 test's row has no `perfBucketKey` (tier2 is `null`), so it never
+ * touches the carve-out either. Both are determinism-given-unchanged-input
+ * tests, not freezing tests — a live count read twice with nothing written
+ * in between returns the same number regardless of whether it's frozen or
+ * live, so neither would go red if the carve-out were silently widened or
+ * even reverted to a no-op. THIS test is the one that actually pins the
+ * boundary: it writes a NEW qualifying analysis BETWEEN two reads and
+ * requires `tier2.sampleSize` to move while everything else about the
+ * observed row stays byte-identical.
+ */
+describe("GET /api/analyses — #206: tier2.sampleSize is LIVE (moves when the library changes), everything else stays frozen", () => {
+  it("a cold-start row's sampleSize increases after a new comparator is inserted between two reads; every other field is byte-identical", async () => {
+    const profileId = randomUUID();
+    await insertProfile(db, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    const observedId = await insertAnalysis(db, {
+      username: "creator-giorrando",
+      resultContent: { overallScore: 3, scorecard: {}, performance: { performanceScore: null, verdict: "", drivers: [] } },
+      perfReachValue: 1_000,
+      perfReachKind: "VIEWS",
+      perfReachDerivedFrom: "TOP_LEVEL",
+      perfBucketKey: bucketKey,
+      perfBaselineMedian: null,
+      // Deliberately stale/wrong stored value — proves the response does
+      // NOT fall back to this once a live count is computable.
+      perfBaselineSampleSize: 999,
+      perfMultiplier: null,
+      perfTierUsed: "REACH_ONLY",
+      perfConfidence: "HIGH",
+      perfPostAgeHours: 100,
+      profileId,
+      schemaVersion: SCHEMA_VERSION,
+    });
+
+    const firstBody = await (await listRoute.GET(makeGetRequest())).json();
+    const firstRow = firstBody.analyses.find((a: { id: string }) => a.id === observedId);
+    expect(firstRow).toBeDefined();
+    // Only comparator candidate in the pool is itself, which is
+    // self-excluded — zero comparators exist yet.
+    expect(firstRow.performance.computed.tier2.sampleSize).toBe(0);
+
+    // Write a NEW qualifying analysis into the SAME pool, between the two reads.
+    await insertAnalysis(db, {
+      username: "creator-giorrando",
+      perfReachValue: 2_000,
+      perfBucketKey: bucketKey,
+      perfPostAgeHours: 100,
+      profileId,
+      schemaVersion: SCHEMA_VERSION,
+    });
+
+    const secondBody = await (await listRoute.GET(makeGetRequest())).json();
+    const secondRow = secondBody.analyses.find((a: { id: string }) => a.id === observedId);
+    expect(secondRow).toBeDefined();
+
+    // The live field MOVED.
+    expect(secondRow.performance.computed.tier2.sampleSize).toBe(1);
+    expect(secondRow.performance.computed.tier2.sampleSize).not.toBe(firstRow.performance.computed.tier2.sampleSize);
+
+    // Every OTHER field of the observed row's `performance.computed` is
+    // byte-identical — the freeze still holds everywhere else. Compare the
+    // whole computed block minus the one live field. Structural (destructure
+    // sampleSize off tier2, toEqual the remainder), not hand-listed, so a
+    // future PerformanceTier2 field is covered automatically.
+    const { tier2: firstTier2, ...firstComputedRest } = firstRow.performance.computed;
+    const { tier2: secondTier2, ...secondComputedRest } = secondRow.performance.computed;
+    expect(secondComputedRest).toEqual(firstComputedRest);
+    expect(omitSampleSize(secondTier2)).toEqual(omitSampleSize(firstTier2));
+
+    // And the rest of the row (outside `performance`) is untouched too.
+    const omitPerformance = (row: Record<string, unknown>) => {
+      const rest = { ...row };
+      delete rest.performance;
+      return rest;
+    };
+    expect(omitPerformance(secondRow)).toEqual(omitPerformance(firstRow));
+  });
+
+  /**
+   * Reviewer note (finding 2, PR #235 review): this test does NOT pin
+   * `buildTier2`'s own `isColdStart = row.perfMultiplier == null` gate.
+   * The route independently gates on the exact same condition BEFORE ever
+   * calling `buildComputedPerformanceBlock` (this file, the two
+   * `analysis.perfMultiplier == null` checks around `liveColdStartSampleSize`
+   * above) — a MEASURED row's `liveColdStartSampleSize` stays `null` and is
+   * never injected in the first place, so this test would stay green even
+   * if `readModel.ts`'s own gate were mutated to always report cold start
+   * (confirmed by the reviewer's mutation run: only
+   * `readModel.test.ts`'s "a MEASURED row's tier2.sampleSize ignores the
+   * injected live value entirely" test went red, not this one). What this
+   * test DOES prove: the route-level gate, independently, never triggers
+   * the extra I/O or injection path for a MEASURED row — real double-gate
+   * coverage, just not a single-point pin of `buildTier2`'s own carve-out
+   * boundary. That single-point pin is `readModel.test.ts`'s dedicated test.
+   */
+  it("a MEASURED row's liveColdStartSampleSize is never computed or injected by the route (route-level gate only — see readModel.test.ts for the buildTier2-level pin)", async () => {
+    const profileId = randomUUID();
+    await insertProfile(db, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    const observedId = await insertAnalysis(db, {
+      username: "creator-measured",
+      resultContent: { overallScore: 4, scorecard: {}, performance: { performanceScore: 4, verdict: "x", drivers: [] } },
+      perfReachValue: 3_000,
+      perfReachKind: "VIEWS",
+      perfReachDerivedFrom: "TOP_LEVEL",
+      perfBucketKey: bucketKey,
+      perfBaselineMedian: 2_000,
+      perfBaselineSampleSize: 6,
+      perfMultiplier: 1.5,
+      perfTierUsed: "CREATOR_BASELINE",
+      perfConfidence: "HIGH",
+      perfPostAgeHours: 100,
+      profileId,
+      schemaVersion: SCHEMA_VERSION,
+    });
+
+    const firstBody = await (await listRoute.GET(makeGetRequest())).json();
+    const firstRow = firstBody.analyses.find((a: { id: string }) => a.id === observedId);
+
+    await insertAnalysis(db, {
+      username: "creator-measured",
+      perfReachValue: 9_000,
+      perfBucketKey: bucketKey,
+      perfPostAgeHours: 100,
+      profileId,
+      schemaVersion: SCHEMA_VERSION,
+    });
+
+    const secondBody = await (await listRoute.GET(makeGetRequest())).json();
+    const secondRow = secondBody.analyses.find((a: { id: string }) => a.id === observedId);
+
+    expect(secondRow.performance.computed.tier2).toEqual(firstRow.performance.computed.tier2);
+    expect(secondRow.performance.computed.tier2.sampleSize).toBe(6);
+  });
+
+  /**
+   * Reviewer note (round-2 review, finding 1, PR #235): the detail endpoint
+   * (`app/api/analyses/[id]/route.ts`) duplicates this exact derivation,
+   * including the self-exclusion subtraction, but had zero coverage of its
+   * own — the list-route test above only exercises `listRoute.GET`. Mirror
+   * of the test above, driven through `detailRoute.GET` instead, so both
+   * routes are pinned equivalently.
+   */
+  it("mirror of the above through the detail endpoint: sampleSize increases after a new comparator is inserted between two reads", async () => {
+    const profileId = randomUUID();
+    await insertProfile(db, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    const observedId = await insertAnalysis(db, {
+      username: "creator-detail-live",
+      resultContent: { overallScore: 3, scorecard: {}, performance: { performanceScore: null, verdict: "", drivers: [] } },
+      perfReachValue: 1_000,
+      perfReachKind: "VIEWS",
+      perfReachDerivedFrom: "TOP_LEVEL",
+      perfBucketKey: bucketKey,
+      perfBaselineMedian: null,
+      perfBaselineSampleSize: 999,
+      perfMultiplier: null,
+      perfTierUsed: "REACH_ONLY",
+      perfConfidence: "HIGH",
+      perfPostAgeHours: 100,
+      profileId,
+      schemaVersion: SCHEMA_VERSION,
+    });
+
+    const firstBody = await (await detailRoute.GET(makeGetRequest(), makeDetailParams(observedId))).json();
+    // Only comparator candidate in the pool is itself, which is
+    // self-excluded — zero comparators exist yet.
+    expect(firstBody.performance.computed.tier2.sampleSize).toBe(0);
+
+    // Write a NEW qualifying analysis into the SAME pool, between the two reads.
+    await insertAnalysis(db, {
+      username: "creator-detail-live",
+      perfReachValue: 2_000,
+      perfBucketKey: bucketKey,
+      perfPostAgeHours: 100,
+      profileId,
+      schemaVersion: SCHEMA_VERSION,
+    });
+
+    const secondBody = await (await detailRoute.GET(makeGetRequest(), makeDetailParams(observedId))).json();
+
+    // The live field MOVED.
+    expect(secondBody.performance.computed.tier2.sampleSize).toBe(1);
+  });
+});
+
+describe("GET /api/analyses — D3: one grouped query per page, never per row", () => {
+  it("N cold-start rows sharing the same pool issue exactly one extra query, not N", async () => {
+    const profileId = randomUUID();
+    await insertProfile(db, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    for (let i = 0; i < 5; i++) {
+      await insertAnalysis(db, {
+        username: `creator-${i}`,
+        perfReachValue: 1_000 * (i + 1),
+        perfBucketKey: bucketKey,
+        perfBaselineSampleSize: 0,
+        perfMultiplier: null,
+        perfTierUsed: "REACH_ONLY",
+        perfConfidence: "HIGH",
+        perfPostAgeHours: 100,
+        profileId,
+        schemaVersion: SCHEMA_VERSION,
+      });
+    }
+
+    const executeSpy = vi.spyOn(db, "execute");
+    const response = await listRoute.GET(makeGetRequest());
+    expect(response.status).toBe(200);
+
+    // getAnalysesList issues 2 (list + count) and getUniqueAccounts issues
+    // 1 more — 3 baseline queries; the live cold-start count batches all 5
+    // rows' shared pool into exactly 1 additional query, never 5.
+    expect(executeSpy).toHaveBeenCalledTimes(4);
+  });
+
+  it("a page with zero cold-start rows skips the extra query entirely (D3's second guard)", async () => {
+    await insertAnalysis(db, {
+      username: "creator-plain",
+      resultContent: { overallScore: 3, scorecard: {} },
+    });
+
+    const executeSpy = vi.spyOn(db, "execute");
+    const response = await listRoute.GET(makeGetRequest());
+    expect(response.status).toBe(200);
+
+    expect(executeSpy).toHaveBeenCalledTimes(3);
   });
 });
