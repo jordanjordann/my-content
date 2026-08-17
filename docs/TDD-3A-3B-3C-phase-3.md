@@ -1629,7 +1629,22 @@ Applied:
 
 **Consequential test note.** Existing D8 assertions — `tests/server/analysis/performance/readModel.test.ts:141`, `tests/api/analyses/route.test.ts:251` — legitimately need updating to carve out the cold-start progress count. Such an update is **not** a masked regression; it is this amendment landing. Any narrowing of a D8 test beyond that one field is.
 
-**Ruled and NOT reopened: `MEASURED` multipliers do not recompute.** The question was raised whether a `3.2×` computed from 5 comparators should recompute once 20 exist. It must not. The decisive reason is not cost and not screenshot-portability (both are real but secondary) — it is that the multiplier is an **input to Gemini's stored judgement**: `performance_score`, `verdict`, and `drivers[]` were produced conditioned on that multiplier. The prose cannot be recomputed without a second billed call (OR-22 — analyses run once; OR-25's no-retry stance is under separate consideration), so a recomputed multiplier would sit next to a verdict that no longer follows from it, breaking R-13.3.4 at the point it matters most. Where a better baseline now exists, the correct response is to **surface that fact**, not to silently rewrite the figure — a copy/affordance question routed to design, deliberately deferred behind OR-25.
+**Ruled and NOT reopened: `MEASURED` multipliers do not recompute.** The question was raised whether a `3.2×` computed from 5 comparators should recompute once 20 exist. It must not. The decisive reason is not cost and not screenshot-portability (both are real but secondary) — it is that the multiplier is an **input to Gemini's stored judgement**: `performance_score`, `verdict`, and `drivers[]` were produced conditioned on that multiplier. The prose cannot be recomputed without a second billed call (OR-22 — analyses run once), so a recomputed multiplier would sit next to a verdict that no longer follows from it, breaking R-13.3.4 at the point it matters most. Where a better baseline now exists, the correct response is to **surface that fact**, not to silently rewrite the figure — a copy/affordance question routed to design and **still unspecified there** (#209's second half).
+
+> **⚠️ Amendment, 2026-08-18 (tech lead) — the two OR-25 clauses in the paragraph above are SUPERSEDED. Nothing else in §14.8a changes.**
+> As originally written the paragraph said the second billed call sat behind *"OR-25's no-retry stance is under
+> separate consideration"*, and that the copy/affordance question was *"deliberately deferred behind OR-25"*.
+> **Both are false.** **OR-25 has been CONFIRMED since 2026-08-06** (§0.6) and is restated in §13 (E7): **the
+> prose guard fails loudly with no repair retry**, and the owner accepted that a violation burns a billed Gemini
+> call and fails the analysis. OR-25 is not open, not under consideration, and gates nothing.
+> The superseded wording is recorded here rather than silently rewritten, per this document's header rule.
+> **The `MEASURED`-multiplier ruling itself is untouched** — it never depended on OR-25; it rests on OR-22 (an
+> analysis runs once and is stored) and on R-13.3.4. The "a better baseline now exists" affordance stays
+> undesigned because **design has not specified it** (a design-backlog fact), not because an owner ruling is
+> pending. Raised by Jessica on PR #237 (branch `design/209-footer-f1-f2-ratify-or25`) and corrected by the tech
+> lead, per the DESIGN-3C **A5** precedent that a design document does not edit the TDD.
+> **Also stale, flagged not edited:** `docs/design/DESIGN-3B-score-explainability.md` line 284 says the same
+> affordance *"waits on OR-25"* — same error, but that is a design document and is the designer's to correct.
 
 ### 14.8b — `MATURITY_FLOOR_HOURS` evaluated against a frozen age is DEFECTIVE, not intended
 
