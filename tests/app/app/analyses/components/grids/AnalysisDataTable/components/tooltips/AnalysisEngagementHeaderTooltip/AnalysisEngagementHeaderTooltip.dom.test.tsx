@@ -1,12 +1,12 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { AnalysisEngagementHeaderTooltip } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/headers/components/tooltips/AnalysisEngagementHeaderTooltip";
+import { AnalysisEngagementHeaderTooltip } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/tooltips/AnalysisEngagementHeaderTooltip";
 import {
   ENGAGEMENT_HEADER_TOOLTIP_BODY,
   ENGAGEMENT_HEADER_TOOLTIP_COMPARISON,
   ENGAGEMENT_HEADER_TOOLTIP_HEADING,
-} from "@/app/app/analyses/components/grids/AnalysisDataTable/components/headers/components/tooltips/AnalysisEngagementHeaderTooltip/constants";
+} from "@/app/app/analyses/components/grids/AnalysisDataTable/components/tooltips/AnalysisEngagementHeaderTooltip/constants";
 
 /**
  * Ticket #223 (3C-F4, DESIGN-3C §4.2 amendment A6 / DESIGN-3B §4.6 amendment B7) — the two
@@ -167,5 +167,65 @@ describe("AnalysisEngagementHeaderTooltip — ticket #223", () => {
     expect(tooltip).toHaveTextContent(
       "Not comparable with Eng. / reach: that column divides by the views or plays on the post itself, not by follower count.",
     );
+  });
+
+  /**
+   * `ENGAGEMENT_HEADER_TOOLTIP_OPERANDS` — the operand stack — had ZERO independent coverage
+   * before this ticket's review pass. Two reviewer mutations survived the full suite with the
+   * tests above alone:
+   *
+   *   1. `"Views or plays on this post"` -> `"Views on this post"` — a direct §4.6 violation
+   *      ("views or plays, never views alone") that the self-referential `toHaveTextContent`
+   *      assertions above (which import the SAME string from `constants.ts` they render) can
+   *      never catch, because a corrupted constant satisfies both the component and the
+   *      assertion identically.
+   *   2. Swapping `<p>{operands.numerator}</p>` and `<p>{operands.denominator}</p>` — the
+   *      fraction inverts, teaching the calculation backwards — which none of the assertions
+   *      above notice because they only check that both strings are present SOMEWHERE in the
+   *      tooltip, never their order or role.
+   *
+   * The four tests below hardcode every operand string literally (independent of
+   * `constants.ts`, per the same rule as the `(§4.6, literal)` tests above) AND pin numerator
+   * vs denominator by `data-testid`, not by document order alone, so a swap of the two `<p>`
+   * elements' roles fails even if a future markup change reorders them in the DOM.
+   */
+  it("(§4.6, literal) engagementReach operand stack: numerator and denominator are pinned by role, independent of constants.ts", () => {
+    render(<AnalysisEngagementHeaderTooltip columnId="engagementReach" />);
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "How is engagement against reach worked out?" }));
+    const tooltip = screen.getByRole("tooltip");
+    const numerator = within(tooltip).getByTestId("operand-numerator");
+    const denominator = within(tooltip).getByTestId("operand-denominator");
+
+    expect(numerator).toHaveTextContent("Likes + comments");
+    expect(denominator).toHaveTextContent("Views or plays on this post");
+    expect(numerator.compareDocumentPosition(denominator) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("(§4.6, literal) engagementFollowers operand stack: numerator and denominator are pinned by role, independent of constants.ts", () => {
+    render(<AnalysisEngagementHeaderTooltip columnId="engagementFollowers" />);
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "How is engagement against followers worked out?" }));
+    const tooltip = screen.getByRole("tooltip");
+    const numerator = within(tooltip).getByTestId("operand-numerator");
+    const denominator = within(tooltip).getByTestId("operand-denominator");
+
+    expect(numerator).toHaveTextContent("Likes + comments");
+    expect(denominator).toHaveTextContent("The creator's follower count");
+    expect(numerator.compareDocumentPosition(denominator) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("(§4.6) engagementReach's denominator is never engagementFollowers' denominator (guards a whole-column operand-set swap)", () => {
+    render(<AnalysisEngagementHeaderTooltip columnId="engagementReach" />);
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "How is engagement against reach worked out?" }));
+    const denominator = within(screen.getByRole("tooltip")).getByTestId("operand-denominator");
+    expect(denominator).toHaveTextContent("Views or plays on this post");
+    expect(denominator).not.toHaveTextContent("The creator's follower count");
+  });
+
+  it("(§4.6) engagementFollowers' denominator is never engagementReach's denominator (guards a whole-column operand-set swap)", () => {
+    render(<AnalysisEngagementHeaderTooltip columnId="engagementFollowers" />);
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "How is engagement against followers worked out?" }));
+    const denominator = within(screen.getByRole("tooltip")).getByTestId("operand-denominator");
+    expect(denominator).toHaveTextContent("The creator's follower count");
+    expect(denominator).not.toHaveTextContent("Views or plays on this post");
   });
 });

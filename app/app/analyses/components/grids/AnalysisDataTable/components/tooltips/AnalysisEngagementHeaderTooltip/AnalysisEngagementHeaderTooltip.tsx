@@ -10,8 +10,8 @@ import {
   ENGAGEMENT_HEADER_TOOLTIP_HEADING,
   ENGAGEMENT_HEADER_TOOLTIP_OPERANDS,
   ENGAGEMENT_HEADER_TOOLTIP_TRIGGER_LABEL,
-} from "@/app/app/analyses/components/grids/AnalysisDataTable/components/headers/components/tooltips/AnalysisEngagementHeaderTooltip/constants";
-import type { AnalysisEngagementHeaderTooltipProps } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/headers/components/tooltips/AnalysisEngagementHeaderTooltip/types";
+} from "@/app/app/analyses/components/grids/AnalysisDataTable/components/tooltips/AnalysisEngagementHeaderTooltip/constants";
+import type { AnalysisEngagementHeaderTooltipProps } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/tooltips/AnalysisEngagementHeaderTooltip/types";
 
 /**
  * DESIGN-3C §4.2 (amendment A6) / DESIGN-3B §4.6 (amendment B7) — the two engagement
@@ -93,8 +93,10 @@ export function AnalysisEngagementHeaderTooltip({ columnId }: AnalysisEngagement
           >
             <p className="text-sm font-semibold">{ENGAGEMENT_HEADER_TOOLTIP_HEADING[columnId]}</p>
             <div className="space-y-0.5 text-center">
-              <p>{operands.numerator}</p>
-              <p className="border-t pt-0.5">{operands.denominator}</p>
+              <p data-testid="operand-numerator">{operands.numerator}</p>
+              <p data-testid="operand-denominator" className="border-t pt-0.5">
+                {operands.denominator}
+              </p>
             </div>
             <p>{ENGAGEMENT_HEADER_TOOLTIP_BODY[columnId]}</p>
             <p>{ENGAGEMENT_HEADER_TOOLTIP_COMPARISON[columnId]}</p>

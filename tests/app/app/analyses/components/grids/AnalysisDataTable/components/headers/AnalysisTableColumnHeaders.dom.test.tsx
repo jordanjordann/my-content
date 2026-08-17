@@ -233,7 +233,7 @@ describe("AnalysisTableColumnHeaders — ticket #221", () => {
 /**
  * Ticket #223 (3C-F4, DESIGN-3C §4.2 amendment A6) — the two engagement column-header
  * tooltip triggers. `AnalysisEngagementHeaderTooltip` itself is unit-tested in full under
- * `tests/.../headers/components/tooltips/AnalysisEngagementHeaderTooltip/`; this block only
+ * `tests/.../AnalysisDataTable/components/tooltips/AnalysisEngagementHeaderTooltip/`; this block only
  * covers what requires the REAL `<th>` DOM this file already renders: R-D6's sibling
  * placement (not nested inside the sort button) and R-D12's "no third trigger" count.
  */

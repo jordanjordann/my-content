@@ -1,4 +1,4 @@
-import type { EngagementHeaderTooltipColumnId } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/headers/components/tooltips/AnalysisEngagementHeaderTooltip/types";
+import type { EngagementHeaderTooltipColumnId } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/tooltips/AnalysisEngagementHeaderTooltip/types";
 
 /**
  * DESIGN-3B §4.6 (amendment B7) is the only approved home for this copy — `T1` for

@@ -1,7 +1,7 @@
 import { ArrowDown, ArrowUp } from "lucide-react";
 
-import { AnalysisEngagementHeaderTooltip } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/headers/components/tooltips/AnalysisEngagementHeaderTooltip";
-import type { EngagementHeaderTooltipColumnId } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/headers/components/tooltips/AnalysisEngagementHeaderTooltip";
+import { AnalysisEngagementHeaderTooltip } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/tooltips/AnalysisEngagementHeaderTooltip";
+import type { EngagementHeaderTooltipColumnId } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/tooltips/AnalysisEngagementHeaderTooltip";
 import { cn } from "@/lib/utils";
 import type { AnalysisTableColumnDef } from "@/app/app/analyses/components/grids/AnalysisDataTable/types";
 import type { AnalysesSortField, SortDirection } from "@/lib/api/analyses/types";
