@@ -142,16 +142,26 @@ describe("AnalysisEngagementHeaderTooltip — ticket #223", () => {
    * tests hardcode DESIGN-3B §4.6's T1/T2 strings literally, independent of the constants
    * module, so a corrupted constant fails here even though the self-referential tests above
    * would not catch it.
+   *
+   * `toHaveTextContent` is a SUBSTRING match, so it only catches shrinkage/substitution, never
+   * appended or prepended text (e.g. a corrupted denominator of "…on this post, estimated"
+   * still satisfies `toHaveTextContent("…on this post")`). Each of the three `<p>` elements
+   * rendered by the Popup (`:scope > p` — heading, body, closing sentence; the operand pair
+   * lives in a sibling `<div>` and is not a direct `<p>` child) contains exactly one text
+   * expression and no other child, so `.textContent` is the string with no incidental
+   * whitespace to normalise — `toBe` on `.textContent` is therefore an exact-equality guard
+   * with no false positives from formatting.
    */
   it("(§4.6, literal) T1 renders DESIGN-3B's exact hardcoded copy, independent of constants.ts", () => {
     render(<AnalysisEngagementHeaderTooltip columnId="engagementReach" />);
     fireEvent.mouseEnter(screen.getByRole("button", { name: "How is engagement against reach worked out?" }));
     const tooltip = screen.getByRole("tooltip");
-    expect(tooltip).toHaveTextContent("Engagement against reach");
-    expect(tooltip).toHaveTextContent(
+    const [heading, body, comparison] = tooltip.querySelectorAll(":scope > p");
+    expect(heading.textContent).toBe("Engagement against reach");
+    expect(body.textContent).toBe(
       "How many of the people who saw this post engaged with it. Both figures are counts Instagram published, not estimates — which is why no figure in this column carries an ≈. Where a carousel's reach is taken from its first slide, the cell says so.",
     );
-    expect(tooltip).toHaveTextContent(
+    expect(comparison.textContent).toBe(
       "Not comparable with Eng. / followers: that column divides by the creator's follower count, not by this post's reach.",
     );
   });
@@ -160,11 +170,12 @@ describe("AnalysisEngagementHeaderTooltip — ticket #223", () => {
     render(<AnalysisEngagementHeaderTooltip columnId="engagementFollowers" />);
     fireEvent.mouseEnter(screen.getByRole("button", { name: "How is engagement against followers worked out?" }));
     const tooltip = screen.getByRole("tooltip");
-    expect(tooltip).toHaveTextContent("Engagement against followers");
-    expect(tooltip).toHaveTextContent(
+    const [heading, body, comparison] = tooltip.querySelectorAll(":scope > p");
+    expect(heading.textContent).toBe("Engagement against followers");
+    expect(body.textContent).toBe(
       "How much this post got relative to the size of the creator's audience. The follower count comes from a cached profile record that can be up to a week old, which is why every figure in this column carries an ≈.",
     );
-    expect(tooltip).toHaveTextContent(
+    expect(comparison.textContent).toBe(
       "Not comparable with Eng. / reach: that column divides by the views or plays on the post itself, not by follower count.",
     );
   });
@@ -196,8 +207,8 @@ describe("AnalysisEngagementHeaderTooltip — ticket #223", () => {
     const numerator = within(tooltip).getByTestId("operand-numerator");
     const denominator = within(tooltip).getByTestId("operand-denominator");
 
-    expect(numerator).toHaveTextContent("Likes + comments");
-    expect(denominator).toHaveTextContent("Views or plays on this post");
+    expect(numerator.textContent).toBe("Likes + comments");
+    expect(denominator.textContent).toBe("Views or plays on this post");
     expect(numerator.compareDocumentPosition(denominator) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -208,8 +219,8 @@ describe("AnalysisEngagementHeaderTooltip — ticket #223", () => {
     const numerator = within(tooltip).getByTestId("operand-numerator");
     const denominator = within(tooltip).getByTestId("operand-denominator");
 
-    expect(numerator).toHaveTextContent("Likes + comments");
-    expect(denominator).toHaveTextContent("The creator's follower count");
+    expect(numerator.textContent).toBe("Likes + comments");
+    expect(denominator.textContent).toBe("The creator's follower count");
     expect(numerator.compareDocumentPosition(denominator) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -217,15 +228,15 @@ describe("AnalysisEngagementHeaderTooltip — ticket #223", () => {
     render(<AnalysisEngagementHeaderTooltip columnId="engagementReach" />);
     fireEvent.mouseEnter(screen.getByRole("button", { name: "How is engagement against reach worked out?" }));
     const denominator = within(screen.getByRole("tooltip")).getByTestId("operand-denominator");
-    expect(denominator).toHaveTextContent("Views or plays on this post");
-    expect(denominator).not.toHaveTextContent("The creator's follower count");
+    expect(denominator.textContent).toBe("Views or plays on this post");
+    expect(denominator.textContent).not.toBe("The creator's follower count");
   });
 
   it("(§4.6) engagementFollowers' denominator is never engagementReach's denominator (guards a whole-column operand-set swap)", () => {
     render(<AnalysisEngagementHeaderTooltip columnId="engagementFollowers" />);
     fireEvent.mouseEnter(screen.getByRole("button", { name: "How is engagement against followers worked out?" }));
     const denominator = within(screen.getByRole("tooltip")).getByTestId("operand-denominator");
-    expect(denominator).toHaveTextContent("The creator's follower count");
-    expect(denominator).not.toHaveTextContent("Views or plays on this post");
+    expect(denominator.textContent).toBe("The creator's follower count");
+    expect(denominator.textContent).not.toBe("Views or plays on this post");
   });
 });
