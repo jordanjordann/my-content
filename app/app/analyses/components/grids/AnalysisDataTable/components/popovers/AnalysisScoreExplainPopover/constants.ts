@@ -68,6 +68,16 @@ export function scoreExplainFooter(date: string, coldStartBucketNoun: string | n
 
 /**
  * DESIGN-3C §5.1 — the trigger's accessible name is the question it answers, not a generic
- * "info" label (R-13.7.6).
+ * "info" label (R-13.7.6). Renders on every row that has a 1–5 (DESIGN-3B §5.5.1, S-P8 table).
  */
 export const SCORE_EXPLAIN_TRIGGER_LABEL = "How was this score worked out?";
+
+/**
+ * DESIGN-3B §5.5.1 (amendment B10) — `S-P8`. Row 8 only (`performanceCell.kind ===
+ * "no-judgement"`): swaps in for `SCORE_EXPLAIN_TRIGGER_LABEL`, selected by the SAME
+ * `isNoJudgement` flag that already selects `SCORE_EXPLAIN_NO_JUDGEMENT_HEADING` and
+ * `SCORE_EXPLAIN_NO_JUDGEMENT_INTRO` above — one flag, three strings, so they cannot drift
+ * apart. Asserts no score exists ("no 1–5"), never "this score" — there is no score on this
+ * row to refer to.
+ */
+export const SCORE_EXPLAIN_NO_JUDGEMENT_TRIGGER_LABEL = "Why is there no 1–5 for this post?";

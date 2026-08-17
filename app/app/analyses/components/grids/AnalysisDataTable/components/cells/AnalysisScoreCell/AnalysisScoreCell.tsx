@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { MAX_SCORE } from "@/app/app/analyses/constants";
 import { AnalysisScoreExplainPopover } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/popovers/AnalysisScoreExplainPopover";
 import {
+  SCORE_NUMERAL_COLOR_CLASSNAME,
   SCORE_PIP_EMPTY_CLASSNAME,
   SCORE_PIP_FILL_CLASSNAME,
 } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisScoreCell/constants";
@@ -31,12 +32,15 @@ import type { AnalysisScoreCellProps } from "@/app/app/analyses/components/grids
  */
 export function AnalysisScoreCell(props: AnalysisScoreCellProps) {
   const pipFill = SCORE_PIP_FILL_CLASSNAME[props.variant];
+  const numeralColorClassName = SCORE_NUMERAL_COLOR_CLASSNAME[props.variant];
 
   if (props.variant === "content") {
     const accessibleLabel = buildScoreAccessibleLabel({ variant: "content", score: props.score });
     return (
-      <span role="group" aria-label={accessibleLabel} className="inline-flex items-center gap-1.5 text-sm">
-        <span aria-hidden="true" className="tabular-nums font-medium">{props.score}</span>
+      <span role="group" aria-label={accessibleLabel} className="inline-flex items-center gap-1.5 text-[12.5px]">
+        <span aria-hidden="true" className={cn("tabular-nums font-semibold", numeralColorClassName)}>
+          {props.score}
+        </span>
         <ScorePipTrack score={props.score} fillClassName={pipFill} />
       </span>
     );
@@ -51,13 +55,15 @@ export function AnalysisScoreCell(props: AnalysisScoreCellProps) {
 
   return (
     <div role="group" aria-label={accessibleLabel}>
-      <span className="inline-flex items-center gap-1.5 text-sm">
-        <span aria-hidden="true" className="tabular-nums font-medium">{props.score}</span>
+      <span className="inline-flex items-center gap-1.5 text-[12.5px]">
+        <span aria-hidden="true" className={cn("tabular-nums font-semibold", numeralColorClassName)}>
+          {props.score}
+        </span>
         <ScorePipTrack score={props.score} fillClassName={pipFill} />
       </span>
       <div data-testid="performance-score-second-line">
         {props.tierPhrase != null && (
-          <p className={cn("text-xs text-muted-foreground", props.isTier3 && "italic")}>
+          <p className={cn("text-[11px] text-muted-foreground", props.isTier3 && "italic")}>
             <span aria-hidden="true">{props.tierPhrase}</span>
             {" "}
             <AnalysisScoreExplainPopover row={props.row} />
@@ -67,12 +73,12 @@ export function AnalysisScoreCell(props: AnalysisScoreCellProps) {
           // Still one `ⓘ` per row even in the (structurally unreachable today) case where
           // a score exists with no tier phrase — the affordance must never depend on the
           // tier phrase resolving, only on the score existing.
-          <p className="text-xs text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground">
             <AnalysisScoreExplainPopover row={props.row} />
           </p>
         )}
         {props.confidenceWord != null && (
-          <p aria-hidden="true" className="text-xs text-muted-foreground">{props.confidenceWord}</p>
+          <p aria-hidden="true" className="text-[11px] text-muted-foreground">{props.confidenceWord}</p>
         )}
       </div>
     </div>
@@ -85,7 +91,10 @@ function ScorePipTrack({ score, fillClassName }: { score: number; fillClassName:
       {Array.from({ length: MAX_SCORE }, (_, index) => (
         <span
           key={index}
-          className={cn("size-1.5 rounded-[1px]", index < score ? fillClassName : SCORE_PIP_EMPTY_CLASSNAME)}
+          className={cn(
+            "size-[7px] rounded-[2px]",
+            index < score ? fillClassName : SCORE_PIP_EMPTY_CLASSNAME,
+          )}
         />
       ))}
     </span>

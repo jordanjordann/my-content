@@ -163,7 +163,9 @@ describe("R-D17 scope guard — the clamp binds the caption and nothing else", (
     // Pin the haystack: `not.toContain("line-clamp")` alone passes vacuously if `className`
     // were ever empty, so also assert the class list is non-empty and holds a class we expect.
     expect(tierPhraseEl?.className).not.toContain("line-clamp");
-    expect(tierPhraseEl?.className).toContain("text-xs");
+    // Ticket #222 (M8) moved the Performance cell's second line off `text-xs` (12px) onto
+    // the mockup's 11px qualifier scale — see `AnalysisScoreCell.tsx`.
+    expect(tierPhraseEl?.className).toContain("text-[11px]");
   });
 
   it("does not clamp an engagement column's denominator qualifier", () => {

@@ -101,12 +101,19 @@ const MEASURED_CAROUSEL_PERFORMANCE: AnalysisPerformance = {
   },
 };
 
+/** Row 8 (DESIGN-3B §5.5, amendment B8) — `unavailableReason` is `null` and
+ * `performanceScore` is `null`: the judgement returned no 1–5 over an intact computed block. */
+const NO_JUDGEMENT_PERFORMANCE: AnalysisPerformance = {
+  ...AGREEING_PERFORMANCE,
+  judgement: { performanceScore: null, verdict: "Strong hook.", drivers: ["Hook kuat sejak detik pertama."] },
+};
+
 const D2_TEXT =
   "The 1–5 reads this less favourably than the measured comparison does — it came in over this creator's usual for this kind of post. The measured figures above are the ones to quote.";
 
-function openPopover(row: AnalysisListItemIndexed) {
+function openPopover(row: AnalysisListItemIndexed, triggerName = "How was this score worked out?") {
   render(<AnalysisScoreExplainPopover row={row} />);
-  fireEvent.click(screen.getByRole("button", { name: "How was this score worked out?" }));
+  fireEvent.click(screen.getByRole("button", { name: triggerName }));
   return screen.getByRole("tooltip");
 }
 
@@ -335,5 +342,43 @@ describe("AnalysisScoreExplainPopover — R-13.4.4 has teeth (AC-29, banned phra
     for (const phrase of bannedPhrasings) {
       expect(text).not.toContain(phrase.toLowerCase());
     }
+  });
+});
+
+describe("AnalysisScoreExplainPopover — the trigger's accessible name (DESIGN-3B §5.5.1, amendment B10, S-P8)", () => {
+  it("row 8 (no-judgement): the trigger's accessible name is 'Why is there no 1–5 for this post?'", () => {
+    const row = buildRow(NO_JUDGEMENT_PERFORMANCE);
+    expect(row.tableDerived?.performanceCell.kind).toBe("no-judgement");
+
+    render(<AnalysisScoreExplainPopover row={row} />);
+
+    expect(
+      screen.getByRole("button", { name: "Why is there no 1–5 for this post?" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "How was this score worked out?" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("a scored row keeps 'How was this score worked out?' byte for byte — the two names must not drift together", () => {
+    const row = buildRow(AGREEING_PERFORMANCE);
+    expect(row.tableDerived?.performanceCell.kind).toBe("score");
+
+    render(<AnalysisScoreExplainPopover row={row} />);
+
+    expect(
+      screen.getByRole("button", { name: "How was this score worked out?" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Why is there no 1–5 for this post?" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("row 8's trigger still opens the popover, with the row-8 heading and intro (same flag, three strings)", () => {
+    const popup = openPopover(buildRow(NO_JUDGEMENT_PERFORMANCE), "Why is there no 1–5 for this post?");
+    expect(popup.textContent).toContain("Why there's no 1–5 here");
+    expect(popup.textContent).toContain(
+      "The 1–5 is a judgement, and none was returned for this post.",
+    );
   });
 });

@@ -556,6 +556,60 @@ describe("AnalysisDataTable — default render (OR-1, OR-7, OR-8)", () => {
   });
 });
 
+describe("AnalysisDataTable — row density and type scale (DESIGN-3C §3.1 / §9, audit M8)", () => {
+  it("the <table> uses the mockup's 12.5px body scale, not text-sm", async () => {
+    renderTable();
+    const table = (await screen.findAllByRole("columnheader"))[0].closest("table") as HTMLElement;
+    expect(table).toHaveClass("text-[12.5px]");
+    expect(table).not.toHaveClass("text-sm");
+  });
+
+  it("every <td> in a row is align-top, not align-middle — line 1s must align across the row", async () => {
+    renderTable([ROW_A_SCORED]);
+    const row = (await screen.findByText("Nasi Goreng Kampung")).closest("tr") as HTMLElement;
+    const cells = row.querySelectorAll("td");
+    expect(cells.length).toBeGreaterThan(0);
+    for (const cell of Array.from(cells)) {
+      expect(cell).toHaveClass("align-top");
+      expect(cell).not.toHaveClass("align-middle");
+    }
+  });
+
+  it("the Posted qualifier (age + Early) renders at the mockup's 11px, not text-xs", async () => {
+    renderTable([ROW_A_SCORED]);
+    const ageLine = (await screen.findByText("Early")).closest("p") as HTMLElement;
+    expect(ageLine).toHaveClass("text-[11px]");
+    expect(ageLine).not.toHaveClass("text-xs");
+  });
+});
+
+describe("AnalysisDataTable — the Early badge (DESIGN-3C §9.3, audit M6 — styling only)", () => {
+  it("fires only on the row whose performance.computed.provisional is true, built from real row fixtures — not a prop", async () => {
+    renderTable([ROW_A_SCORED, ROW_B_COLD_START]);
+
+    const rowA = (await screen.findByText("Nasi Goreng Kampung")).closest("tr") as HTMLElement;
+    const rowB = (await screen.findByText("10 Ide Konten Ramadan")).closest("tr") as HTMLElement;
+
+    expect(within(rowA).getByText("Early")).toBeInTheDocument();
+    expect(within(rowB).queryByText("Early")).not.toBeInTheDocument();
+  });
+
+  it("renders the §9.3 badge classes AND the exact word 'Early' — both halves, so changing either fails this test", async () => {
+    renderTable([ROW_A_SCORED]);
+
+    const badge = await screen.findByText("Early");
+    expect(badge).toHaveTextContent("Early");
+    expect(badge.tagName).toBe("SPAN");
+    expect(badge).toHaveClass("rounded");
+    expect(badge).toHaveClass("bg-accent/12");
+    expect(badge).toHaveClass("text-accent");
+    expect(badge).toHaveClass("text-[10px]");
+    expect(badge).toHaveClass("font-semibold");
+    expect(badge).toHaveClass("px-1.5");
+    expect(badge).toHaveClass("py-0.5");
+  });
+});
+
 describe("AnalysisDataTable — compact density (design §3.2 hard rule)", () => {
   it("still renders every denominator, tier phrase, sample size, Early badge and absent-score reason", async () => {
     renderTable();

@@ -161,6 +161,17 @@ const ROW_ABSENT_NO_AUDIENCE = baseRow({
   },
 });
 
+/** Row 8 (DESIGN-3B §5.5, amendment B8 / §5.5.1 amendment B10, S-P8) — a performance block
+ * exists, `unavailableReason` is `null`, and the judgement returned no 1–5. */
+const ROW_NO_JUDGEMENT = baseRow({
+  id: "row-no-judgement",
+  title: "Judged, no 1-5",
+  performance: {
+    computed: SCORED_PERFORMANCE.computed,
+    judgement: { performanceScore: null, verdict: "Strong hook.", drivers: ["Hook kuat sejak detik pertama."] },
+  },
+});
+
 function buildFetchMock(rows: AnalysisListItem[]) {
   return async (): Promise<Response> => {
     const body: AnalysesListResponse = {
@@ -287,5 +298,35 @@ describe("Ticket #147 — the Performance cell always carries a second line (des
     const row = (await screen.findByText("Nasi Goreng Kampung")).closest("tr") as HTMLElement;
     const performanceCell = row.querySelectorAll("td")[5] as HTMLElement;
     expect(within(performanceCell).getByTestId("performance-score-second-line")).toBeInTheDocument();
+  });
+});
+
+describe("DESIGN-3B §5.5.1 (S-P8) — row 8's ⓘ name, exercised through the real table", () => {
+  it("row 8 carries exactly one ⓘ trigger, named 'Why is there no 1–5 for this post?', not the scored-row name", async () => {
+    renderTable([ROW_NO_JUDGEMENT]);
+    const row = (await screen.findByText("Judged, no 1-5")).closest("tr") as HTMLElement;
+
+    expect(within(row).getByText("No 1–5 for this post")).toBeInTheDocument();
+    expect(
+      within(row).getByRole("button", { name: "Why is there no 1–5 for this post?" }),
+    ).toBeInTheDocument();
+    expect(
+      within(row).queryByRole("button", { name: "How was this score worked out?" }),
+    ).not.toBeInTheDocument();
+    // One ⓘ per row (DESIGN-3C §5.1) — must still hold on row 8.
+    expect(within(row).getAllByRole("button", { name: /1–5/ })).toHaveLength(1);
+  });
+
+  it("a scored row in the SAME table keeps 'How was this score worked out?' — the two rows must not cross-contaminate", async () => {
+    renderTable([ROW_SCORED, ROW_NO_JUDGEMENT]);
+    const scoredRow = (await screen.findByText("Nasi Goreng Kampung")).closest("tr") as HTMLElement;
+    const noJudgementRow = (await screen.findByText("Judged, no 1-5")).closest("tr") as HTMLElement;
+
+    expect(
+      within(scoredRow).getByRole("button", { name: "How was this score worked out?" }),
+    ).toBeInTheDocument();
+    expect(
+      within(noJudgementRow).getByRole("button", { name: "Why is there no 1–5 for this post?" }),
+    ).toBeInTheDocument();
   });
 });
