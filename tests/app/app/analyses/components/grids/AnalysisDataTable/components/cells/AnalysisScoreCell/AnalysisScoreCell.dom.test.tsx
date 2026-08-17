@@ -102,6 +102,37 @@ describe("AnalysisScoreCell — content variant (DESIGN-3C §5, TDD §9.3)", () 
     render(<AnalysisScoreCell variant="content" score={4} />);
     expect(screen.getByText("4")).not.toHaveClass("text-primary");
   });
+
+  // R2 (PR #233 review) — pip COUNT is guarded (`length: MAX_SCORE - 1` kills 2 tests) but
+  // pip FILL was not: the only pre-existing fill assertions inspected pip [0] and pip [4] for
+  // a single score, which an off-by-one satisfies either direction. This pins the exact fill
+  // class of ALL 5 pips at every reachable score (0..5, the two degenerate all-empty /
+  // all-filled cases included), independently of the source's own constants (literal class
+  // names, not an import), so it cannot be a self-referential guard.
+  it.each([0, 1, 2, 3, 4, 5])(
+    "score=%i fills exactly that many of the 5 pips, in order, and no others (content)",
+    (score) => {
+      render(<AnalysisScoreCell variant="content" score={score} />);
+
+      const group = screen.getByRole("group");
+      const pipTrack = Array.from(group.querySelectorAll('[aria-hidden="true"]')).find(
+        (el) => el.querySelectorAll("span").length === 5,
+      );
+      expect(pipTrack).not.toBeUndefined();
+      const pips = Array.from(pipTrack!.querySelectorAll("span"));
+      expect(pips).toHaveLength(5);
+
+      pips.forEach((pip, index) => {
+        if (index < score) {
+          expect(pip).toHaveClass("bg-muted-foreground");
+          expect(pip).not.toHaveClass("bg-[#5c6c86]");
+        } else {
+          expect(pip).toHaveClass("bg-[#5c6c86]");
+          expect(pip).not.toHaveClass("bg-muted-foreground");
+        }
+      });
+    },
+  );
 });
 
 describe("AnalysisScoreCell — performance variant (DESIGN-3C §5.1, TDD §9.3)", () => {
@@ -314,4 +345,40 @@ describe("AnalysisScoreCell — performance variant (DESIGN-3C §5.1, TDD §9.3)
     expect(firstPip).toHaveClass("size-[7px]");
     expect(firstPip).toHaveClass("rounded-[2px]");
   });
+
+  // R2 (PR #233 review) — same fill-count gap as the content variant, on the performance
+  // axis's own fill colour and track token. Every pip inspected, not just the ends.
+  it.each([0, 1, 2, 3, 4, 5])(
+    "score=%i fills exactly that many of the 5 pips, in order, and no others (performance)",
+    (score) => {
+      render(
+        <AnalysisScoreCell
+          variant="performance"
+          score={score}
+          tierPhrase="vs their usual"
+          isTier3={false}
+          confidenceWord="high confidence"
+          row={ROW}
+        />,
+      );
+
+      const group = screen.getByRole("group");
+      const pipTrack = Array.from(group.querySelectorAll('[aria-hidden="true"]')).find(
+        (el) => el.querySelectorAll("span").length === 5,
+      );
+      expect(pipTrack).not.toBeUndefined();
+      const pips = Array.from(pipTrack!.querySelectorAll("span"));
+      expect(pips).toHaveLength(5);
+
+      pips.forEach((pip, index) => {
+        if (index < score) {
+          expect(pip).toHaveClass("bg-primary");
+          expect(pip).not.toHaveClass("bg-[#5c6c86]");
+        } else {
+          expect(pip).toHaveClass("bg-[#5c6c86]");
+          expect(pip).not.toHaveClass("bg-primary");
+        }
+      });
+    },
+  );
 });
