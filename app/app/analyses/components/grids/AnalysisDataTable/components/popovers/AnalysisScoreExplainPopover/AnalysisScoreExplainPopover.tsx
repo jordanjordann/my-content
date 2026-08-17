@@ -11,6 +11,7 @@ import {
   SCORE_EXPLAIN_MEASURED_HEADING,
   SCORE_EXPLAIN_NO_JUDGEMENT_HEADING,
   SCORE_EXPLAIN_NO_JUDGEMENT_INTRO,
+  SCORE_EXPLAIN_NO_JUDGEMENT_TRIGGER_LABEL,
   SCORE_EXPLAIN_OPERANDS_HEADING,
   SCORE_EXPLAIN_TRIGGER_LABEL,
   scoreExplainFooter,
@@ -99,7 +100,7 @@ export function AnalysisScoreExplainPopover({ row }: AnalysisScoreExplainPopover
         ref={anchorRef}
         type="button"
         data-row-exempt="true"
-        aria-label={SCORE_EXPLAIN_TRIGGER_LABEL}
+        aria-label={isNoJudgement ? SCORE_EXPLAIN_NO_JUDGEMENT_TRIGGER_LABEL : SCORE_EXPLAIN_TRIGGER_LABEL}
         aria-describedby={open ? popupId : undefined}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
