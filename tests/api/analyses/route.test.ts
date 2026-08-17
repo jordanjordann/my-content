@@ -118,6 +118,13 @@ function makeDetailParams(id: string) {
   return { params: Promise.resolve({ id }) };
 }
 
+/** Structural D8 comparison helper (finding 3, PR #235 review) — drops `sampleSize` (the one deliberately live field) so every OTHER `tier2` field is compared without hand-listing them, and a future field is covered automatically. */
+function omitSampleSize<T extends { sampleSize: unknown }>(tier2: T): Omit<T, "sampleSize"> {
+  const clone: Partial<T> = { ...tier2 };
+  delete clone.sampleSize;
+  return clone as Omit<T, "sampleSize">;
+}
+
 let db: Client;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let listRoute: any;
@@ -282,6 +289,17 @@ describe("GET /api/analyses — D8, byte-identical across two reads", () => {
 
     expect(first).toBe(second);
   });
+
+  /**
+   * Reviewer note (finding 6, PR #235 review — the twin of `readModel.test.ts`'s
+   * own D8 note): this proves determinism-given-unchanged-input, not
+   * freezing. This row has no `perfBucketKey`, so `tier2` is `null` and the
+   * #206 live carve-out never engages for it at all — two reads over an
+   * unchanged library return the same JSON whether or not the carve-out
+   * exists or is correct. The test that actually exercises and pins the
+   * carve-out's boundary is below, in the "#206: tier2.sampleSize is LIVE"
+   * describe block, which writes a new comparator BETWEEN two reads.
+   */
 });
 
 describe("GET /api/analyses — pagination and sorting", () => {
@@ -409,13 +427,13 @@ describe("GET /api/analyses — #206: tier2.sampleSize is LIVE (moves when the l
 
     // Every OTHER field of the observed row's `performance.computed` is
     // byte-identical — the freeze still holds everywhere else. Compare the
-    // whole computed block minus the one live field.
+    // whole computed block minus the one live field. Structural (destructure
+    // sampleSize off tier2, toEqual the remainder), not hand-listed, so a
+    // future PerformanceTier2 field is covered automatically.
     const { tier2: firstTier2, ...firstComputedRest } = firstRow.performance.computed;
     const { tier2: secondTier2, ...secondComputedRest } = secondRow.performance.computed;
     expect(secondComputedRest).toEqual(firstComputedRest);
-    expect(secondTier2.median).toBe(firstTier2.median);
-    expect(secondTier2.bucketKey).toBe(firstTier2.bucketKey);
-    expect(secondTier2.multiplier).toBe(firstTier2.multiplier);
+    expect(omitSampleSize(secondTier2)).toEqual(omitSampleSize(firstTier2));
 
     // And the rest of the row (outside `performance`) is untouched too.
     const omitPerformance = (row: Record<string, unknown>) => {
@@ -426,7 +444,24 @@ describe("GET /api/analyses — #206: tier2.sampleSize is LIVE (moves when the l
     expect(omitPerformance(secondRow)).toEqual(omitPerformance(firstRow));
   });
 
-  it("a MEASURED row's tier2.sampleSize does NOT move even when a new comparator is inserted — the freeze still holds", async () => {
+  /**
+   * Reviewer note (finding 2, PR #235 review): this test does NOT pin
+   * `buildTier2`'s own `isColdStart = row.perfMultiplier == null` gate.
+   * The route independently gates on the exact same condition BEFORE ever
+   * calling `buildComputedPerformanceBlock` (this file, the two
+   * `analysis.perfMultiplier == null` checks around `liveColdStartSampleSize`
+   * above) — a MEASURED row's `liveColdStartSampleSize` stays `null` and is
+   * never injected in the first place, so this test would stay green even
+   * if `readModel.ts`'s own gate were mutated to always report cold start
+   * (confirmed by the reviewer's mutation run: only
+   * `readModel.test.ts`'s "a MEASURED row's tier2.sampleSize ignores the
+   * injected live value entirely" test went red, not this one). What this
+   * test DOES prove: the route-level gate, independently, never triggers
+   * the extra I/O or injection path for a MEASURED row — real double-gate
+   * coverage, just not a single-point pin of `buildTier2`'s own carve-out
+   * boundary. That single-point pin is `readModel.test.ts`'s dedicated test.
+   */
+  it("a MEASURED row's liveColdStartSampleSize is never computed or injected by the route (route-level gate only — see readModel.test.ts for the buildTier2-level pin)", async () => {
     const profileId = randomUUID();
     await insertProfile(db, profileId);
     const bucketKey = "instagram:reel:full_video";

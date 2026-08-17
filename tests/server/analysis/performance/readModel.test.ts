@@ -39,6 +39,13 @@ function baseRow(overrides: Partial<PerformanceBlockRow> = {}): PerformanceBlock
   };
 }
 
+/** Structural D8 comparison helper (finding 3, PR #235 review) — drops `sampleSize` (the one deliberately live field) so every OTHER `tier2` field is compared without hand-listing them, and a future field is covered automatically. */
+function omitSampleSize<T extends { sampleSize: unknown }>(tier2: T): Omit<T, "sampleSize"> {
+  const clone: Partial<T> = { ...tier2 };
+  delete clone.sampleSize;
+  return clone as Omit<T, "sampleSize">;
+}
+
 describe("buildComputedPerformanceBlock — null gate (TDD §7)", () => {
   it("returns null when perfTierUsed is null (row predates schema 3)", () => {
     expect(buildComputedPerformanceBlock(baseRow({ perfTierUsed: null }))).toBeNull();
@@ -185,12 +192,13 @@ describe("buildComputedPerformanceBlock — #206 carve-out, D8's actual boundary
 
     // ...and prove every OTHER field is still byte-identical between the
     // two calls, i.e. the carve-out did not leak into anything else.
+    // Structural, not hand-listed: destructure sampleSize off tier2 and
+    // toEqual the remainder, so a future PerformanceTier2 field is covered
+    // automatically instead of silently falling outside this assertion.
     const { tier2: tier2First, ...restFirst } = first!;
     const { tier2: tier2Second, ...restSecond } = second!;
     expect(restFirst).toEqual(restSecond);
-    expect(tier2First!.median).toBe(tier2Second!.median);
-    expect(tier2First!.bucketKey).toBe(tier2Second!.bucketKey);
-    expect(tier2First!.multiplier).toBe(tier2Second!.multiplier);
+    expect(omitSampleSize(tier2First!)).toEqual(omitSampleSize(tier2Second!));
   });
 
   it("no injected value (undefined) falls back to the stored column — pre-#206 call sites are unaffected", () => {

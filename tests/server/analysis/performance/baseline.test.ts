@@ -912,4 +912,93 @@ describe("fetchLiveEligibleComparatorIds — D3/D4: the batched, grouped live co
     expect([...result.get(candidatePoolKey(poolA))!].sort()).toEqual([idA].sort());
     expect([...result.get(candidatePoolKey(poolB))!].sort()).toEqual([idB1, idB2].sort());
   });
+
+  it("two pools sharing (profileId, bucketKey) but differing only in schemaVersion do not cross-contaminate (reviewer repro, BLOCKER 1)", async () => {
+    const { fetchLiveEligibleComparatorIds, candidatePoolKey, computeBaseline } = await import(
+      "@/lib/server/analysis/performance/baseline"
+    );
+    const profileId = randomUUID();
+    await insertProfile(client, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    // 2 rows at schema_version 3, 1 row at schema_version 2 — same profile, same bucket.
+    const idV3a = await insertAnalysis(client, {
+      profileId,
+      bucketKey,
+      reachValue: 1_000,
+      postAgeHours: 200,
+      schemaVersion: 3,
+    });
+    const idV3b = await insertAnalysis(client, {
+      profileId,
+      bucketKey,
+      reachValue: 2_000,
+      postAgeHours: 200,
+      schemaVersion: 3,
+    });
+    const idV2 = await insertAnalysis(client, {
+      profileId,
+      bucketKey,
+      reachValue: 3_000,
+      postAgeHours: 200,
+      schemaVersion: 2,
+    });
+
+    const poolV3 = { profileId, bucketKey, schemaVersion: 3 };
+    const poolV2 = { profileId, bucketKey, schemaVersion: 2 };
+    const result = await fetchLiveEligibleComparatorIds([poolV3, poolV2], 72);
+
+    expect([...result.get(candidatePoolKey(poolV3))!].sort()).toEqual([idV3a, idV3b].sort());
+    expect([...result.get(candidatePoolKey(poolV2))!].sort()).toEqual([idV2]);
+
+    // Read path and write path must agree on the same data.
+    const v2Baseline = await computeBaseline({
+      profileId,
+      bucketKey,
+      schemaVersion: 2,
+      excludeAnalysisId: randomUUID(),
+      minPostAgeHours: 72,
+      currentPost: { reachValue: 500, likeCount: null, commentCount: null },
+    });
+    expect(v2Baseline.sampleSize).toBe(1);
+    expect(result.get(candidatePoolKey(poolV2))!.size).toBe(v2Baseline.sampleSize);
+  });
+
+  it("two pools sharing (profileId, schemaVersion) but differing only in bucketKey do not cross-contaminate", async () => {
+    const { fetchLiveEligibleComparatorIds, candidatePoolKey } = await import(
+      "@/lib/server/analysis/performance/baseline"
+    );
+    const profileId = randomUUID();
+    await insertProfile(client, profileId);
+    const bucketKeyA = "instagram:reel:full_video";
+    const bucketKeyB = "instagram:post:metadata_only";
+
+    const idA = await insertAnalysis(client, {
+      profileId,
+      bucketKey: bucketKeyA,
+      reachValue: 1_000,
+      postAgeHours: 200,
+    });
+    const idB1 = await insertAnalysis(client, {
+      profileId,
+      bucketKey: bucketKeyB,
+      likeCount: 10,
+      commentCount: 2,
+      postAgeHours: 200,
+    });
+    const idB2 = await insertAnalysis(client, {
+      profileId,
+      bucketKey: bucketKeyB,
+      likeCount: 20,
+      commentCount: 4,
+      postAgeHours: 200,
+    });
+
+    const poolA = { profileId, bucketKey: bucketKeyA, schemaVersion: SCHEMA_VERSION };
+    const poolB = { profileId, bucketKey: bucketKeyB, schemaVersion: SCHEMA_VERSION };
+    const result = await fetchLiveEligibleComparatorIds([poolA, poolB], 72);
+
+    expect([...result.get(candidatePoolKey(poolA))!].sort()).toEqual([idA]);
+    expect([...result.get(candidatePoolKey(poolB))!].sort()).toEqual([idB1, idB2].sort());
+  });
 });

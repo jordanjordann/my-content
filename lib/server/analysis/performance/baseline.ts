@@ -271,6 +271,7 @@ interface CandidateRow {
   id: string;
   profileId: string;
   bucketKey: string;
+  schemaVersion: number;
   reachValue: number | null;
   likeCount: number | null;
   commentCount: number | null;
@@ -326,7 +327,7 @@ async function fetchCandidateRows(
 
     const result = await db.execute({
       sql: `
-        SELECT id, profile_id, perf_bucket_key, perf_reach_value, like_count, comment_count
+        SELECT id, profile_id, perf_bucket_key, schema_version, perf_reach_value, like_count, comment_count
         FROM analyses
         WHERE (${poolClause})
           AND status = 'completed'
@@ -345,6 +346,7 @@ async function fetchCandidateRows(
         id: row.id as string,
         profileId: row.profile_id as string,
         bucketKey: row.perf_bucket_key as string,
+        schemaVersion: Number(row.schema_version),
         reachValue: row.perf_reach_value == null ? null : Number(row.perf_reach_value),
         likeCount: row.like_count == null ? null : Number(row.like_count),
         commentCount: row.comment_count == null ? null : Number(row.comment_count),
@@ -394,27 +396,31 @@ export async function fetchLiveEligibleComparatorIds(
   const rows = await fetchCandidateRows([...uniquePools.values()], minPostAgeHours);
 
   for (const row of rows) {
-    // Reconstruct which requested pool(s) this row belongs to from its own
-    // (profileId, bucketKey) — `fetchCandidateRows()`'s OR-grouped
-    // predicate already constrained `schema_version` per pool, so a row can
-    // only have been returned for a pool whose schemaVersion it actually
-    // matches (SQLite evaluated `schema_version = ?` against the stored
-    // column, per OR-branch, before this code ever sees the row).
-    for (const pool of uniquePools.values()) {
-      if (pool.profileId !== row.profileId || pool.bucketKey !== row.bucketKey) {
-        continue;
-      }
-      const denominator = denominatorForBucket(pool.bucketKey);
-      const metric = metricFor(denominator, {
-        reachValue: row.reachValue,
-        likeCount: row.likeCount,
-        commentCount: row.commentCount,
-      });
-      if (metric == null) {
-        continue;
-      }
-      result.get(poolKeyOf(pool))!.add(row.id);
+    // Reconstruct which requested pool this row belongs to from the exact
+    // (profileId, bucketKey, schemaVersion) triple carried on the row
+    // itself — SQLite only guarantees a returned row satisfied SOME
+    // OR-branch of `fetchCandidateRows()`'s pool clause, not WHICH one, so
+    // matching on `schemaVersion` here (not just profileId/bucketKey) is
+    // required, not redundant. A single map lookup per row, O(rows) rather
+    // than O(rows × pools).
+    const key = poolKeyOf({
+      profileId: row.profileId,
+      bucketKey: row.bucketKey,
+      schemaVersion: row.schemaVersion,
+    });
+    if (!uniquePools.has(key)) {
+      continue;
     }
+    const denominator = denominatorForBucket(row.bucketKey);
+    const metric = metricFor(denominator, {
+      reachValue: row.reachValue,
+      likeCount: row.likeCount,
+      commentCount: row.commentCount,
+    });
+    if (metric == null) {
+      continue;
+    }
+    result.get(key)!.add(row.id);
   }
 
   return result;
