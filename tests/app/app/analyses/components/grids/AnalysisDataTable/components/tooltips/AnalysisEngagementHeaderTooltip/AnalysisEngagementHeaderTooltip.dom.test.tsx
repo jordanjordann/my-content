@@ -151,12 +151,22 @@ describe("AnalysisEngagementHeaderTooltip — ticket #223", () => {
    * expression and no other child, so `.textContent` is the string with no incidental
    * whitespace to normalise — `toBe` on `.textContent` is therefore an exact-equality guard
    * with no false positives from formatting.
+   *
+   * Exact equality on each pinned string does not pin how MANY strings the Popup renders — a
+   * fourth `<p>` appended after the closing sentence (e.g. invented copy contradicting T1's
+   * own "not estimates" sentence) still lets the destructure below take only the first three,
+   * which are still correct, so the assertions alone would not notice. `toHaveLength(3)`
+   * BEFORE the destructure pins the element set, not just its first three members, and makes
+   * the positional `[heading, body, comparison]` indexing fail loudly (a `TypeError`) rather
+   * than silently passing if the structure ever changes.
    */
   it("(§4.6, literal) T1 renders DESIGN-3B's exact hardcoded copy, independent of constants.ts", () => {
     render(<AnalysisEngagementHeaderTooltip columnId="engagementReach" />);
     fireEvent.mouseEnter(screen.getByRole("button", { name: "How is engagement against reach worked out?" }));
     const tooltip = screen.getByRole("tooltip");
-    const [heading, body, comparison] = tooltip.querySelectorAll(":scope > p");
+    const paragraphs = tooltip.querySelectorAll(":scope > p");
+    expect(paragraphs).toHaveLength(3);
+    const [heading, body, comparison] = paragraphs;
     expect(heading.textContent).toBe("Engagement against reach");
     expect(body.textContent).toBe(
       "How many of the people who saw this post engaged with it. Both figures are counts Instagram published, not estimates — which is why no figure in this column carries an ≈. Where a carousel's reach is taken from its first slide, the cell says so.",
@@ -170,7 +180,9 @@ describe("AnalysisEngagementHeaderTooltip — ticket #223", () => {
     render(<AnalysisEngagementHeaderTooltip columnId="engagementFollowers" />);
     fireEvent.mouseEnter(screen.getByRole("button", { name: "How is engagement against followers worked out?" }));
     const tooltip = screen.getByRole("tooltip");
-    const [heading, body, comparison] = tooltip.querySelectorAll(":scope > p");
+    const paragraphs = tooltip.querySelectorAll(":scope > p");
+    expect(paragraphs).toHaveLength(3);
+    const [heading, body, comparison] = paragraphs;
     expect(heading.textContent).toBe("Engagement against followers");
     expect(body.textContent).toBe(
       "How much this post got relative to the size of the creator's audience. The follower count comes from a cached profile record that can be up to a week old, which is why every figure in this column carries an ≈.",
@@ -194,6 +206,12 @@ describe("AnalysisEngagementHeaderTooltip — ticket #223", () => {
    *      fraction inverts, teaching the calculation backwards — which none of the assertions
    *      above notice because they only check that both strings are present SOMEWHERE in the
    *      tooltip, never their order or role.
+   *   3. A third `<p>` appended inside the operand `<div>` (e.g. `<p>(estimated)</p>` below
+   *      the denominator, no digit) — the `data-testid` handles still resolve to the same two
+   *      elements, so numerator/denominator equality and order both still pass. The
+   *      `toHaveLength(2)` assertion on `numerator.parentElement`'s `<p>` children below pins
+   *      the operand div's element set, catching an appended sibling the testid lookups alone
+   *      cannot see.
    *
    * The four tests below hardcode every operand string literally (independent of
    * `constants.ts`, per the same rule as the `(§4.6, literal)` tests above) AND pin numerator
@@ -210,6 +228,7 @@ describe("AnalysisEngagementHeaderTooltip — ticket #223", () => {
     expect(numerator.textContent).toBe("Likes + comments");
     expect(denominator.textContent).toBe("Views or plays on this post");
     expect(numerator.compareDocumentPosition(denominator) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(numerator.parentElement?.querySelectorAll("p")).toHaveLength(2);
   });
 
   it("(§4.6, literal) engagementFollowers operand stack: numerator and denominator are pinned by role, independent of constants.ts", () => {
@@ -222,6 +241,7 @@ describe("AnalysisEngagementHeaderTooltip — ticket #223", () => {
     expect(numerator.textContent).toBe("Likes + comments");
     expect(denominator.textContent).toBe("The creator's follower count");
     expect(numerator.compareDocumentPosition(denominator) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(numerator.parentElement?.querySelectorAll("p")).toHaveLength(2);
   });
 
   it("(§4.6) engagementReach's denominator is never engagementFollowers' denominator (guards a whole-column operand-set swap)", () => {
