@@ -1349,7 +1349,12 @@ established. **Do not "improve" this back into a transaction.**
 
 ---
 
-## 11. Deployment + Turso cutover **[SECTION ONLY — NOT TICKETED (OR-18)]**
+## 11. Deployment + Turso cutover **[OR-18's condition MET 2026-08-18 — TICKETING HAS BEGUN]**
+
+> **Status change (2026-08-18).** The heading previously read *[SECTION ONLY — NOT TICKETED (OR-18)]*. OR-18
+> (§0.5) releases this section for ticketing "when 3C lands"; the owner has declared 3C landed. **Ticketing is
+> now open for §11 only — §10 (3A) remains SECTION ONLY and is unchanged.** The deploy is **web-first**; see
+> **§11.3a**, which is the version in force and supersedes parts of §11.3.
 
 ### 11.1 Current reality, verified
 
@@ -1477,6 +1482,12 @@ have been escalated rather than absorbed — it is not.
 
 ### 11.3 What the deploy work contains
 
+> ⚠️ **PARTIALLY SUPERSEDED BY §11.3a (2026-08-18).** Three claims below were re-verified against the code at
+> `main` when 3C landed and are **wrong or incomplete**: the two-service split (the worker entrypoint does not
+> exist), the secret list (it omits secrets that break a production boot), and the migration list. The
+> paragraph is **kept unedited** so the amendment can be read against what it corrects. **§11.3a is the
+> version in force.**
+
 **Updated for OR-23.** `Dockerfile` (Node + `yt-dlp` + ffmpeg — unchanged and host-agnostic), **two Railway
 services from the one repo/Dockerfile** with distinct start commands (`next start` and the worker entrypoint,
 §10.4) **replacing the `fly.toml` `[processes]` block**, **Serverless left OFF on the worker service** (§11.2b
@@ -1486,6 +1497,125 @@ same metro as the Railway region** (§11.2a), a release command running `db:migr
 `GEMINI_API_KEY` / `SCRAPECREATORS_API_KEY`, a deploy step in `.github/workflows/ci.yml`, and a `.env.example`
 audit (RUNBOOK §3). Since OR-17 puts this **after** 3C, migrations 012, 013 and 014 will all apply on the first
 Turso run — which is fine and is why all SQL in this document is kept libSQL-portable.
+
+### 11.3a **AMENDMENT (2026-08-18) — the deploy is WEB-FIRST, and §11.3's secret and migration lists are corrected**
+
+**Why this amendment exists.** OR-18's condition ("ticketed when 3C lands") is met, so §11 stopped being a
+sketch and became something a developer executes. Every factual claim in §11.3 was re-verified against the code
+at `main` before the first deploy ticket was written. Three did not survive. Nothing in §11.1, §11.2, §11.2a or
+§11.2b is affected — the host decision and its cost analysis stand exactly as written.
+
+#### A. The deploy is **web + Turso only**. The worker service is the LAST 3A ticket, not a deploy ticket.
+
+§11.3 specifies **two** Railway services, the second being "the worker entrypoint, §10.4". **That entrypoint
+does not exist.** `scripts/` contains exactly one file, `migrate.ts`; there is no `scripts/worker.ts` and no
+`lib/server/jobs/`. §10.4 specifies the process model; it does not implement it. **A deploy ticket cannot
+create a service whose start command has no target.**
+
+Therefore the split, and it does not disturb OR-17's order:
+
+| Phase | Contains |
+|---|---|
+| **Deploy (now)** | One Railway service: **web**. Dockerfile, `output: "standalone"`, env/secret audit, Turso database + cutover, release command, CI deploy step. |
+| **3A queue (after)** | `014_jobs.sql`, the worker loop, `scripts/worker.ts`, SSE progress — and **as its final ticket**, standing the second Railway service up against the entrypoint that by then exists, with **Serverless left OFF** (§11.2b). |
+
+**§11.2b's "Serverless OFF" item is not lost, it is re-homed.** It is a property of the *worker* service and
+belongs to the ticket that creates the worker service. Recorded here so it cannot be dropped in the handover:
+**a deploy that ships only the web service has no worker to mis-configure; the check becomes live the moment
+3A's last ticket runs, and it is that ticket's checklist item.**
+
+The web-only deploy is a real delivery, not a stub. Today `app/api/analyze/route.ts` runs the pipeline
+in-request (§10.1); that keeps working in the web service exactly as it does locally. 3A changes *who* runs it,
+not whether it runs.
+
+#### B. §11.3's secret list is incomplete and **would break a production boot**. The corrected list.
+
+§11.3 names only `GEMINI_API_KEY` and `SCRAPECREATORS_API_KEY`. Verified against `.env.example` and the code
+that reads each variable:
+
+| Variable | Verified behaviour | Status in a production deploy |
+|---|---|---|
+| **`APP_SESSION_SECRET`** | `lib/server/auth/auth.ts:96-107` — `getSessionSecret()` **throws `"APP_SESSION_SECRET is required in production."`** when unset and `NODE_ENV === "production"`. The dev fallback is a hardcoded string and is unreachable in production. | ⛔ **REQUIRED. Omitted from §11.3.** Its absence is a hard failure, not a degradation. **Also required at `next build` time** — `.github/workflows/ci.yml` sets a dummy `APP_SESSION_SECRET: ci-not-a-real-secret` specifically so the production build does not throw. A Docker build that does not do the same fails. |
+| **`TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`** | `lib/server/db.ts:3` — `process.env.TURSO_DATABASE_URL ?? "file:./my-content.db"`. **There is no production guard.** Unset in a container, the app boots happily onto an ephemeral file inside the image and **loses every write on redeploy, silently.** | ⛔ **REQUIRED, and the silent fallback is the risk.** Recorded as a known gap; a boot-time guard is a candidate for the Turso ticket, not this one. |
+| **`TRUST_PROXY_HEADERS`** | `lib/server/auth/constants.ts:92` — `resolveBooleanEnv("TRUST_PROXY_HEADERS", false)`. Consumed at `app/api/auth/verify/route.ts:32`: when false, **every caller collapses onto the shared rate-limit key `"shared"`.** Behind Railway's proxy the app never sees a real client IP, so the default makes PIN rate limiting global rather than per-IP — one attacker locks out all staff. | ⚠️ **Must be set deliberately to `true`, and only after confirming Railway's proxy *overwrites* `X-Forwarded-For` rather than appending to it** (`.env.example:30-31` states the precondition; if the proxy appends, `true` is worse than `false` because the value is then forgeable). **This is a decision the deploy ticket must surface, not silently inherit.** |
+| **`IMAGE_PROXY_CACHE_DIR`** | `lib/server/imageProxyCache/constants.ts:4-5` — defaults to `path.join(os.tmpdir(), "image-proxy-cache")`, and `diskCache.ts:69` `mkdir`s it recursively. | ✅ **Optional — it has a working default and needs no volume.** The container's `/tmp` is writable. Two consequences to record rather than fix: the cache is **ephemeral across redeploys** (acceptable — it is a cache), and `diskCache.ts:61` documents **unbounded disk growth** as a known issue, which on a metered container is a disk-usage question rather than a laptop-disk question. |
+| `GEMINI_API_KEY`, `SCRAPECREATORS_API_KEY` | Read lazily (`gemini/upload.ts:4`, `generate.ts:6`, `scrapecreators/client.ts:67`); no import-time throw. | ✅ Required for function, as §11.3 said. Not boot-blocking. |
+| `RESET_PIN` | `.env.example:12-15` — when the literal string `"true"`, **every** `hasPinConfigured()` call wipes the PIN. | ⛔ **Must be absent in production.** An explicitly-empty value is the safe state. |
+| `PIN_*` rate-limit vars | `lib/server/auth/constants.ts` — all optional; **an invalid value throws at import**. | ✅ Leave unset. Setting them badly is a boot failure for no gain. |
+| `MAX_VIDEO_BYTES`, `MAX_IMAGE_PROXY_BYTES`, `PROFILE_TTL_DAYS`, `SCRAPECREATORS_BASE_URL`, `PERFORMANCE_*`, `OLLAMA_MODEL` | All have code defaults. | ✅ Optional. |
+
+#### C. **ffmpeg is not needed in the image.** §11.3 and §11.2b both name it; the code does not use it.
+
+`ffmpeg` appears **nowhere** in `lib/`, `app/` or `scripts/`. `ffmpeg-static` is in `package.json` dependencies
+but **nothing imports it** — it is dead weight. The only external binary the code actually shells out to is
+`yt-dlp`, at `lib/server/analysis/fetcher/youtube.ts:189`, invoked via `execFile("yt-dlp", ...)` — so it must be
+on `PATH` — with `-g --skip-download` and `-f "best[height<=1080]"`. That flag set **prints a URL and exits**: it
+never downloads, and `best[...]` selects a single progressive stream, so **no muxing step is ever reached**, which
+is the only thing that would pull in ffmpeg. The download itself is done by the app's own downloader.
+
+**Effect on sizing: the Dockerfile risk §11.2b called "the risky part" is roughly halved.** It is one binary on
+`PATH`, not a media toolchain. It remains genuinely unverified until someone runs `docker build && docker run`,
+which is exactly why the first deploy ticket is the Dockerfile.
+
+#### D. §11 never mentioned auth, and auth is deploy-critical.
+
+`proxy.ts` **at the repo root** — Next.js 16's rename of `middleware.ts`, and there is no `middleware.ts` —
+gates every `/app` path with `verifySessionToken()` (HMAC + expiry, `node:crypto`), redirecting to `/auth/pin`.
+Two deploy consequences:
+
+- It is the **consumer of `APP_SESSION_SECRET`** (§B). If that secret is absent or changes between deploys,
+  every existing session is invalidated and, if absent, the boot throws.
+- Next's self-hosting guide states Proxy "works self-hosted with zero configuration when deploying using
+  `next start`" (`node_modules/next/dist/docs/01-app/02-guides/self-hosting.md:31`). **It is not supported under
+  `output: "export"`** — irrelevant here, since we take `output: "standalone"`, but it is the reason `export`
+  is not an option for this app and that should not have to be rediscovered.
+
+Also: `lib/server/auth/constants.ts:11` sets the session cookie's `secure` flag from
+`NODE_ENV === "production"`. **`NODE_ENV=production` must be set explicitly in the image** — without it the
+cookie ships un-`Secure` *and* the `APP_SESSION_SECRET` guard in §B goes quiet.
+
+#### E. The migration count is corrected: a fresh Turso DB applies **001–013**, thirteen files.
+
+§11.3 says "migrations 012, 013 and 014 will all apply on the first Turso run". Two errors. `migrations/` holds
+**thirteen** files, `001_initial.sql` through `013_reach_unavailable_reason.sql`, and `scripts/migrate.ts`
+applies **every** `.sql` file not already recorded in `_migrations` — against an empty Turso database that is
+**all thirteen**, not the last three. And **`014_jobs.sql` does not exist**; it is 3A's (§10.2), consistent with
+§A. The libSQL-portability point §11.3 was making is unaffected and still correct — it now applies to thirteen
+files instead of three.
+
+One operational detail for the release-command ticket (not this one): `scripts/migrate.ts:14` resolves
+`join(process.cwd(), "migrations")`, and it runs under `tsx`, which is a **devDependency**. Any image that must
+run `db:migrate` needs the `migrations/` directory present at the working directory **and** a `tsx` that
+survives dependency pruning. `output: "standalone"` traces only what the app imports and will **not** carry
+either. This is a Dockerfile constraint even though the release command itself is the next ticket.
+
+#### F. `next.config.ts` and `output: "standalone"` — what Next 16.2.10's own docs actually say.
+
+`next.config.ts` is still the empty scaffold (`const nextConfig: NextConfig = {}`). Read from the installed
+docs, not from memory:
+
+- The deploying guide (`01-app/01-getting-started/17-deploying.md:52`) does **not** issue a bare recommendation
+  to use standalone; it lists three Docker templates and describes the standalone one as producing "a minimal,
+  production-ready Docker image with only the required runtime files and dependencies". The actual mechanism is
+  documented in `01-app/03-api-reference/05-config/01-next-config-js/output.md`. **The distinction matters only
+  so nobody cites a recommendation that is not in the text — standalone is still the right choice here.**
+- `output: "standalone"` emits `.next/standalone/` including a minimal `server.js`, deployable **without
+  installing `node_modules`** (`output.md:24-34`).
+- **It does not copy `public/` or `.next/static/`** (`output.md:36`). The documented fix is literally
+  `cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/` (`output.md:41`). **Skipping
+  this ships an app with no CSS or JS — the single most common way this goes wrong.**
+- `PORT` and `HOSTNAME` are read by `server.js` (`output.md:54`). **`HOSTNAME=0.0.0.0` is required in a
+  container**, or the server binds loopback and the platform's health check never connects.
+- If tracing ever misses a runtime asset, `outputFileTracingIncludes` is the documented escape hatch
+  (`output.md:80-158`). Not expected to be needed here — `yt-dlp` is a system binary on `PATH`, outside tracing
+  entirely — but named so it is not re-derived under time pressure.
+
+#### G. Not a change, but worth recording: `.github/workflows/ci.yml` has **no deploy step at all** today.
+
+§11.1 said "runs test/typecheck/lint/build and nothing else" and that is still exactly true at `main`
+(`53834bd`). Consequence for the open cache issue **#190**: it cannot affect the deploy step, because there is
+no deploy step to affect. **#190 and the deploy work are independent** and #190 does not gate any deploy ticket.
+Whoever adds the deploy step later should re-check that assumption at that time, not now.
 
 ---
 
