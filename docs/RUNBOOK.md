@@ -163,7 +163,7 @@ consumes.
 |---|---|
 | `IMAGE_PROXY_CACHE_DIR` | Defaults to `os.tmpdir()/image-proxy-cache` (`lib/server/imageProxyCache/constants.ts:4-5`) and self-creates (`diskCache.ts:69`). **No volume needed** — a container's `/tmp` is writable. Two things to note, not fix: the cache is ephemeral across redeploys (fine, it's a cache), and `diskCache.ts:61` documents unbounded disk growth, which matters more on metered container disk than on a laptop. |
 | `PIN_*` / `PIN_GLOBAL_*` rate-limit vars | All optional; **an invalid value throws at import**. Leave unset in production. |
-| `MAX_VIDEO_BYTES`, `MAX_IMAGE_PROXY_BYTES`, `PROFILE_TTL_DAYS`, `SCRAPECREATORS_BASE_URL`, `PERFORMANCE_*` | All have code defaults. `OLLAMA_MODEL` was listed here — removed by #243, which deletes Ollama entirely. |
+| `MAX_VIDEO_BYTES`, `MAX_IMAGE_PROXY_BYTES`, `PROFILE_TTL_DAYS`, `SCRAPECREATORS_BASE_URL`, `PERFORMANCE_*` | All have code defaults. |
 
 **Needed for function, not for boot (read lazily, no import-time throw):** `GEMINI_API_KEY`
 (`gemini/upload.ts:4`, `generate.ts:6`), `SCRAPECREATORS_API_KEY` (`scrapecreators/client.ts:67`).

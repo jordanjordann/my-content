@@ -35,6 +35,11 @@ async function importSummarizeCaptionToTitle() {
   return mod.summarizeCaptionToTitle;
 }
 
+async function importTitleTimeoutMs() {
+  const mod = await import("@/lib/server/analysis/gemini/title");
+  return mod.TITLE_TIMEOUT_MS;
+}
+
 describe("summarizeCaptionToTitle — fail-soft contract (ticket #243)", () => {
   afterEach(() => {
     vi.resetModules();
@@ -88,6 +93,29 @@ describe("summarizeCaptionToTitle — fail-soft contract (ticket #243)", () => {
     await expect(summarizeCaptionToTitle("a real caption")).resolves.toBeNull();
   });
 
+  it("resolves to null on undefined text with STOP finishReason — the shape the SDK actually emits (verified-facts.md:311: the `text` getter returns `undefined` when there are no text parts)", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      generateContentMock.mockResolvedValue({
+        candidates: [{ finishReason: "STOP" }],
+        text: undefined,
+      });
+      const summarizeCaptionToTitle = await importSummarizeCaptionToTitle();
+
+      await expect(summarizeCaptionToTitle("a real caption")).resolves.toBeNull();
+
+      // The `typeof text !== "string"` guard must return null directly and
+      // silently. If the guard is removed, `undefined` reaches
+      // `sanitizeTitle`, throws a TypeError on `.trim()`, and is swallowed
+      // by the outer catch, which DOES log via console.error — so this
+      // assertion distinguishes "handled by the guard" from "handled by
+      // accident via the catch block".
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
   it("resolves to null when the request aborts (timeout path)", async () => {
     vi.useFakeTimers();
     try {
@@ -105,6 +133,40 @@ describe("summarizeCaptionToTitle — fail-soft contract (ticket #243)", () => {
       // Advance past the module's internal 15s timeout, which fires
       // controller.abort() and, per the mock above, rejects the SDK call.
       await vi.advanceTimersByTimeAsync(15_000);
+
+      await expect(promise).resolves.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("pins the timeout at exactly TITLE_TIMEOUT_MS (15s), not merely some value <=15s", async () => {
+    vi.useFakeTimers();
+    try {
+      let aborted = false;
+      generateContentMock.mockImplementation((params: { config?: { abortSignal?: AbortSignal } }) => {
+        return new Promise((_resolve, reject) => {
+          params.config?.abortSignal?.addEventListener("abort", () => {
+            aborted = true;
+            reject(new Error("This operation was aborted"));
+          });
+        });
+      });
+      const TITLE_TIMEOUT_MS = await importTitleTimeoutMs();
+      expect(TITLE_TIMEOUT_MS).toBe(15_000);
+
+      const summarizeCaptionToTitle = await importSummarizeCaptionToTitle();
+      const promise = summarizeCaptionToTitle("a real caption");
+      // Suppress unhandled rejection warnings until the abort actually fires.
+      promise.catch(() => {});
+
+      // One tick before the boundary: must NOT have aborted yet.
+      await vi.advanceTimersByTimeAsync(TITLE_TIMEOUT_MS - 1);
+      expect(aborted).toBe(false);
+
+      // Crossing the boundary: must abort exactly here.
+      await vi.advanceTimersByTimeAsync(1);
+      expect(aborted).toBe(true);
 
       await expect(promise).resolves.toBeNull();
     } finally {
