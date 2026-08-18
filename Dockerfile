@@ -1,0 +1,121 @@
+# syntax=docker/dockerfile:1
+#
+# Web service only (TDD §11.3a A). Debian slim, not Alpine — the yt-dlp
+# standalone Linux binary is a PyInstaller build and expects glibc.
+# Node version pinned to .nvmrc (24.14.1).
+#
+# Three stages: deps (npm ci) -> builder (next build, standalone output) ->
+# runner (traced runtime + yt-dlp + migrations, non-root).
+
+ARG NODE_VERSION=24.14.1
+
+# ---------------------------------------------------------------------------
+# 1. deps — install dependencies from the committed lockfile only.
+# ---------------------------------------------------------------------------
+FROM node:${NODE_VERSION}-slim AS deps
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# ---------------------------------------------------------------------------
+# 2. builder — next build with output: "standalone".
+# ---------------------------------------------------------------------------
+FROM node:${NODE_VERSION}-slim AS builder
+WORKDIR /app
+
+# APP_SESSION_SECRET is required at build time: lib/server/auth/auth.ts
+# throws under NODE_ENV=production when it is unset. This is a build-time
+# dummy only — never a real secret in a layer. Mirrors .github/workflows/ci.yml.
+ARG APP_SESSION_SECRET=docker-build-not-a-real-secret
+ENV APP_SESSION_SECRET=${APP_SESSION_SECRET}
+ENV NODE_ENV=production
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+RUN npm run build
+
+# ---------------------------------------------------------------------------
+# 3. runner — minimal runtime image.
+# ---------------------------------------------------------------------------
+FROM node:${NODE_VERSION}-slim AS runner
+WORKDIR /app
+
+# ENV NODE_ENV=production: lib/server/auth/constants.ts derives the session
+# cookie's `secure` flag from it, and the APP_SESSION_SECRET production
+# guard is conditioned on it — without it the cookie ships un-Secure and
+# the guard goes quiet.
+ENV NODE_ENV=production
+# HOSTNAME=0.0.0.0: standalone's server.js binds loopback by default
+# (output.md:54); without this the platform health check never connects.
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
+
+# yt-dlp: the only external binary the app shells out to
+# (lib/server/analysis/fetcher/youtube.ts execFile("yt-dlp", ...)), by bare
+# name, so it must be on PATH. Pinned, not "latest". ffmpeg is deliberately
+# NOT installed — nothing in lib/, app/ or scripts/ invokes it; the yt-dlp
+# call is `-g --skip-download -f "best[height<=1080]"`, which prints a URL
+# and never reaches a muxing step (TDD §11.3a C).
+ARG YT_DLP_VERSION=2026.07.04
+# TARGETARCH: BuildKit sets this automatically to the image's target
+# platform arch (amd64 / arm64). yt-dlp's standalone Linux builds are
+# per-arch PyInstaller binaries (yt-dlp_linux is x86_64-only and will not
+# run on an arm64 image, e.g. a native build on Apple Silicon) — pick the
+# matching asset rather than hardcoding the amd64 one.
+#
+# --http1.1 --retry: GitHub's release-asset CDN has been observed resetting
+# streams mid-download from this build environment (curl error 18,
+# "transfer closed" / "HTTP/2 stream ... was not closed cleanly"). HTTP/1.1
+# plus retries makes the download reliable here.
+ARG TARGETARCH
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && case "${TARGETARCH}" in \
+         amd64) YT_DLP_ASSET=yt-dlp_linux ;; \
+         arm64) YT_DLP_ASSET=yt-dlp_linux_aarch64 ;; \
+         *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+       esac \
+    && curl -fL --http1.1 --retry 5 --retry-all-errors --retry-delay 2 \
+      -o /usr/local/bin/yt-dlp \
+      "https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}/${YT_DLP_ASSET}" \
+    && chmod a+rx /usr/local/bin/yt-dlp \
+    && apt-get purge -y curl \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+# tsx: scripts/migrate.ts runs under it, and it is a devDependency that
+# `output: "standalone"` does not trace (it only traces what the app
+# imports). The release command itself is the next ticket, but the image
+# must already be capable of running `db:migrate`. Pinned to match the
+# devDependency range in package.json.
+RUN npm install --global tsx@4.23.1
+
+# Standalone server + traced node_modules. Does NOT include public/ or
+# .next/static/ (output.md:36) — copied explicitly below, or the site
+# ships with no CSS/JS.
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/static ./.next/static
+
+# migrations/ + scripts/migrate.ts: scripts/migrate.ts resolves
+# join(process.cwd(), "migrations") and standalone tracing does not carry
+# either path (they are read via fs, not imported).
+COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/scripts/migrate.ts ./scripts/migrate.ts
+# scripts/migrate.ts imports "../lib/server/db" as TypeScript source, which
+# standalone tracing does not carry (it only bundles compiled server code).
+# db.ts itself imports only @libsql/client, already present in the traced
+# node_modules copied above.
+COPY --from=builder /app/lib/server/db.ts ./lib/server/db.ts
+
+# Non-root runtime user.
+RUN groupadd --system --gid 1001 nodejs \
+    && useradd --system --uid 1001 --gid nodejs nextjs \
+    && chown -R nextjs:nodejs /app
+USER nextjs
+
+EXPOSE 3000
+
+CMD ["node", "server.js"]
