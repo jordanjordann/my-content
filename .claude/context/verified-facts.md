@@ -5,6 +5,15 @@ Per `AGENTS.md` ("External API Verification"), code must be built against what
 is documented here. If an endpoint isn't listed below, stop and capture it
 live before writing code against it.
 
+> **One deliberate exception, added 2026-08-18 and quarantined at the bottom of
+> this file:** the section **"Infrastructure — first-party documentation facts
+> (NOT live captures)"** records Railway and Turso *platform* facts taken from
+> vendor documentation. They are **not** live captures and do **not** carry this
+> file's usual guarantee. They are here because the alternative was the next
+> agent re-deriving them from contradictory forum posts. **Every claim in that
+> section is individually labelled `[DOC]` or `[LIVE]`. Never cite a `[DOC]`
+> line as a verified capture.**
+
 ---
 
 ## ScrapeCreators — `/v1/youtube/video`
@@ -1884,4 +1893,231 @@ exact post-session `credits_remaining` was not independently re-checked (that wo
 balance-check-only call, which is exactly what the task instructions prohibit) — the ~31984 figure
 above is arithmetic from the one directly-observed reading (31986 after V1) minus V3's two calls, not
 a second live reading. V4 made no ScrapeCreators calls at all, so it does not change this figure.
+
+---
+
+# Infrastructure — first-party documentation facts (NOT live captures)
+
+**Added 2026-08-18 (tech lead, John), for deploy tickets #244 / #246 and TDD §11.2a–§11.2c.**
+
+**Read the charter warning before using anything below.** Everything above this heading is a **live API
+capture**. Almost everything below is **vendor documentation**, which is a weaker class of evidence: docs can
+be stale, aspirational, or silently narrower than the runtime. This section exists because Railway and Turso
+are *infrastructure*, and the honest options were (a) write nothing and let the next agent rebuild it from
+contradictory community forum threads, or (b) write it down with the provenance stated on every line.
+**(b), with labels:**
+
+- **`[DOC]`** — first-party vendor documentation only. No live verification. **Treat as a strong prior, not
+  a fact.**
+- **`[LIVE]`** — an actual response captured from a real endpoint, with the date and the raw output.
+
+**No credits were spent producing any of this.** Railway and Turso reads are not metered against the
+ScrapeCreators or Gemini balances. No infrastructure was created, moved or destroyed.
+
+---
+
+## Railway
+
+### `[DOC]` Deploy regions — exactly four
+
+| Region ID | Location |
+|---|---|
+| `us-west2` | California, USA |
+| `us-east4-eqdc4a` | Virginia, USA |
+| `europe-west4-drams3a` | Amsterdam, Netherlands |
+| `asia-southeast1-eqsg3a` | Singapore |
+
+Sources: <https://docs.railway.com/reference/regions>, and the same four are restated as
+`X-Railway-Upstream-Zone` values (`railway/us-west2`, `railway/us-east4-eqdc4a`,
+`railway/europe-west4-drams3a`, `railway/asia-southeast1-eqsg3a`) at
+<https://docs.railway.com/networking/edge-networking>.
+
+**Deploy *regions* are not edge POPs — do not conflate them.** `[DOC]` *"Edge POPs are the entry points where
+user traffic first reaches Railway… Deployment regions are where your applications actually run. Railway
+offers four."* `[DOC]` The edge proxy *"terminates TLS, processes the request, and forwards it to your
+deployment"*, routing by **anycast** to the nearest POP — so **TLS terminates near the user regardless of
+which of the four regions the service runs in.** Source: <https://docs.railway.com/networking/edge-networking>.
+
+`[LIVE]` **2026-08-18** — `GET https://railway.com/.railway/pops` (unauthenticated, 200) returns the POP list
+as JSON, including `{"id":"sin1","name":"Singapore","region":"sin","status":"available"}` alongside `ams1`,
+`atl1`, `bcn1`, `ber1`, `bru1`, `cdg1`, `den1`, `hkg1`, … The docs label this endpoint *"provided as-is,
+without any support, and the response format may change without notice"* — **so do not build code against
+its shape.** It is cited here only as evidence that a Singapore POP exists.
+
+### 🚨 `[DOC — NEGATIVE RESULT]` Railway's `X-Forwarded-For` behaviour is **UNDOCUMENTED. Do not build on it.**
+
+**This is the most reusable line in this section. It exists to stop the next agent re-deriving it from forum
+posts, which is exactly how this becomes a security bug.**
+
+Railway's networking documentation (<https://docs.railway.com/networking/edge-networking>) describes anycast
+routing, TLS termination, the request flow, and the `X-Railway-Edge` / `X-Railway-Upstream-Zone` headers.
+**It does not mention `X-Forwarded-For`, `X-Real-IP` or `X-Envoy-External-Address` at all** — verified by
+grepping the rendered page on 2026-08-18: zero matches for any of the three. No other page on
+`docs.railway.com` documents it either.
+
+**The only sources that address it are community Help Station threads, and they contradict each other:**
+
+- one asserts Railway **strips** `X-Forwarded-For` at the edge —
+  <https://station.railway.com/questions/edge-proxy-x-forwarded-for-and-x-real-ip-c5a50049>
+- another asserts Railway **appends** the client IP, so *"only the rightmost value is trustworthy"* —
+  <https://station.railway.com/questions/security-critical-questions-on-edge-prox-8fddd775>
+
+Both cannot be true; neither is first-party; the Help Station is not documentation.
+
+**Consequence, already ruled on in #246 and binding:** `TRUST_PROXY_HEADERS` stays **unset (false)**.
+`getClientKey()` reads the **leftmost** `X-Forwarded-For` entry
+(`const firstIp = forwardedFor?.split(",")[0]?.trim();`). If Railway *appends*, that leftmost value is
+entirely attacker-supplied and setting the flag `true` would hand an attacker a **complete bypass of the
+per-client PIN lockout**. The failure mode of leaving it `false` is merely a shared rate-limit key on an
+internal staff tool.
+
+**If this is ever resolved empirically, the fix is to rewrite `getClientKey()` to read the RIGHTMOST entry —
+NOT to flip the flag.** Record the empirical answer here as `[LIVE]` when it exists.
+
+### `[DOC]` `preDeployCommand` semantics
+
+> *"The command to run before starting the container."*
+> Pre-deploy commands *"execute between building and deploying your application, handling tasks like database
+> migrations or data seeding before your application runs."*
+> **"If your command fails, it will not be retried and the deployment will not proceed."**
+
+Sources: <https://docs.railway.com/guides/pre-deploy-command>, <https://docs.railway.com/reference/config-as-code>
+
+**Why this sentence matters and must not be paraphrased away:** it is the entire safety argument for running
+`db:migrate` as a pre-deploy step. A failed migration **blocks the release** rather than shipping application
+code against an un-migrated database. Note the corollary — *no retry* — so a migration that fails on a
+transient network blip fails the whole deploy. That is the intended trade (see also TDD OR-25: no retry,
+confirmed 2026-08-06). **Do not add retry wrapping to make it "more robust"; that removes the guarantee.**
+
+### `[DOC]` CI deploy — `RAILWAY_TOKEN` + `railway up --detach`
+
+> *"Set `RAILWAY_TOKEN` for project-level actions"*
+
+then `railway up`; `--detach` deploys **without streaming build logs** (so the CI step returns instead of
+tailing), and `-s, --service` targets a specific service.
+Source: <https://docs.railway.com/guides/cli>
+
+**`RAILWAY_TOKEN` (project-scoped) is the correct one for CI — not `RAILWAY_API_TOKEN`,** which is
+account-level and grants more privilege than a deploy step needs.
+
+### `[DOC]` Dockerfile auto-detection and `ARG` build variables
+
+Railway builds from a `Dockerfile` at the **source root automatically**; `RAILWAY_DOCKERFILE_PATH` overrides
+the path. **Build-time variables must be declared with `ARG` in the stage that uses them** — a Railway service
+variable is not visible to a build stage that has not declared it.
+Source: <https://docs.railway.com/guides/dockerfiles>
+
+Relevant to this repo: the root `Dockerfile` already declares `ARG APP_SESSION_SECRET`,
+`ARG YT_DLP_VERSION`, `ARG TARGETARCH` and `ARG NODE_VERSION`.
+
+### `[DOC]` Serverless / app sleeping
+
+Off by default, toggled per service under *service settings → Deploy → Serverless*.
+Source: <https://docs.railway.com/guides/optimize-usage>
+
+---
+
+## Turso
+
+### `[DOC]` Database locations — and the honest caveat about this list
+
+`GET https://api.turso.tech/v1/locations` — **requires** `Authorization: Bearer <platform API token>`.
+Source: <https://docs.turso.tech/api-reference/locations/list>
+
+| Code | Location |
+|---|---|
+| `aws-ap-northeast-1` | Tokyo |
+| `aws-ap-south-1` | Mumbai |
+| `aws-eu-west-1` | Ireland |
+| `aws-us-east-1` | Virginia |
+| `aws-us-east-2` | Ohio |
+| `aws-us-west-2` | Oregon |
+
+**`[DOC]`, NOT `[LIVE]` — and the distinction is real here.** These six codes come from the **rendered example
+response** on that page. The page's OpenAPI schema defines the payload only as *"a mapping of location codes
+to location names"* — **it does not assert that the example is the complete set.**
+
+**Attempted live confirmation on 2026-08-18: BLOCKED.**
+- Unauthenticated `GET https://api.turso.tech/v1/locations` → **HTTP 401**,
+  `{"error":"token contains an invalid number of segments"}`.
+- No Turso platform API token is available to an agent: `.env` / `.env.local` have `TURSO_AUTH_TOKEN=`
+  **empty** and `TURSO_DATABASE_URL=file:./my-content.db`. No `turso` CLI is installed.
+- Minting a platform token is an **owner action**. Not fabricated, not guessed. **When the owner mints one,
+  re-run the call and upgrade this table to `[LIVE]`.**
+
+**What is `[AWS]`, not Fly.** These are AWS regions. TDD §11.2a's *"Turso runs on Fly's infrastructure"* was
+true of **legacy** Turso (~30 Fly city-coded locations) and is **stale** for anything provisioned today. See
+TDD §11.2c.
+
+### `[LIVE]` Closest region — **2026-08-18, from the owner's own network**
+
+`GET https://region.turso.io` — **unauthenticated**, documented at
+<https://docs.turso.tech/api-reference/locations/closest-region>. Response fields: `server` (*"the location
+code for the server responding"*) and `client` (*"the location code for the client request"*).
+
+Captured three times, identical each time:
+
+```json
+{"server": "aws-ap-northeast-1", "client": "sin"}
+```
+
+**This is Turso answering the region question directly:** it classifies this client as **Singapore** and names
+**Tokyo** as the closest location it has. It independently corroborates that **there is no SE-Asia Turso
+location**, without needing the authenticated list above.
+
+`[LIVE]` **Side observation, recorded so it is not mistaken for a contradiction:** the response headers of
+this endpoint are `server: Fly/d778e1ff4`, `via: 2 fly.io`, `fly-request-id: …-sin`. **Parts of Turso's
+control plane are still Fly-hosted.** That does **not** mean databases are — the selectable database
+locations are AWS regions. Do not "correct" TDD §11.2c on the strength of this header.
+
+### `[DOC]` Embedded replicas — how they actually behave
+
+Source: <https://docs.turso.tech/features/embedded-replicas/introduction>
+
+- **Writes are NOT local.** *"Writes are sent to the remote primary database"* (the `syncUrl` target). An
+  `offline: true` mode exists for local writes; that is a different feature.
+- **Read-your-writes:** the replica that issued a write *"will always be able to see the new data right away,
+  even if it never calls `sync()`."*
+- **Cross-instance staleness:** **other** replicas see it *"when they call `sync()`, or at the next sync
+  period."* Eventual consistency between instances, bounded by `syncInterval`.
+- **Filesystem:** requires a real local file path. *"Not suitable for serverless environments without
+  persistent filesystems."* *"Removing local files causes the replica to re-sync from scratch."*
+- *"Do not open the local database while the embedded replica is syncing. This can lead to data corruption."*
+- Minimum sync unit is one 4kB frame, so a 1-byte write still syncs as 4kB.
+
+### `[LIVE]` `@libsql/client` — which transport a config actually selects (code read, 2026-08-18)
+
+`@libsql/client@0.17.4` is installed. `node_modules/@libsql/client/lib-esm/node.js:13-23` dispatches on the
+URL scheme:
+
+| `url` scheme | Client used | Native addon needed? |
+|---|---|---|
+| `https:` / `http:` | `./http.js` (hrana over HTTP) | **No** — pure JS |
+| `wss:` / `ws:` | `./ws.js` | **No** — pure JS |
+| anything else (incl. `file:`, and `libsql:` after expansion) | `./sqlite3.js` | **YES** |
+
+`sqlite3.js` constructs `new Database(path, {syncUrl, syncPeriod, readYourWrites, offline, …})` from the
+**native `libsql` package** (`libsql@0.5.29`), which resolves a per-platform binary from its
+`optionalDependencies` (`@libsql/linux-x64-gnu`, `@libsql/linux-arm64-gnu`, `@libsql/darwin-arm64`, …). Only
+`@libsql/darwin-arm64` is present in the local macOS `node_modules`.
+
+**Consequence for this repo, and it is the deciding one:** `lib/server/db.ts` today does
+`createClient({url: process.env.TURSO_DATABASE_URL, authToken})`. With a `libsql://…turso.io` URL that takes
+the **pure-JS HTTP path** — no native addon in the production image at all. Switching to embedded replicas
+(`url: "file:…"`, `syncUrl: …`) would newly require a **native `.node` binary to survive Next.js
+`output: "standalone"` file tracing**, which is **UNVERIFIED**. See TDD §11.2c C3 for the
+don't-adopt recommendation.
+
+`sqlite3.js` also rejects in-memory + `syncUrl`: *"Embedded replica must use file for local db"*.
+
+---
+
+## What this section deliberately does NOT claim
+
+- That the Turso location list is complete. It is a doc example; the live call is **blocked on an owner-minted
+  platform token**.
+- Any Railway `X-Forwarded-For` behaviour whatsoever. **Undocumented is the finding.**
+- Any measured latency number. The Singapore↔Tokyo (~70ms) and Singapore↔Virginia (~230ms) figures used in
+  TDD §11.2c are **conventional estimates, not measurements taken here.** They are directionally reliable and
+  the decision does not turn on their precision — but they are not `[LIVE]` and must not be cited as such.
 

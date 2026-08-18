@@ -1453,6 +1453,12 @@ underneath — it meters RAM at **$10/GB/mo**, vCPU at **$20/vCPU/mo**, egress a
 at our two-small-services shape we are plausibly inside the included $5 most months. But if the worker is
 later scaled to 1GB+ and run 24/7, the bill moves. **Recorded so "flat" is not later read as "capped".**
 
+> ⚠️ **TWO CLAIMS BELOW ARE SUPERSEDED BY §11.2c (2026-08-18).** (1) *"Turso runs on Fly's infrastructure"* —
+> Turso Cloud's selectable database locations are **AWS regions**, not Fly POPs. (2) The embedded-replica
+> paragraph describes replicas as the mitigation *for the queue*; that is **backwards** — replicas help the
+> read-heavy analyses pages and actively hurt a polling queue. The paragraph is **kept unedited** so the
+> amendment can be read against what it corrects. **§11.2c is the version in force for both.**
+
 **What is genuinely lost — the Turso co-location tiebreaker.** §11.2's third criterion broke a near-tie on the
 fact that **Turso runs on Fly's infrastructure**, so `primary_region` co-location was a one-line setting. On
 Railway that is gone: **every queue read becomes a cross-provider hop over the public internet.** Stated
@@ -1487,6 +1493,91 @@ tech lead's stated honest cost of choosing Fly was that *"Railway would be faste
 it is a real benefit now that it is the chosen path**, particularly given OR-17 puts deployment after 3C, when
 the priority is getting staff onto the tool quickly. **This is not a consolation prize invented after the
 fact; it is the same sentence, unchanged, now on the other side of the ledger.**
+
+### 11.2c **CORRECTION (2026-08-18) — Turso is on AWS, not Fly; and the region pair is Singapore + Tokyo**
+
+Amends §11.2a. Nothing above is deleted; the two claims it corrects are flagged in place.
+
+#### C1. "Turso runs on Fly's infrastructure" — **no longer true of the thing the decision turned on**
+
+§11.2a's tiebreaker assumed a Turso database is provisioned into a **Fly region**, so `primary_region`
+co-location with a Fly app was one setting. **Turso Cloud's selectable database locations are AWS regions**
+(`aws-us-east-1`, `aws-us-east-2`, `aws-us-west-2`, `aws-eu-west-1`, `aws-ap-northeast-1`, `aws-ap-south-1`)
+— [docs.turso.tech/api-reference/locations/list](https://docs.turso.tech/api-reference/locations/list).
+There are no Fly city codes in that list.
+
+**Two precisions, so this is not overcorrected into a different false claim:**
+
+1. The original claim was **true of legacy Turso**, which ran on Fly with ~30 city-coded locations. Turso
+   migrated database hosting to AWS. §11.2a is stale, not fabricated.
+2. **Parts of Turso's control plane are still Fly-hosted.** `https://region.turso.io` answers with
+   `server: Fly/…` and `via: 2 fly.io` response headers (live capture, 2026-08-18). That is a helper
+   endpoint, not where a database lives. **The operative claim — that co-location was a Fly-region
+   setting — is the dead one.**
+
+**What survives §11.2a unchanged:** cross-provider is still a hop, and choosing the region pair is still a
+deploy-ticket checklist item rather than an afterthought. Only the *shape* of co-location changes: it means
+"nearest AWS region to the Railway region", and for the region we are actually deploying to there is **no
+same-metro pair at all**.
+
+#### C2. The region pair — **Railway `asia-southeast1-eqsg3a` (Singapore) + Turso `aws-ap-northeast-1` (Tokyo)**
+
+§11.2a assumed same-metro co-location would be available. **For this deployment it is not, and chasing it
+would be the wrong trade.** The users are in SE Asia.
+
+**Live confirmation, not inference.** `https://region.turso.io` — Turso's own documented, unauthenticated
+"closest region" endpoint ([docs](https://docs.turso.tech/api-reference/locations/closest-region)) — queried
+from the owner's network returns:
+
+```json
+{"server": "aws-ap-northeast-1", "client": "sin"}
+```
+
+Turso classifies this client as **Singapore** and names **Tokyo** as the closest location it has. That is
+Turso answering the question directly, and it settles that there is no SE-Asia Turso location.
+
+**Why the user's hop is the one worth saving.** Either pair eats one long hop; the choice is who eats it.
+
+- **Railway US-East + Turso Virginia:** DB hop ~0ms, but **every user-facing HTTP request** crosses the
+  Pacific (Singapore→Virginia ≈ 230ms RTT). A single page interaction here is not one request — it is the
+  SSR document, then the client-side analyses fetch, then N image-proxy requests. Those are sequential and
+  user-visible.
+- **Railway Singapore + Turso Tokyo:** user→app is local (~5–15ms), app→DB ≈ 70ms — **~3x smaller**, paid
+  server-side, and already partly parallelised in code (`getAnalysesList` issues its list and count queries
+  under one `Promise.all`, `lib/server/db.ts`).
+
+**One honest qualifier on the "user-facing hops multiply" argument.** Railway terminates TLS at the **nearest
+anycast edge POP**, not at the deployment region, and Railway operates a Singapore POP (`sin1`, confirmed live
+at `https://railway.com/.railway/pops`). So the TLS handshake is *already* fast regardless of deployment
+region — the US-East penalty is roughly **1x RTT per request**, not the 3–4x a naive
+handshake-plus-request model would predict
+([docs.railway.com/networking/edge-networking](https://docs.railway.com/networking/edge-networking):
+*"The edge proxy terminates TLS, processes the request, and forwards it to your deployment"*). **The
+conclusion is unchanged** — 1x of 230ms on every one of several sequential user-facing requests still beats
+70ms on one or two batched server-side ones — but the margin is smaller than the intuitive argument suggests
+and is recorded that way.
+
+**Decision: Railway `asia-southeast1-eqsg3a` + Turso `aws-ap-northeast-1`.** Recorded in ticket #246.
+
+#### C3. Embedded replicas — **do NOT adopt. §11.2a has the use case backwards.**
+
+§11.2a names embedded replicas (`syncUrl` / `syncInterval` / `readYourWrites`) as *"a real mitigation
+available if it does bite"* for the **queue's** polling. Checked against Turso's docs and this codebase, that
+is the one workload replicas are **worst** for.
+
+| Point | Finding |
+|---|---|
+| **Writes** | *"Writes are sent to the remote primary database"* ([embedded replicas](https://docs.turso.tech/features/embedded-replicas/introduction)). Replicas do **not** make writes local. The write hop is unchanged. |
+| **Cross-instance staleness** | The writing replica gets read-your-writes; **other** replicas see the data *"when they call `sync()`, or at the next sync period"*. Two Railway services (web + the 3A worker) each hold their **own** replica. |
+| **Why that breaks the queue** | The queue's freshness requirement is the *whole point* of a poll. A worker reading a replica would not see a newly-enqueued job until its next sync — trading a **70ms** latency tax for a **`syncInterval`-second** one. Strictly worse. |
+| **What it would actually help** | The read-heavy analyses pages (`getAnalysesList`, `getAnalysisDetail`), which tolerate seconds-old data. That is a real but *not currently painful* win. |
+| **New runtime risk** | Today `createClient({url: "libsql://…"})` routes to the **HTTP/hrana** client — pure JS (`node_modules/@libsql/client/lib-esm/node.js:13-23`). A `file:` + `syncUrl` config routes to the **sqlite3** client, which loads the **native `libsql` addon** and a per-platform binary (`@libsql/linux-x64-gnu`). Whether `output: "standalone"` traces a `.node` binary into the runner image is **unverified**. Adopting replicas would put an untested native-binding dependency into the first-ever production deploy. |
+| **Filesystem** | Works without a volume — the runner stage's `/app` is owned by the `nextjs` user. §11.2a's *"requires a Railway volume"* is an **overstatement**: a volume is an optimisation (without one the replica re-syncs from scratch on every restart, since *"removing local files causes the replica to re-sync from scratch"*), not a prerequisite. |
+| **Interaction with #244** | **None.** #244's guard reads the `TURSO_DATABASE_URL` **env var**, which under a replica config becomes `syncUrl` and is still a `libsql://` value. The guard passes unchanged. **#244 needs no edit.** |
+
+**Recommendation: don't adopt, and don't adopt it *for the queue* if it is ever revisited.** If read latency
+on the analyses pages later becomes the measured complaint, replicas are the right tool — on the **web**
+service only, with the native-binding trace verified first. The queue is not the case for them.
 
 ### 11.2b **Can Railway actually do what 3A needs? — verified against Railway's own docs. YES, no blockers.**
 
