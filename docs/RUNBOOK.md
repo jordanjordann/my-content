@@ -133,7 +133,6 @@ Full set actually read by the code:
 | `PROFILE_TTL_DAYS` | Profile cache TTL (default 7) | No |
 | `MAX_VIDEO_BYTES` | Download size cap | No |
 | `MAX_IMAGE_PROXY_BYTES`, `IMAGE_PROXY_CACHE_DIR`, `IMAGE_PROXY_CACHE_TTL_DAYS` | Image proxy | No |
-| `OLLAMA_MODEL` | Optional local model | No |
 
 **Secrets note:** the ScrapeCreators key was pasted in plaintext in an earlier chat session —
 rotate it.
@@ -164,7 +163,7 @@ consumes.
 |---|---|
 | `IMAGE_PROXY_CACHE_DIR` | Defaults to `os.tmpdir()/image-proxy-cache` (`lib/server/imageProxyCache/constants.ts:4-5`) and self-creates (`diskCache.ts:69`). **No volume needed** — a container's `/tmp` is writable. Two things to note, not fix: the cache is ephemeral across redeploys (fine, it's a cache), and `diskCache.ts:61` documents unbounded disk growth, which matters more on metered container disk than on a laptop. |
 | `PIN_*` / `PIN_GLOBAL_*` rate-limit vars | All optional; **an invalid value throws at import**. Leave unset in production. |
-| `MAX_VIDEO_BYTES`, `MAX_IMAGE_PROXY_BYTES`, `PROFILE_TTL_DAYS`, `SCRAPECREATORS_BASE_URL`, `PERFORMANCE_*`, `OLLAMA_MODEL` | All have code defaults. |
+| `MAX_VIDEO_BYTES`, `MAX_IMAGE_PROXY_BYTES`, `PROFILE_TTL_DAYS`, `SCRAPECREATORS_BASE_URL`, `PERFORMANCE_*` | All have code defaults. `OLLAMA_MODEL` was listed here — removed by #243, which deletes Ollama entirely. |
 
 **Needed for function, not for boot (read lazily, no import-time throw):** `GEMINI_API_KEY`
 (`gemini/upload.ts:4`, `generate.ts:6`), `SCRAPECREATORS_API_KEY` (`scrapecreators/client.ts:67`).

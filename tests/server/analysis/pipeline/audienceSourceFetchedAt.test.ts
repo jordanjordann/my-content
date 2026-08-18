@@ -12,7 +12,7 @@ import type { Client } from "@libsql/client";
  * completed analysis cannot recover how stale its own denominator was
  * (R-13.3.2/R-13.4.5). This is an end-to-end test against a REAL sqlite file
  * (same pattern as `computeBlock.test.ts`/`baseline.test.ts`) with only the
- * network-facing collaborators (fetcher, Gemini, media, ollama, fingerprint)
+ * network-facing collaborators (fetcher, Gemini, media, fingerprint)
  * mocked — `db` and `profiles` are real, so the assertion is against actual
  * persisted rows, not a mock's recorded call.
  */
@@ -87,6 +87,7 @@ beforeEach(async () => {
 
   vi.doMock("@/lib/server/analysis/gemini", () => ({
     analyzeContent: vi.fn().mockResolvedValue({ text: "{}", raw: "{}" }),
+    summarizeCaptionToTitle: vi.fn().mockResolvedValue("Generated Title"),
   }));
 
   vi.doMock("@/lib/server/analysis/media", () => ({
@@ -112,10 +113,6 @@ beforeEach(async () => {
     }),
   }));
 
-  vi.doMock("@/lib/server/ollama", () => ({
-    summarizeCaptionToTitle: vi.fn().mockResolvedValue("Generated Title"),
-  }));
-
   vi.doMock("@/lib/server/fingerprint", () => ({
     recomputeFingerprint: vi.fn().mockResolvedValue(undefined),
   }));
@@ -135,7 +132,6 @@ afterEach(() => {
   vi.doUnmock("@/lib/server/analysis/media");
   vi.doUnmock("@/lib/server/analysis/prompts");
   vi.doUnmock("@/lib/server/analysis/parser");
-  vi.doUnmock("@/lib/server/ollama");
   vi.doUnmock("@/lib/server/fingerprint");
   for (const suffix of ["", "-wal", "-shm", "-journal"]) {
     const file = `${dbPath}${suffix}`;
