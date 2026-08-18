@@ -2019,10 +2019,34 @@ Source: <https://docs.railway.com/guides/optimize-usage>
 
 ## Turso
 
-### `[DOC]` Database locations — and the honest caveat about this list
+### `[LIVE]` Database locations — **UPGRADED FROM `[DOC]` ON 2026-08-18. The block is cleared.**
 
-`GET https://api.turso.tech/v1/locations` — **requires** `Authorization: Bearer <platform API token>`.
-Source: <https://docs.turso.tech/api-reference/locations/list>
+**This table was `[DOC]` and is now `[LIVE]`.** The previous session recorded the authenticated list as
+blocked on an owner-minted platform token. **It is no longer blocked, and the reason is worth recording: the
+token was never the only route.** The owner has the **Turso CLI installed at `~/.turso/turso`** (v1.0.32,
+**not on `PATH`** — `which turso` fails, which is how the previous session concluded it was absent) and it is
+**already authenticated** (`turso auth whoami` → `jordanathaa`). The CLI carries its own platform credential,
+so `turso db locations` is an authenticated live read of the same control plane the REST endpoint serves.
+
+```
+$ ~/.turso/turso db locations
+ID↓                 LOCATION
+aws-ap-northeast-1  AWS AP NorthEast (Tokyo)  [default]
+aws-ap-south-1      AWS AP South (Mumbai)
+aws-eu-west-1       AWS EU West (Ireland)
+aws-us-east-1       AWS US East (Virginia)
+aws-us-east-2       AWS US East (Ohio)
+aws-us-west-2       AWS US West (Oregon)
+```
+
+**Result: exactly six, and they match the documented example set precisely.** The `[DOC]` caveat below — that
+the six might be an incomplete example — is now **resolved in the docs' favour**. The list is complete.
+
+**Also `[LIVE]`: Tokyo is marked `[default]`** for this account, i.e. the CLI's own closest-location pick
+agrees with the `region.turso.io` capture and with the §11.2c region decision. Independent confirmation.
+
+REST equivalent: `GET https://api.turso.tech/v1/locations` — **requires**
+`Authorization: Bearer <platform API token>`. Source: <https://docs.turso.tech/api-reference/locations/list>
 
 | Code | Location |
 |---|---|
@@ -2033,17 +2057,25 @@ Source: <https://docs.turso.tech/api-reference/locations/list>
 | `aws-us-east-2` | Ohio |
 | `aws-us-west-2` | Oregon |
 
-**`[DOC]`, NOT `[LIVE]` — and the distinction is real here.** These six codes come from the **rendered example
-response** on that page. The page's OpenAPI schema defines the payload only as *"a mapping of location codes
-to location names"* — **it does not assert that the example is the complete set.**
+<details>
+<summary><strong>Superseded: the original <code>[DOC]</code>-only caveat and the BLOCKED note (kept for review)</strong></summary>
 
-**Attempted live confirmation on 2026-08-18: BLOCKED.**
-- Unauthenticated `GET https://api.turso.tech/v1/locations` → **HTTP 401**,
-  `{"error":"token contains an invalid number of segments"}`.
-- No Turso platform API token is available to an agent: `.env` / `.env.local` have `TURSO_AUTH_TOKEN=`
-  **empty** and `TURSO_DATABASE_URL=file:./my-content.db`. No `turso` CLI is installed.
-- Minting a platform token is an **owner action**. Not fabricated, not guessed. **When the owner mints one,
-  re-run the call and upgrade this table to `[LIVE]`.**
+> **`[DOC]`, NOT `[LIVE]` — and the distinction is real here.** These six codes come from the **rendered
+> example response** on that page. The page's OpenAPI schema defines the payload only as *"a mapping of
+> location codes to location names"* — **it does not assert that the example is the complete set.**
+>
+> **Attempted live confirmation on 2026-08-18: BLOCKED.**
+> - Unauthenticated `GET https://api.turso.tech/v1/locations` → **HTTP 401**,
+>   `{"error":"token contains an invalid number of segments"}`.
+> - No Turso platform API token is available to an agent: `.env` / `.env.local` have `TURSO_AUTH_TOKEN=`
+>   **empty** and `TURSO_DATABASE_URL=file:./my-content.db`. No `turso` CLI is installed.
+> - Minting a platform token is an **owner action**.
+
+**Why it was wrong, and the lesson:** the `TURSO_AUTH_TOKEN` env var is a **database** token — it was empty
+and that finding was correct, but it was never the credential this call needed. The **CLI's own stored
+platform login** was the credential, and it existed the whole time. `which turso` returning nothing was
+treated as "no CLI"; the binary was simply outside `PATH` at `~/.turso/turso`. **Check `~/.turso/`,
+`/opt/homebrew/bin` and `/usr/local/bin` before concluding a vendor CLI is absent.**</details>
 
 **What is `[AWS]`, not Fly.** These are AWS regions. TDD §11.2a's *"Turso runs on Fly's infrastructure"* was
 true of **legacy** Turso (~30 Fly city-coded locations) and is **stale** for anything provisioned today. See
@@ -2110,12 +2142,82 @@ don't-adopt recommendation.
 
 `sqlite3.js` also rejects in-memory + `syncUrl`: *"Embedded replica must use file for local db"*.
 
+### Importing an existing SQLite file into Turso — **two different commands, and they are not equivalent**
+
+**Added 2026-08-18 for #246. Nothing here was executed — see the "does NOT claim" list.**
+
+There are **two** ways in, and the CLI help proves they take different flags:
+
+| | `turso db create <name> --from-file <path>` | `turso db import <path>` |
+|---|---|---|
+| Names the DB | **You do** (positional arg) | **Derived from the filename** — not settable |
+| `--location` | **Yes** | **NO — flag does not exist** |
+| `--group` | Yes | Yes |
+| Documented size limit | **`[DOC]` "The file size is limited to 2GB."** | not documented |
+| Documented WAL requirement | not mentioned | **`[DOC]` "WAL journal mode enabled"** |
+
+`[CLI-HELP]` from `turso db create --help` / `turso db import --help`, CLI **v1.0.32**, captured 2026-08-18.
+`[DOC]` <https://docs.turso.tech/cli/db/create>, <https://docs.turso.tech/cli/db/import>.
+
+**Prefer `db create --from-file`.** It is the only one of the two that lets you set **both the database name
+and the location** in a single command, and location is a §11.2c-binding decision. `db import` picks the name
+off the filename and gets its location from the group — fine by luck if the group is already in the right
+region, but it is luck, not control.
+
+#### The WAL trap — `[DOC]` requirement vs `[LIVE]` local state
+
+`db import`'s docs require the source file to have *"WAL journal mode enabled"*. **The owner's
+`my-content.db` does not:**
+
+```
+$ sqlite3 'file:<copy>?mode=ro' 'PRAGMA journal_mode;'
+delete
+```
+
+`[LIVE]` 2026-08-18, read from a **copy**, `mode=ro`. `db create --from-file`'s docs do **not** state a WAL
+requirement — but since it is undocumented either way, **converting a copy to WAL first satisfies both paths
+and costs nothing.** Never convert the original: `PRAGMA journal_mode=WAL` is a **write** to the file header.
+
+#### `[LIVE]` The migration runner is safe against an imported, fully-populated `_migrations`
+
+`scripts/migrate.ts` gates **per file, by name**:
+
+```ts
+const existing = await db.execute({
+  sql: "SELECT name FROM _migrations WHERE name = ? LIMIT 1",
+  args: [file],
+});
+if (existing.rows.length > 0) continue;
+```
+
+`CREATE TABLE IF NOT EXISTS _migrations` runs first, so a pre-existing table is fine. An imported DB arrives
+with **all 13 rows** present, so **every migration is skipped and the pre-deploy step is a clean no-op.**
+
+**This does not contradict #246's "do not hand-run migrations" warning — read what that warning is about.** It
+warns against applying *some* migrations by hand, which leaves a **partially**-populated `_migrations`: the
+runner then re-runs the remainder against a schema that already has them, and non-idempotent DDL
+(`ALTER TABLE … ADD COLUMN`) errors. A **fully**-populated table is the opposite case and is the safe one.
+The distinguishing property is completeness, not provenance.
+
+#### `[LIVE]` The local DB's schema is byte-identical to what the 13 migrations produce
+
+Verified 2026-08-18 by building a fresh DB in `/tmp` from `migrations/001…013` and diffing `.schema` against a
+read-only copy of `my-content.db`. **The only difference is the `_migrations` table itself**, which the
+migration files do not create (the runner does). **Zero schema drift** — so an imported DB and a
+migrated-from-scratch DB reach the same schema by two routes.
+
 ---
 
 ## What this section deliberately does NOT claim
 
-- That the Turso location list is complete. It is a doc example; the live call is **blocked on an owner-minted
-  platform token**.
+- ~~That the Turso location list is complete.~~ **RESOLVED 2026-08-18** — the authenticated
+  `turso db locations` capture confirms exactly six, matching the doc example. This bullet no longer applies.
+- That `turso db import` / `--from-file` were **executed**. They were **not**. Every claim about them is
+  `[DOC]` or `[CLI-HELP]`. **No database was created, imported, modified or destroyed.** The end-to-end import
+  is unrun until the owner runs it.
+- Any Turso **plan/quota** figure. The 8 GiB free-tier storage number circulating in search results was
+  **not** confirmed against a first-party page in this session; `https://docs.turso.tech/limits` returns
+  **404**. Do not cite a quota from this file.
 - Any Railway `X-Forwarded-For` behaviour whatsoever. **Undocumented is the finding.**
 - Any measured latency number. The Singapore↔Tokyo (~70ms) and Singapore↔Virginia (~230ms) figures used in
   TDD §11.2c are **conventional estimates, not measurements taken here.** They are directionally reliable and
