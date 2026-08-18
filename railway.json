@@ -1,0 +1,8 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "deploy": {
+    "preDeployCommand": "npx tsx scripts/migrate.ts",
+    "healthcheckPath": "/auth/pin",
+    "restartPolicyType": "ON_FAILURE"
+  }
+}

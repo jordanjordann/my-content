@@ -175,6 +175,54 @@ command — both belong to the deploy ticket that follows this one (#246). The p
 for `TURSO_DATABASE_URL` / `APP_SESSION_SECRET` / `RESET_PIN` shipped in #244 (`instrumentation.ts`
 -> `lib/server/env/productionEnv.ts`); see the boot-blocking table above.
 
+### 3b. Railway config-as-code — pre-deploy migrations + healthcheck (issue #246)
+
+`railway.json` (repo root) is the config-as-code file
+(https://docs.railway.com/reference/config-as-code):
+
+```json
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "deploy": {
+    "preDeployCommand": "npx tsx scripts/migrate.ts",
+    "healthcheckPath": "/auth/pin",
+    "restartPolicyType": "ON_FAILURE"
+  }
+}
+```
+
+- **`preDeployCommand`** runs `scripts/migrate.ts` between build and container start. Per Railway's
+  docs, if it exits non-zero it "will not be retried and the deployment will not proceed" — a broken
+  migration blocks the release instead of shipping code against an un-migrated schema. Verified
+  locally against the built `Dockerfile` runner image (not just assumed from the `package.json`
+  script name): first run against an empty file DB applied all 13 migrations and exited 0; a second
+  run against the now-migrated DB printed nothing and exited 0 (the no-op case — this is what the
+  imported production DB will do on first deploy, see below); a deliberately broken migration file
+  exited 1. The image already carries everything the command needs
+  (`migrations/`, `scripts/migrate.ts`, `lib/server/db.ts` as source, and `tsx@4.23.1` installed
+  globally) — shipped in #241's `Dockerfile`, not added here.
+- **`healthcheckPath`** is `/auth/pin` — public, returns 200, exercises a real render path. There is
+  no `/api/health` and none is being added (owner-declined).
+- **Precedence, per the same doc:** "Configuration defined in code will always override values from
+  the dashboard," and dashboard values are left untouched, not overwritten — so a value set in
+  `railway.json` wins for every deploy, but the dashboard field still shows its old value until
+  someone edits it there too. No dashboard click is required for `railway.json` to take effect —
+  Railway looks for the file automatically on the next deploy.
+- **On first deploy against the imported production DB:** `_migrations` already has all 13 rows
+  (`001_initial.sql` … `013_reach_unavailable_reason.sql`), so the migration runner's per-file
+  `SELECT ... WHERE name = ?` gate skips every one of them. **An empty pre-deploy log on first
+  deploy is success, not a misconfiguration** — do not treat it as evidence the command didn't run.
+  The import procedure that produced this state is recorded in
+  `.claude/context/verified-facts.md` (issue #246 / PR #249): the production Turso DB (`my-content`,
+  `aws-ap-northeast-1`) was created with `turso db create --from-file` from a `VACUUM INTO` snapshot
+  of the owner's local `my-content.db`, converted to WAL and integrity-checked before upload, never
+  from a from-scratch empty database.
+
+Owner dashboard actions this ticket does **not** perform (infrastructure is live; no agent may
+change it): confirming the Railway service actually redeployed with `railway.json` applied (check
+the deployment's settings show "config as code" as the source, per the doc above), and rotating the
+imported PIN after first successful login (the imported DB carries the owner's dev-era PIN hash).
+
 ---
 
 ## 4. Database
