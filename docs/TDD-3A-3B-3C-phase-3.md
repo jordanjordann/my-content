@@ -1874,6 +1874,28 @@ Applied:
 | `performanceScore`, `verdict`, `drivers[]`, `confidence`, `provisional` | **FROZEN** | Judgements. OR-22: an analysis runs once and is stored. |
 | `tier2.sampleSize` **when `multiplier == null` (`COLD_START`)** | **LIVE** | Not a measurement of the post at all. There is no multiplier and no verdict conditioned on it. It answers "how far is your library from unlocking this comparison", and **R-14.2.5** mandates the `builds as you analyse more` reassurance while **R-C4** defines the state as *temporary*. A frozen value here contradicts the state's own approved definition. |
 
+> **⚠️ Amendment, 2026-08-18 (tech lead) — the CONDITION on the last row above is wrong. Its frozen/live
+> ruling is not.** The row equates `multiplier == null` with `COLD_START`. That equation does not hold, and
+> has not held since per-post exclusion (`metricFor()`) shipped. `multiplier == null` is **two** states, not
+> one — see the `BaselineResult` union in `lib/server/analysis/performance/types.ts`, whose own doc comment
+> says it outright: *"A consumer MUST switch on `state`; treating `multiplier === null` alone as 'cold start'
+> is exactly the bug this type closes off."*
+>
+> - `COLD_START` — `median` is **absent**. Fewer than `BASELINE_MIN_SAMPLE` comparable priors exist. This is
+>   the only state in which "N of `BASELINE_MIN_SAMPLE` posts" framing is accurate, and the only state the
+>   row above actually describes.
+> - `NOT_COMPARABLE` — `median` is **present** (a full baseline genuinely exists), but no multiplier could be
+>   produced for *this* post (`POST_METRIC_UNRESOLVED` or `MEDIAN_ZERO`). Nothing is being waited for, so
+>   there is no progress to report and R-14.2.5's "resolves on its own" reassurance is false here.
+>
+> **Read the row's condition as `COLD_START` only** — i.e. `multiplier == null AND median == null`. The LIVE
+> ruling, its reasoning, and D8 are unchanged and are not reopened. The corresponding code defect (the read
+> model deriving cold start from `perfMultiplier == null` alone, and the FE therefore rendering `5 of 5 reels
+> / builds as you analyse more` on a full-baseline row) is tracked in issue #251.
+>
+> **Nothing above is deleted** — per this document's amend-in-place rule, the original row stands and is
+> corrected here.
+
 **The copy-side fix was unavailable and must not be re-proposed.** Changing the cell to admit the number is frozen would contradict R-14.2.5's mandated "resolves on its own" reassurance and R-C4's "temporary state" definition. Those two are settled; the code is what changes.
 
 **Consequential test note.** Existing D8 assertions — `tests/server/analysis/performance/readModel.test.ts:141`, `tests/api/analyses/route.test.ts:251` — legitimately need updating to carve out the cold-start progress count. Such an update is **not** a masked regression; it is this amendment landing. Any narrowing of a D8 test beyond that one field is.
