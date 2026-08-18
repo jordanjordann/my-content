@@ -1896,6 +1896,66 @@ Applied:
 > **Nothing above is deleted** — per this document's amend-in-place rule, the original row stands and is
 > corrected here.
 
+> **⚠️ Amendment, 2026-08-19 (tech lead) — owner ruling on [#252](https://github.com/jordanjordann/my-content/issues/252): `tier2.multiplier` is now LIVE when, and only when, it is stored `NULL`.**
+> The table above (as corrected by the 2026-08-18 amendment) made **only `tier2.sampleSize`** live. That was
+> an incomplete fix, and #252 showed why: a stored row whose multiplier is `NULL` could never gain one, because
+> nothing ever revisits stored `perf_*` values. So the cell counted upward toward a comparison that would
+> never arrive, and R-14.2.5's mandated `builds as you analyse more` reassurance was **unkeepable on every
+> stored row**. §14.8a's own text forecloses the copy-side fix ("the code is what changes"); this amendment is
+> that change finishing, **not a new principle**.
+>
+> **Owner ruling, 2026-08-19, verbatim on the fallback:** *"we don't need to backfill, we can always remove the
+> old data."* Deleting rows is recorded as an owner-stated fallback **only**. It is **not** part of this design,
+> must not be designed around, and must not be proposed. See the cost note in #252 before ever considering it.
+>
+> **Add this row to the table above** (the existing rows are unchanged and are not reopened):
+>
+> | Field | Frozen or live | Why |
+> |---|---|---|
+> | `tier2.multiplier`, and `tier2.median`, **when the STORED `perf_multiplier IS NULL`** | **LIVE** | There is no stored multiplier, therefore no stored verdict was conditioned on one, therefore R-13.3.4's provenance constraint has nothing to protect. The same reasoning that made `sampleSize` live applies unchanged: a row with no multiplier is reporting progress toward a computation that has not happened yet. |
+>
+> **The freeze is NOT reversed. Three guarantees are preserved exactly:**
+>
+> 1. **A stored `MEASURED` multiplier is never recomputed.** The live path is gated on `row.perfMultiplier == null`,
+>    the identical guard #206 used for `sampleSize`. A row with a stored multiplier is untouched, and the
+>    "Ruled and NOT reopened" paragraph below stands in full.
+> 2. **No backfill. No recompute job. No write of any kind.** This is a read-time derivation only; stored
+>    history is never rewritten. D8's storage-level freeze is intact.
+> 3. **The live value is derived, per request, from the same canonical functions the write path uses**
+>    (`metricFor()`, `median()`, `denominatorForBucket()` in `baseline.ts`) — TR-1, one derivation, reused,
+>    never reimplemented.
+>
+> **Feasibility, verified against the code (this is why the ruling is implementable at ~zero cost).**
+> `fetchLiveEligibleComparatorIds()` **already computes each comparator's `metricFor()` value and discards it**
+> (`baseline.ts`, the `if (metric == null) continue;` branch) — it keeps only the id, to count it. Returning the
+> metric *values* alongside the ids costs **no extra query, no extra row, and no extra classification work**: it is
+> the same grouped, per-pool query #206 already issues, with the value retained instead of dropped. The median is
+> then the existing `median()` helper over a handful of numbers. **This is per-pool, not per-row — it is not an
+> N+1.** The row's own metric comes from columns already on `PerformanceBlockRow` (`perfReachValue`, `likeCount`,
+> `commentCount`), so it needs no new query and no migration, and it stays a **pure** derivation off frozen
+> storage — only the comparator pool is live.
+>
+> **The three-state resolution is unchanged; it is merely evaluated live.** Order of checks must match
+> `computeBaseline()` exactly: pool below `BASELINE_MIN_SAMPLE` → `COLD_START`; else own metric unresolved →
+> `NOT_COMPARABLE` / `POST_METRIC_UNRESOLVED`; else median `0` → `NOT_COMPARABLE` / `MEDIAN_ZERO`; else
+> `MEASURED`. **Self-exclusion applies to the median as well as to the count** (`computeBaseline()`'s
+> `excludeAnalysisId` rule) — the pool map must therefore carry ids alongside values so the row's own metric can
+> be dropped before the median is taken.
+>
+> **Two hazards the implementation must respect.** (a) `computeBaseline()` **throws** on a mixed-denominator
+> candidate set. That throw must **not** be ported onto the read path, where it would 500 the entire analyses
+> list; the read path degrades to "no live multiplier" instead. (b) This widens the #251 discriminator: after
+> this change, `NOT_COMPARABLE` is reachable from a row whose stored `median IS NULL`, so the state can no longer
+> be read off stored columns alone. #251's stored-column mapping table is correct **today** and is superseded on
+> that one row **by this amendment**, once both ship.
+>
+> **Consequence for D8, stated plainly.** The response for a `perf_multiplier IS NULL` row is not byte-stable
+> across two reads — now on `multiplier` and `median` as well as `sampleSize`. That is the same deliberate,
+> already-ruled exception #206 introduced, extended to its logical end, and it is **by design**. Any test that
+> asserts otherwise for a null-multiplier row needs the same carve-out the note below describes.
+>
+> **Nothing above is deleted** — per this document's amend-in-place rule.
+
 **The copy-side fix was unavailable and must not be re-proposed.** Changing the cell to admit the number is frozen would contradict R-14.2.5's mandated "resolves on its own" reassurance and R-C4's "temporary state" definition. Those two are settled; the code is what changes.
 
 **Consequential test note.** Existing D8 assertions — `tests/server/analysis/performance/readModel.test.ts:141`, `tests/api/analyses/route.test.ts:251` — legitimately need updating to carve out the cold-start progress count. Such an update is **not** a masked regression; it is this amendment landing. Any narrowing of a D8 test beyond that one field is.
