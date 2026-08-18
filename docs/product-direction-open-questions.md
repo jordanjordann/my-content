@@ -97,7 +97,7 @@ Next.js 16 App Router, single process. SQLite/libSQL (`file:./my-content.db`, Tu
 3. `fetchMetadata` — Instagram: 1 ScrapeCreators credit on `/v1/instagram/post?trim=false`, unwrap `data.xdt_shortcode_media`, map via `adapter.ts`. YouTube: two `yt-dlp` subprocess shell-outs.
 4. `resolveProfile` — cache-first on `profiles` (7-day TTL) → owner-hint from post payload (free) → second SC credit on `/v1/instagram/profile`. Failure is swallowed; `engagementRate = null`.
 5. `computeEngagementRate` = `(likes + comments) / followers`.
-6. Ollama (`llama3.1:8b`) generates an **Indonesian** title from the caption. Failure → falls back to raw caption.
+6. Gemini (`gemini-2.5-flash`, `lib/server/analysis/gemini/title.ts`) generates an **Indonesian** title from the caption (#243 — moved off Ollama). Failure → falls back to raw caption.
 7. Duration guard: `MAX_VIDEO_SECONDS = 900`.
 8. If `videoUrl`: stream-download to `/tmp` (SSRF-guarded, DNS-pinned, 500MB cap, 120s timeout) → `uploadToGemini` → `pollUntilReady` (up to 60s) → `analysis_mode='full_video'`. Otherwise `metadata_only`.
 9. Persist ~25 metadata columns.
@@ -254,7 +254,7 @@ Separately: should the UI label scores as opinion rather than fact?
 The evidence:
 
 - `system.ts` demands `Gunakan BAHASA INDONESIA untuk semua teks`.
-- `ollama.ts` generates Indonesian titles.
+- `lib/server/analysis/gemini/title.ts` generates Indonesian titles (#243 — moved off `ollama.ts`, deleted).
 - Every UI string is English ("New Analysis", "Analyses", "Pending").
 - `helpers.ts` `formatCount` hardcodes `toLocaleString("en-US")`, so Indonesian analysis text sits next to `12,345` instead of `12.345`.
 - No i18n layer, no locale setting, no language column.
@@ -357,7 +357,7 @@ Is this a tool for yourself, where cost is whatever you're willing to eat? Or so
 
 **Perspectives: Technical + Product (Product arrives at it via bulk ingestion; Design via progress UI, see Q3.3).**
 
-`maxDuration = 300`. Worst case for a **single** URL: SC fetch 30s (×3 retries = 90s) + Ollama (unbounded, local model, no timeout) + 500MB download at 120s + Gemini upload + `pollUntilReady` 60s + Gemini video analysis of a 15-minute video. And `/api/analyze` loops up to **10 URLs serially** through all of that. There is no realistic batch of 10 that completes in 300s.
+`maxDuration = 300`. Worst case for a **single** URL: SC fetch 30s (×3 retries = 90s) + Gemini title generation (15s timeout, #243) + 500MB download at 120s + Gemini upload + `pollUntilReady` 60s + Gemini video analysis of a 15-minute video. And `/api/analyze` loops up to **10 URLs serially** through all of that. There is no realistic batch of 10 that completes in 300s.
 
 On timeout: the HTTP connection dies, the Node process keeps running the loop, the client shows a generic error, and rows stay `pending` forever with **no reaper**. There is **no idempotency** — the user retries and the credits burn again.
 

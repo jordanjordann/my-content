@@ -1569,7 +1569,8 @@ that reads each variable:
 | `GEMINI_API_KEY`, `SCRAPECREATORS_API_KEY` | Read lazily (`gemini/upload.ts:4`, `generate.ts:6`, `scrapecreators/client.ts:67`); no import-time throw. | ✅ Required for function, as §11.3 said. Not boot-blocking. |
 | `RESET_PIN` | `.env.example:12-15` — when the literal string `"true"`, **every** `hasPinConfigured()` call wipes the PIN. | ⛔ **Must be absent in production.** An explicitly-empty value is the safe state. |
 | `PIN_*` rate-limit vars | `lib/server/auth/constants.ts` — all optional; **an invalid value throws at import**. | ✅ Leave unset. Setting them badly is a boot failure for no gain. |
-| `MAX_VIDEO_BYTES`, `MAX_IMAGE_PROXY_BYTES`, `PROFILE_TTL_DAYS`, `SCRAPECREATORS_BASE_URL`, `PERFORMANCE_*`, `OLLAMA_MODEL` | All have code defaults. | ✅ Optional. |
+| `MAX_VIDEO_BYTES`, `MAX_IMAGE_PROXY_BYTES`, `PROFILE_TTL_DAYS`, `SCRAPECREATORS_BASE_URL`, `PERFORMANCE_*` | All have code defaults. | ✅ Optional. |
+| ~~`OLLAMA_MODEL`~~ | Superseded — Ollama removed for good by #243 (caption→title generation moved to Gemini). No longer read anywhere. | N/A |
 
 #### C. **ffmpeg is not needed in the image.** §11.3 and §11.2b both name it; the code does not use it.
 

@@ -52,6 +52,7 @@ vi.mock("@/lib/server/analysis/downloader", () => ({
 
 vi.mock("@/lib/server/analysis/gemini", () => ({
   analyzeContent: vi.fn().mockResolvedValue({ text: "{}", raw: "{}" }),
+  summarizeCaptionToTitle: vi.fn().mockResolvedValue("Generated Title"),
 }));
 
 vi.mock("@/lib/server/analysis/media", () => ({
@@ -72,10 +73,6 @@ vi.mock("@/lib/server/analysis/prompts", () => ({
 
 vi.mock("@/lib/server/analysis/parser", () => ({
   parseContentAnalysis: () => ({ schemaVersion: 2, performance: { performanceScore: null, verdict: "", drivers: [] } }),
-}));
-
-vi.mock("@/lib/server/ollama", () => ({
-  summarizeCaptionToTitle: vi.fn().mockResolvedValue("Generated Title"),
 }));
 
 vi.mock("@/lib/server/profiles", () => ({
