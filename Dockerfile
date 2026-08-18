@@ -59,10 +59,27 @@ ENV PORT=3000
 # call is `-g --skip-download -f "best[height<=1080]"`, which prints a URL
 # and never reaches a muxing step (TDD §11.3a C).
 ARG YT_DLP_VERSION=2026.07.04
+# TARGETARCH: BuildKit sets this automatically to the image's target
+# platform arch (amd64 / arm64). yt-dlp's standalone Linux builds are
+# per-arch PyInstaller binaries (yt-dlp_linux is x86_64-only and will not
+# run on an arm64 image, e.g. a native build on Apple Silicon) — pick the
+# matching asset rather than hardcoding the amd64 one.
+#
+# --http1.1 --retry: GitHub's release-asset CDN has been observed resetting
+# streams mid-download from this build environment (curl error 18,
+# "transfer closed" / "HTTP/2 stream ... was not closed cleanly"). HTTP/1.1
+# plus retries makes the download reliable here.
+ARG TARGETARCH
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
-    && curl -fL -o /usr/local/bin/yt-dlp \
-      "https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}/yt-dlp_linux" \
+    && case "${TARGETARCH}" in \
+         amd64) YT_DLP_ASSET=yt-dlp_linux ;; \
+         arm64) YT_DLP_ASSET=yt-dlp_linux_aarch64 ;; \
+         *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+       esac \
+    && curl -fL --http1.1 --retry 5 --retry-all-errors --retry-delay 2 \
+      -o /usr/local/bin/yt-dlp \
+      "https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}/${YT_DLP_ASSET}" \
     && chmod a+rx /usr/local/bin/yt-dlp \
     && apt-get purge -y curl \
     && apt-get autoremove -y \
