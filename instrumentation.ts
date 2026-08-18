@@ -14,8 +14,6 @@ export async function register() {
     return;
   }
 
-  const { assertProductionEnv } = await import("./lib/server/env/productionEnv");
-
   // Verified against a real `docker run` (#244): a thrown/rejected `register()`
   // is logged by Next's standalone `server.js` ("Failed to prepare server" /
   // `unhandledRejection`) but does NOT terminate the process — the container
@@ -23,7 +21,13 @@ export async function register() {
   // exiting. That defeats the point of a boot guard (a platform healthcheck
   // would never go green, but nothing ever tells the platform to give up and
   // restart/roll back). Exit explicitly so the container actually stops.
+  //
+  // The dynamic `import` is inside this `try` on purpose: a failed module
+  // resolution (the #241 tracing failure mode) rejects exactly like a thrown
+  // `assertProductionEnv` and must hit the same `process.exit(1)`, not
+  // reject `register()` uncaught.
   try {
+    const { assertProductionEnv } = await import("./lib/server/env/productionEnv");
     assertProductionEnv();
   } catch (error) {
     console.error(error);

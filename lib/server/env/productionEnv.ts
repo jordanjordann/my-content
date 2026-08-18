@@ -30,8 +30,8 @@ export function assertProductionEnv(env: NodeJS.ProcessEnv = process.env): void 
     );
   } else if (turso.startsWith("file:")) {
     problems.push(
-      `TURSO_DATABASE_URL is set to a local file URL ("${turso}"). This is the ` +
-        "same bug as leaving it unset: writes go to the ephemeral container " +
+      "TURSO_DATABASE_URL is set to a local file URL. This is the same bug " +
+        "as leaving it unset: writes go to the ephemeral container " +
         "filesystem and are silently lost on the next redeploy.",
     );
   } else if (
@@ -39,8 +39,8 @@ export function assertProductionEnv(env: NodeJS.ProcessEnv = process.env): void 
     !env.TURSO_AUTH_TOKEN
   ) {
     problems.push(
-      `TURSO_AUTH_TOKEN is unset. TURSO_DATABASE_URL ("${turso}") is a remote ` +
-        "libSQL URL, which requires an auth token to connect.",
+      "TURSO_AUTH_TOKEN is unset. TURSO_DATABASE_URL is a remote libSQL " +
+        "URL, which requires an auth token to connect.",
     );
   }
 

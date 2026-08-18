@@ -53,6 +53,44 @@ describe("assertProductionEnv", () => {
     expect(() => assertProductionEnv(env)).toThrow(/TURSO_AUTH_TOKEN/);
   });
 
+  /**
+   * F1 (#244 review): Turso/libSQL URLs legitimately accept an embedded
+   * credential (`libsql://host?authToken=<token>`), and the
+   * TURSO_AUTH_TOKEN-unset branch below is precisely the one most likely to
+   * fire for an operator who embedded the token in the URL instead of
+   * setting TURSO_AUTH_TOKEN separately. Neither branch may interpolate the
+   * URL's value into the thrown message — only the variable name.
+   */
+  it("never interpolates the TURSO_DATABASE_URL value into the error message", () => {
+    const canaryToken = "SECRET-CANARY-TOKEN-DO-NOT-LEAK";
+    const withEmbeddedToken = {
+      ...VALID_PROD_ENV,
+      TURSO_DATABASE_URL: `libsql://my-content-prod.turso.io?authToken=${canaryToken}`,
+      TURSO_AUTH_TOKEN: undefined,
+    };
+    expect(() => assertProductionEnv(withEmbeddedToken)).toThrow(/TURSO_AUTH_TOKEN/);
+
+    let caught: unknown;
+    try {
+      assertProductionEnv(withEmbeddedToken);
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as Error).message).not.toContain(canaryToken);
+    expect((caught as Error).message).not.toContain(withEmbeddedToken.TURSO_DATABASE_URL);
+
+    const canaryFilePath = "./SECRET-CANARY-PATH-DO-NOT-LEAK.db";
+    const fileEnv = { ...VALID_PROD_ENV, TURSO_DATABASE_URL: `file:${canaryFilePath}` };
+    let fileCaught: unknown;
+    try {
+      assertProductionEnv(fileEnv);
+    } catch (error) {
+      fileCaught = error;
+    }
+    expect((fileCaught as Error).message).not.toContain(canaryFilePath);
+    expect((fileCaught as Error).message).not.toContain(fileEnv.TURSO_DATABASE_URL);
+  });
+
   it("throws when APP_SESSION_SECRET is unset", () => {
     const env = { ...VALID_PROD_ENV, APP_SESSION_SECRET: undefined };
     expect(() => assertProductionEnv(env)).toThrow(/APP_SESSION_SECRET/);
