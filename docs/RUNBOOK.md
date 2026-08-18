@@ -147,15 +147,15 @@ consumes.
 
 | Variable | Why |
 |---|---|
-| `APP_SESSION_SECRET` | `lib/server/auth/auth.ts:96-107` throws `"APP_SESSION_SECRET is required in production."` when unset under `NODE_ENV=production`. Also **required at `next build` time** for the same reason — the Dockerfile's builder stage sets a build-time dummy (`ARG APP_SESSION_SECRET=docker-build-not-a-real-secret`), never a real secret. Consumed by root `proxy.ts` (Next 16's rename of `middleware.ts`), which HMAC-gates every `/app` path. Changing it invalidates all live sessions. |
-| `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` | `lib/server/db.ts:3` falls back to `file:./my-content.db` with **no production guard**. Unset in a container, the app boots onto an ephemeral in-image file and loses every write on redeploy, silently. **Known gap, recorded here — a boot guard belongs to the Turso ticket, not this one.** |
+| `APP_SESSION_SECRET` | `lib/server/auth/auth.ts:96-107` throws `"APP_SESSION_SECRET is required in production."` when unset under `NODE_ENV=production` — but only lazily, the first time a session is signed/verified. As of #244, `assertProductionEnv()` (`lib/server/env/productionEnv.ts`, called from `instrumentation.ts`'s `register()`) also checks it at **server boot**, so a missing secret now fails the deploy immediately instead of 500ing on the first authenticated request. Also **required at `next build` time** for the same reason — the Dockerfile's builder stage sets a build-time dummy (`ARG APP_SESSION_SECRET=docker-build-not-a-real-secret`), never a real secret. Consumed by root `proxy.ts` (Next 16's rename of `middleware.ts`), which HMAC-gates every `/app` path. Changing it invalidates all live sessions. |
+| `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` | `lib/server/db.ts:3` falls back to `file:./my-content.db` if unset — an ephemeral in-image file that loses every write on redeploy. As of #244, `instrumentation.ts` -> `lib/server/env/productionEnv.ts`'s `assertProductionEnv()` runs at server boot (`register()`, not at `next build` time) and refuses to start when `TURSO_DATABASE_URL` is unset or starts with `file:`, or when it's a `libsql://`/`https://` URL with `TURSO_AUTH_TOKEN` unset. `db.ts` itself is unchanged — the guard lives in `instrumentation.ts` specifically so it never runs during `next build` (CI and the Dockerfile builder stage both build without `TURSO_DATABASE_URL` set). |
 
 **Requires a deliberate decision — do not inherit the default:**
 
 | Variable | Why |
 |---|---|
 | `TRUST_PROXY_HEADERS` | Defaults to `false` (`lib/server/auth/constants.ts:92`), which collapses every caller onto the shared rate-limit key `"shared"` at `app/api/auth/verify/route.ts:32` — behind a platform proxy, PIN rate limiting becomes global and one attacker can lock out all staff. Setting it `true` is only safe if the proxy **overwrites** `X-Forwarded-For` rather than appending to it (`.env.example:30-31`); if it appends, `true` is worse than `false` because the header becomes forgeable. **This ticket records the requirement and leaves the value undecided** — the answer depends on Railway's documented proxy behaviour, which the next (Railway) ticket must confirm before setting it. |
-| `RESET_PIN` | Must be **absent** in production. When set to the literal string `"true"`, every `hasPinConfigured()` call wipes the PIN (`.env.example:12-15`). |
+| `RESET_PIN` | Must be **absent** in production. When set to the literal string `"true"`, every `hasPinConfigured()` call wipes the PIN (`.env.example:12-15`). As of #244, `assertProductionEnv()` also refuses to boot the server if `RESET_PIN === "true"` under `NODE_ENV=production`. |
 
 **Optional — has a working default, no volume needed:**
 
@@ -169,8 +169,9 @@ consumes.
 (`gemini/upload.ts:4`, `generate.ts:6`), `SCRAPECREATORS_API_KEY` (`scrapecreators/client.ts:67`).
 
 **Deliberately out of scope for this ticket:** any Railway or Turso account, the release/migration
-command, and the `db.ts` production boot guard for a missing `TURSO_DATABASE_URL` — all belong to
-the deploy ticket that follows this one.
+command — both belong to the deploy ticket that follows this one (#246). The production boot guard
+for `TURSO_DATABASE_URL` / `APP_SESSION_SECRET` / `RESET_PIN` shipped in #244 (`instrumentation.ts`
+-> `lib/server/env/productionEnv.ts`); see the boot-blocking table above.
 
 ---
 
