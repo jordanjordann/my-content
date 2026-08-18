@@ -124,6 +124,7 @@ Everything in §0.1–§0.5 was ruled **before** these captures existed. These s
 | **OR-24** | **`performance_score` as a real column — CONFIRMED.** §5.2 stands as written. |
 | **OR-25** | **The prose guard fails loudly with no repair retry — CONFIRMED.** §8.2 stands as written; the owner understands and accepts that a violation burns a billed Gemini call and fails the analysis. |
 | **OR-26** | **`derivedFrom: "NONE"` is overloaded — SPLIT, but in `unavailableReason`, not in `derivedFrom`. Migration `013`; 3A's job table renumbers to `014`.** Raised by code review on PR #152. `NONE` currently means both *"no node in this post carries reach fields at all"* (all-image carousel, single image post — permanent and expected) and *"slide 0 carries none, but a later slide does"* (a mixed carousel whose cover is an image — the post **has** real play counts that D4's first-slide rule never consulted). Ticket **#143** turns this into a user-facing sentence, so the second case would ship as "this post type doesn't report counts" — **false, and a fabricated diagnosis of exactly the class R-13.5.3a exists to forbid.** ⚠️ **Deriving the split from `analysis_mode` was proposed and is FALSIFIED — see §3.1.** The fix adds **one value to `perf_unavailable_reason`** (`REACH_NOT_ON_FIRST_SLIDE`, §5.3), **not** a fourth `perf_reach_derived_from` value: `derivedFrom` answers *where the number came from*, and with no number `NONE` is the complete and correct answer to that question; the split is a *why*, and `unavailableReason` is the why-column. Cost stated plainly: one new migration and a **full `analyses` table rebuild** (SQLite cannot alter a `CHECK` in place, and 012 is merged) — but **zero data cost**, because 012 already `DELETE`d every row. |
+| **OR-27** *(ruled 2026-08-19, not part of the 2026-08-06 pass — see the provenance correction under §0)* | **R-12.7.1 is DIRECTIONAL, not a blanket ban on `__typename`/`is_video` inside `reach.ts`.** It forbids using a content-kind signal to **suppress, override or shortcut a reach field that is present**; the presence check (`hasReachFields()`) stays the first gate and always wins when the keys exist. It does **not** forbid consulting a **positive** video signal **inside the branch that has already resolved to `NONE`**, solely to distinguish "this content kind has no reach field" (normal) from "this is video and the reach field did not come back on this payload" (an **error state**). That inference never discards data that exists — it runs only where the keys are already absent, so it can neither hide a present field nor fabricate a number. **PR #152's BLOCKING-1 objection is NOT reopened**: that was the suppressing direction (a `__typename` gate standing *in front of* the presence check) and it remains correct. Unblocks ticket **#254**. Full statement, evidence and consequences: **§3** (after the R-12.7.1 paragraph) and the amendment at **§3.1** item 3. **§3.1's `analysis_mode` derivation stays FALSIFIED** on items 1, 2 and 4 — OR-27 does not revive it. |
 
 ### 0.7 Tech-lead architecture rulings (2026-08-09)
 
@@ -435,6 +436,46 @@ content".** verified-facts' 2026-08-05 correction proves both discriminators wro
 payloads differ from each other, and an `XDTGraphImage` single-image post carries fields the all-image
 carousel does not.
 
+> **OR-27 — owner ruling, 2026-08-19: R-12.7.1 is DIRECTIONAL, not a blanket ban. Do not re-litigate.**
+> The sentence above stands unchanged as the rule for **deriving a reach value**. It is **narrowed here in
+> scope, not deleted** — nothing above is superseded except the reading that R-12.7.1 forbids a video
+> signal *anywhere* in `reach.ts`.
+>
+> **What R-12.7.1 forbids (unchanged, still binding):** using `__typename` / `is_video` / "is this image
+> content" to **suppress, override or shortcut a reach field that is present**. A future or regional
+> payload variant that *does* carry a reach field on an image carousel must be picked up, not ignored.
+> The presence check always wins whenever the keys exist. That is R-12.7.1's authoritative source,
+> PRD §739, read literally: *"Implementation must **detect** the absence of reach fields rather than
+> **assume** it from `__typename`."*
+>
+> **What R-12.7.1 does NOT forbid (the ruling):** consulting a **positive** video signal **inside the
+> branch that has already resolved to `NONE`**, solely to distinguish two facts that `NONE` collapses:
+>
+> | | Fact | Correct outcome |
+> |---|---|---|
+> | (a) | This content kind carries no reach field at all (image post, all-image carousel) | `NONE` — normal, permanent |
+> | (b) | This is video content and the reach field **did not come back on this payload** | **error state** — `TOP_LEVEL` + `UNKNOWN`, never `NONE` |
+>
+> Case (b) is an **error state**, not a content-kind statement. Establishing it **never discards data that
+> exists**: the signal is read only where the keys are already absent, so it can neither hide a present
+> field nor fabricate a number. The direction of the inference is what R-12.7.1 governs, and this
+> direction is permitted.
+>
+> **PR #152's BLOCKING-1 objection is NOT reopened.** That objection was against the **suppressing**
+> direction — a `__typename` discriminator standing *in front of* the presence check, deciding whether to
+> look at all. It was correct then and remains correct. `hasReachFields()` stays the first gate.
+>
+> **Consequence:** ticket #254 is unblocked. `lib/server/analysis/performance/reach.ts`'s module doc
+> carries the same narrowing note. §3.1's FALSIFIED `analysis_mode` derivation stays falsified — see the
+> amendment at its item 3 for why that is a *different* question and is unaffected by this ruling.
+>
+> **Production evidence, 2026-08-19 (read-only, Turso `lasa`):** four real stripped Instagram reel
+> payloads (`9470151e`, `391b7615`, `a439b95b` in Turso; `581a798a` in the local file) all stored
+> `analysis_mode = 'full_video'`. `analysis_mode` is set from `isVideoNode()`. So on every observed
+> stripped payload the `__typename` / `is_video` signal **survived the strip** while
+> `video_play_count`/`video_view_count` did not. The discriminator this ruling permits is empirically
+> available exactly when it is needed.
+
 ```ts
 resolveReach(): { value: number | null; kind: ReachKind; state: AvailabilityState;
                   derivedFrom: "TOP_LEVEL" | "CAROUSEL_FIRST_SLIDE" | "NONE" }
@@ -485,6 +526,22 @@ Two further reasons it could not be repaired even if those two were patched:
    `__typename === "XDTGraphSidecar"`. **R-12.7.1 forbids exactly these** for this question, and PR #152's
    BLOCKING 1 was this same discriminator in `reach.ts` (since fixed to `"edge_sidecar_to_children" in raw`).
    Deriving a *reach* sentence from a `__typename`-based signal reintroduces the defect one file away.
+
+   > **Amended 2026-08-19 by OR-27 (§3, "R-12.7.1 is DIRECTIONAL"). Item 3 is NARROWED, and the
+   > `analysis_mode` derivation stays FALSIFIED regardless — do not revive it on the strength of OR-27.**
+   >
+   > OR-27 permits a positive video signal inside an already-`NONE` branch, so the flat claim
+   > "**R-12.7.1 forbids exactly these** for this question" is **superseded in place**: R-12.7.1 forbids
+   > them only in the **suppressing** direction. Item 3 as a *general* prohibition no longer holds.
+   >
+   > **This changes nothing about the ruling below.** The `analysis_mode` derivation remains dead on
+   > items **1, 2 and 4**, which OR-27 does not touch: a single image post is `metadata_only` not
+   > `images_only` (1), every YouTube `NONE` is `full_video` (2), and the column is nullable and is
+   > explicitly nulled on the re-analysis reset path (4). Any one of those is fatal on its own.
+   >
+   > The distinction that matters: OR-27 permits reading the signal **from the payload in hand, at the
+   > point of decision**. It does **not** permit reading a **stored, nullable, cross-module column** and
+   > calling it the same fact. That is still the cross-module inference this section's ruling rejects.
 4. **The column is nullable and is explicitly nulled.** `pipeline/index.ts` sets `analysis_mode = NULL` on the
    re-analysis reset path, and migration 012 declares it without `NOT NULL`. A derivation whose input can be
    absent cannot be the basis of an assertion about the world.
