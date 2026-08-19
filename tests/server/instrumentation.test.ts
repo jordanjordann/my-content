@@ -2,37 +2,53 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * F3 (#244 review): `instrumentation.ts` had zero coverage. `process.exit(1)`
- * is the highest-value line in the file — found by hand in Docker, not in
+ * is the highest-value line in this guard — found by hand in Docker, not in
  * the ticket design — and nothing stopped a future cleanup from deleting it.
- * This pins:
+ * PR #257 split the guard body into `instrumentation-node.ts` (reached via a
+ * conditional dynamic `import()`, to keep `process.exit` out of the Edge
+ * Runtime bundle of `instrumentation.ts`); this file follows that split, and
+ * a B1 follow-up added `instrumentation-node-exit.ts` as the shared,
+ * flush-safe exit path used by both `instrumentation.ts`'s own outer
+ * `import("./instrumentation-node")` failure and `instrumentation-node.ts`'s
+ * inner `assertProductionEnv` failure. This pins:
  *   (a) the early return on `NEXT_RUNTIME !== "nodejs"` — no import, no exit.
- *   (b) no exit when `assertProductionEnv` returns normally.
- *   (c) `process.exit(1)` when `assertProductionEnv` throws.
- *   (d) F2: `process.exit(1)` when the dynamic `import` itself rejects — the
- *       #241 tracing failure mode the `try` was widened to cover.
+ *   (b) no exit when `registerNode()` (via `assertProductionEnv`) returns
+ *       normally.
+ *   (c) exit via `exitWithBootFailure` when `assertProductionEnv` throws
+ *       (the inner `instrumentation-node.ts` try/catch).
+ *   (d) F2/B1: exit via `exitWithBootFailure` when the dynamic `import` of
+ *       `./instrumentation-node` **itself** rejects — the #241 tracing
+ *       failure mode, now guarded at the outer boundary in
+ *       `instrumentation.ts` rather than only the inner one.
+ *   (e) B1: exit via `exitWithBootFailure` when the dynamic `import` of
+ *       `productionEnv` (the innermost hop, inside `instrumentation-node.ts`)
+ *       rejects — the original #241 mode this suite already covered before
+ *       the split, kept here as a regression pin.
  *
- * Proven by mutation: deleting `process.exit(1)` from `instrumentation.ts`
- * turns (c) and (d) red; moving the `await import` back outside the `try`
+ * Proven by mutation: deleting the `catch` block in `instrumentation.ts`
  * turns (d) red (the rejection becomes an unhandled promise rejection
- * instead of a caught, asserted `process.exit(1)` call).
+ * instead of a caught, asserted exit); deleting the `catch` in
+ * `instrumentation-node.ts` turns (c) and (e) red the same way.
  */
 
 const assertProductionEnv = vi.fn();
+const exitWithBootFailure = vi.fn();
 
 vi.mock("@/lib/server/env/productionEnv", () => ({
   assertProductionEnv: (...args: unknown[]) => assertProductionEnv(...args),
 }));
 
+vi.mock("@/instrumentation-node-exit", () => ({
+  exitWithBootFailure: (...args: unknown[]) => exitWithBootFailure(...args),
+}));
+
 describe("register", () => {
-  let exitSpy: ReturnType<typeof vi.spyOn>;
-  let errorSpy: ReturnType<typeof vi.spyOn>;
   let originalRuntime: string | undefined;
 
   beforeEach(() => {
     originalRuntime = process.env.NEXT_RUNTIME;
-    exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
-    errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     assertProductionEnv.mockReset();
+    exitWithBootFailure.mockReset();
   });
 
   afterEach(() => {
@@ -48,7 +64,7 @@ describe("register", () => {
     await register();
 
     expect(assertProductionEnv).not.toHaveBeenCalled();
-    expect(exitSpy).not.toHaveBeenCalled();
+    expect(exitWithBootFailure).not.toHaveBeenCalled();
   });
 
   it("does not exit when assertProductionEnv returns normally", async () => {
@@ -59,10 +75,10 @@ describe("register", () => {
     await register();
 
     expect(assertProductionEnv).toHaveBeenCalledTimes(1);
-    expect(exitSpy).not.toHaveBeenCalled();
+    expect(exitWithBootFailure).not.toHaveBeenCalled();
   });
 
-  it("exits with code 1 when assertProductionEnv throws", async () => {
+  it("exits via exitWithBootFailure when assertProductionEnv throws", async () => {
     process.env.NEXT_RUNTIME = "nodejs";
     const error = new Error("Invalid production environment:\nTURSO_DATABASE_URL is unset.");
     assertProductionEnv.mockImplementation(() => {
@@ -72,11 +88,10 @@ describe("register", () => {
 
     await register();
 
-    expect(errorSpy).toHaveBeenCalledWith(error);
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitWithBootFailure).toHaveBeenCalledWith(error);
   });
 
-  it("exits with code 1 when the dynamic import of the guard module rejects (F2)", async () => {
+  it("exits via exitWithBootFailure when the inner dynamic import of productionEnv rejects (e)", async () => {
     process.env.NEXT_RUNTIME = "nodejs";
     vi.doMock("@/lib/server/env/productionEnv", () => {
       throw new Error("Cannot find module '@/lib/server/env/productionEnv'");
@@ -85,7 +100,19 @@ describe("register", () => {
 
     await register();
 
-    expect(exitSpy).toHaveBeenCalledWith(1);
-    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(exitWithBootFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it("exits via exitWithBootFailure when the outer dynamic import of instrumentation-node rejects (d, B1)", async () => {
+    process.env.NEXT_RUNTIME = "nodejs";
+    vi.doMock("@/instrumentation-node", () => {
+      throw new Error("Cannot find module '@/instrumentation-node'");
+    });
+    const { register } = await import("@/instrumentation");
+
+    await register();
+
+    expect(assertProductionEnv).not.toHaveBeenCalled();
+    expect(exitWithBootFailure).toHaveBeenCalledTimes(1);
   });
 });
