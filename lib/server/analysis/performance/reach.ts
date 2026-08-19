@@ -1,6 +1,7 @@
 import type { ScrapeCreatorsCarouselChildNode, ScrapeCreatorsMedia } from "@/lib/server/scrapecreators";
 import { getCarouselEdges } from "@/lib/server/analysis/carousel";
 import type { CarouselEdge } from "@/lib/server/analysis/carousel";
+import { isVideoNode } from "@/lib/server/analysis/media/resolveMediaParts";
 import type { LaterSlideReach, ReachDerivedFrom, ReachKind, ReachResult } from "./types";
 
 /**
@@ -18,6 +19,22 @@ import type { LaterSlideReach, ReachDerivedFrom, ReachKind, ReachResult } from "
  * that cannot (an image slide, an all-image carousel, a single image post)
  * has neither key at all. That presence check — not `__typename`, not
  * `is_video` — is what decides `derivedFrom: "NONE"` below.
+ *
+ * **OR-27 (#254, TDD §0.6/§3/§3.1 item 3) narrows R-12.7.1 — it is
+ * DIRECTIONAL, not a blanket ban.** Forbidden direction, unchanged: using
+ * `__typename`/`is_video` to SUPPRESS, override or shortcut a reach field
+ * that IS present — `hasReachFields()` stays the first gate and always wins
+ * whenever the keys exist. Permitted direction, new: consulting a POSITIVE
+ * video signal (`isVideoNode()`, the same C7 discriminator
+ * `resolveMediaParts.ts` already uses) ONLY INSIDE the non-carousel branch
+ * that has already resolved to "no reach keys present" — to distinguish "this
+ * content kind genuinely has no reach field" (an image post) from "this is
+ * video content whose reach came back missing from the payload" (a thin
+ * ScrapeCreators response, see ticket #254). The presence check still runs
+ * first and still wins whenever the keys exist; the video signal can never
+ * hide a present field and can never fabricate a number. The carousel branch
+ * is untouched by OR-27 — its own presence-check-based `hasVideoChild` scan
+ * and first-slide/later-slide logic (D4 / OR-26 / R-N1-N3) are unaffected.
  */
 
 function num(value: unknown): number | null {
@@ -154,6 +171,29 @@ function noneResult(laterSlideReach: LaterSlideReach = { usable: false }, hasVid
 }
 
 /**
+ * #254 §3 — observability for the self-contradictory case this ticket makes
+ * reachable: a node `isVideoNode()` confirms is video content, yet neither
+ * reach KEY is present in the payload. Fires only from the branch above.
+ * Never logs the API key or the full raw payload — just the identifying
+ * fields and presence booleans needed to diagnose an upstream partial
+ * resolution (verified-facts.md ~L754-767).
+ */
+function warnThinVideoReach(raw: ScrapeCreatorsMedia): void {
+  console.warn("[reach] video content with no reach fields present (thin payload)", {
+    id: raw.id,
+    shortcode: raw.shortcode,
+    __typename: raw.__typename,
+    is_video: raw.is_video,
+    has_video_play_count: "video_play_count" in raw,
+    has_video_view_count: "video_view_count" in raw,
+    has_dimensions: "dimensions" in raw,
+    has_like_and_view_counts_disabled: "like_and_view_counts_disabled" in raw,
+    has_video_url: "video_url" in raw,
+    has_video_duration: "video_duration" in raw,
+  });
+}
+
+/**
  * `resolveInstagramReach()` — the branch table (TDD §3):
  *
  * | Case | `derivedFrom` |
@@ -161,7 +201,8 @@ function noneResult(laterSlideReach: LaterSlideReach = { usable: false }, hasVid
  * | Top-level reel/video, reach fields present | `TOP_LEVEL` |
  * | Carousel, first slide (index 0) carries reach fields | `CAROUSEL_FIRST_SLIDE` (D4) |
  * | Carousel with no children, or first slide has neither field (all-image carousel) | `NONE` |
- * | Non-carousel post with neither field (single image post) | `NONE` |
+ * | Non-carousel post with neither field, `isVideoNode()` false (single image post) | `NONE` |
+ * | Non-carousel post with neither field, `isVideoNode()` true (#254: thin video payload) | `TOP_LEVEL`, `state: "UNKNOWN"` |
  */
 export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
   // R-12.7.1: branch on field PRESENCE, never on `__typename`. The
@@ -220,6 +261,26 @@ export function resolveInstagramReach(raw: ScrapeCreatorsMedia): ReachResult {
   }
 
   if (!hasReachFields(raw)) {
+    // OR-27 (#254): permitted direction only. The presence check above has
+    // already failed for BOTH keys — nothing here can hide or override a
+    // reach field that exists, because none does. `isVideoNode()` is
+    // consulted purely to decide which absence-story is true: an image post
+    // (genuinely no reach field, `derivedFrom: "NONE"`) vs. video content
+    // whose reach field(s) came back missing from a thin ScrapeCreators
+    // payload (`derivedFrom: "TOP_LEVEL"`, `state: "UNKNOWN"` — the SAME
+    // "field exists but is unusable" shape `resolveYoutubeReach()` already
+    // returns for `viewCountInt: null`, not a new state).
+    if (isVideoNode(raw)) {
+      warnThinVideoReach(raw);
+      return {
+        value: null,
+        kind: "UNKNOWN",
+        state: "UNKNOWN",
+        derivedFrom: "TOP_LEVEL" as ReachDerivedFrom,
+        laterSlideReach: { usable: false },
+        hasVideo: true,
+      };
+    }
     return noneResult();
   }
 

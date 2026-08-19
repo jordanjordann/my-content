@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resolveInstagramReach, resolveYoutubeReach } from "@/lib/server/analysis/performance/reach";
 import type { LaterSlideReach } from "@/lib/server/analysis/performance/types";
@@ -194,6 +194,71 @@ describe("resolveInstagramReach — real fixtures (AC-4, AC-5, AC-6/AC-18)", () 
         expect(result.value).toBeGreaterThanOrEqual(0);
       }
     }
+  });
+});
+
+describe("resolveInstagramReach — #254: thin reel payload (OR-27, permitted direction)", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("a reel whose video_play_count/video_view_count keys came back absent, but is a confirmed video node, resolves TOP_LEVEL/UNKNOWN with hasVideo true — NOT NONE/image-only", () => {
+    const media = loadMedia("ig_reel_thin_no_reach_fields.json");
+
+    const result = resolveInstagramReach(media);
+
+    expect(result).toEqual({
+      value: null,
+      kind: "UNKNOWN",
+      state: "UNKNOWN",
+      derivedFrom: "TOP_LEVEL",
+      laterSlideReach: { usable: false },
+      hasVideo: true,
+    });
+  });
+
+  it("the fixture is a confirmed video node (__typename/is_video survive the strip, per the 4 production rows' analysis_mode='full_video')", () => {
+    const media = loadMedia("ig_reel_thin_no_reach_fields.json");
+
+    expect(media.__typename).toBe("XDTGraphVideo");
+    expect(media.is_video).toBe(true);
+  });
+
+  it("warns exactly once for the thin fixture and not at all for any other committed fixture", () => {
+    for (const file of fs.readdirSync(fixturesDir)) {
+      if (!file.startsWith("ig_") || !file.endsWith(".json") || file === "ig_profile_business_account.json") {
+        continue;
+      }
+      resolveInstagramReach(loadMedia(file));
+    }
+
+    expect(console.warn).toHaveBeenCalledTimes(1);
+    expect(console.warn).toHaveBeenCalledWith(
+      "[reach] video content with no reach fields present (thin payload)",
+      expect.objectContaining({
+        has_video_play_count: false,
+        has_video_view_count: false,
+        has_dimensions: false,
+        has_like_and_view_counts_disabled: false,
+        has_video_url: true,
+        has_video_duration: true,
+        __typename: "XDTGraphVideo",
+        is_video: true,
+      }),
+    );
+  });
+
+  it("genuine image content (single image post, all-image carousel) is unaffected — still NONE/hasVideo false, no warn", () => {
+    for (const file of ["ig_single_image_post.json", "ig_carousel_all_images_10_slides.json"]) {
+      const result = resolveInstagramReach(loadMedia(file));
+      expect(result.derivedFrom).toBe("NONE");
+      expect(result.hasVideo).toBe(false);
+    }
+    expect(console.warn).not.toHaveBeenCalled();
   });
 });
 

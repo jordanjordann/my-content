@@ -238,6 +238,49 @@ describe("computePerformanceBlock — all-image carousel (§12.2)", () => {
   });
 });
 
+describe("computePerformanceBlock — #254: thin reel payload (reach exists-but-unusable video content)", () => {
+  it("REACH_UNKNOWN/UNAVAILABLE, tier1Ratio null, tier3Ratio null, tier1Denominator null — NO FOLLOWERS denominator is produced", async () => {
+    const { computePerformanceBlock } = await import("@/lib/server/analysis/performance/computeBlock");
+
+    // The shape resolveInstagramReach() now returns (post-#254 fix) for a
+    // reel whose reach keys came back absent from a thin ScrapeCreators
+    // payload: derivedFrom TOP_LEVEL (not NONE — a genuine reach field
+    // "exists" per the video signal, it just came back unusable), state
+    // UNKNOWN, hasVideo true. Likes/comments ARE usable — mirrors row
+    // `581a798a`'s shape (3132 likes + 75 comments) — so the hidden-counts
+    // gate at judgement.ts:91 does not fire either.
+    const thinVideoReach: ReachResult = {
+      value: null,
+      kind: "UNKNOWN",
+      state: "UNKNOWN",
+      derivedFrom: "TOP_LEVEL",
+      laterSlideReach: { usable: false },
+      hasVideo: true,
+    };
+
+    const result = await computePerformanceBlock({
+      platform: "instagram",
+      mediaType: "reel",
+      analysisMode: "full_video",
+      reach: thinVideoReach,
+      likeCount: 3_132,
+      commentCount: 75,
+      likeAndViewCountsDisabled: undefined,
+      followerCount: 255_774,
+      audienceSourceFetchedAt: null,
+      postDate: new Date(Date.now() - 1000 * 60 * 60 * 200).toISOString(),
+      profileId: null,
+      analysisId: randomUUID(),
+      schemaVersion: SCHEMA_VERSION,
+    });
+
+    expect(result.tier1Ratio).toBeNull();
+    expect(result.tier3Ratio).toBeNull();
+    expect(result.tierUsed).toBe("UNAVAILABLE");
+    expect(result.unavailableReason).toBe("REACH_UNKNOWN");
+  });
+});
+
 describe("computePerformanceBlock — PR #191 review, blocker N1: the two numerator gates must agree", () => {
   it("all-image carousel, ONE usable numerator component, REAL follower count -> CAUSE_NOT_DETERMINABLE, never NO_AUDIENCE_DATA", async () => {
     const { computePerformanceBlock } = await import("@/lib/server/analysis/performance/computeBlock");
