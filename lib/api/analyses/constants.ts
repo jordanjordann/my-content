@@ -1,5 +1,24 @@
 import type { AbsentCountReason } from "@/lib/api/analyses/types";
 
+/**
+ * Ticket #251 / DESIGN-3C §5.3 — the `vs their usual` cell's `not-comparable` copy
+ * (`deriveMultiplierCell`, `lib/api/analyses/helpers.ts`). Statement only, never a
+ * button or retry (OR-25, settled). Kept here, not inlined, so a copy pass after
+ * Jessica's design review is a one-line change, not a re-implementation.
+ *
+ * - `POST_METRIC_UNRESOLVED` — a full baseline exists for this creator/bucket, but this
+ *   post's own reach/engagement count for the bucket's denominator never resolved.
+ * - `MEDIAN_ZERO` — this post's own metric DID resolve, but every earlier comparator in
+ *   the bucket measured exactly zero, so there is nothing to divide against.
+ */
+export const NOT_COMPARABLE_MULTIPLIER_CELL_COPY: Record<
+  "POST_METRIC_UNRESOLVED" | "MEDIAN_ZERO",
+  string
+> = {
+  POST_METRIC_UNRESOLVED: "this creator's usual is set — this post's own count wasn't published",
+  MEDIAN_ZERO: "every earlier post measured zero",
+};
+
 export const ANALYSIS_KEYS = {
   all: ["analyses"] as const,
   lists: () => [...ANALYSIS_KEYS.all, "list"] as const,

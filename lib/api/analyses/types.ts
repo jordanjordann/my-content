@@ -163,9 +163,20 @@ export type AnalysisTablePerformanceCell =
   | { kind: "no-judgement" }
   | { kind: "dash" };
 
+/**
+ * Ticket #251 — `vs their usual` cell (col 7). `"not-comparable"` is a THIRD state,
+ * distinct from `"cold-start"`: a full baseline exists for this creator/bucket
+ * (`sampleSize >= BASELINE_MIN_SAMPLE`) but this specific post's own metric could not be
+ * measured against it (`BaselineResult.state === "NOT_COMPARABLE"`,
+ * `lib/server/analysis/performance/types.ts`). There is nothing left to "build" — the
+ * bare `N of BASELINE_MIN_SAMPLE_DISPLAY` progress framing (R-C1, the cold-start-only
+ * framing) must never render here. Statement only — OR-25 (no retry) forbids a button or
+ * link on this cell in any state.
+ */
 export type AnalysisTableMultiplierCell =
   | { kind: "measured"; multiplier: number; sampleSize: number; bucketNoun: string }
   | { kind: "cold-start"; sampleSize: number; bucketNoun: string }
+  | { kind: "not-comparable"; reason: "POST_METRIC_UNRESOLVED" | "MEDIAN_ZERO" }
   | { kind: "reason"; text: string | null }
   | { kind: "dash" };
 

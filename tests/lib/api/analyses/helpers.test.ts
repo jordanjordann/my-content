@@ -332,6 +332,51 @@ function coldStartPerformanceWith(score: number | null): AnalysisPerformance {
   };
 }
 
+/**
+ * Ticket #251 — a NOT_COMPARABLE row (`tier2` present, `median` present, `multiplier`
+ * null). Distinct from `coldStartPerformanceWith` above, which sets `median: null` too.
+ */
+function notComparablePerformanceWith(median: number): AnalysisPerformance {
+  const base = performanceWith(4, 3.2);
+  if (base == null) {
+    throw new Error("performanceWith never returns null in this fixture");
+  }
+  return {
+    ...base,
+    computed: {
+      ...base.computed,
+      tier2: { median, sampleSize: 5, bucketKey: "instagram:reel:full_video", multiplier: null },
+    },
+  };
+}
+
+describe("deriveAnalysisTablePerformance — multiplierCell, ticket #251's three states (not two)", () => {
+  it("MEASURED — tier2.multiplier present renders 'measured', never 'not-comparable' or 'cold-start'", () => {
+    const derived = deriveAnalysisTablePerformance(performanceWith(4, 3.2), "reel", null);
+    expect(derived?.multiplierCell).toEqual({
+      kind: "measured",
+      multiplier: 3.2,
+      sampleSize: 7,
+      bucketNoun: "reels",
+    });
+  });
+
+  it("COLD_START — tier2 present, median AND multiplier both null, renders 'cold-start' (unchanged behaviour)", () => {
+    const derived = deriveAnalysisTablePerformance(coldStartPerformanceWith(4), "reel", null);
+    expect(derived?.multiplierCell).toEqual({ kind: "cold-start", sampleSize: 3, bucketNoun: "reels" });
+  });
+
+  it("NOT_COMPARABLE / POST_METRIC_UNRESOLVED — median present (non-zero), multiplier null, must NOT render 'cold-start' (the #251 bug: '5 of 5 reels')", () => {
+    const derived = deriveAnalysisTablePerformance(notComparablePerformanceWith(7_698), "reel", null);
+    expect(derived?.multiplierCell).toEqual({ kind: "not-comparable", reason: "POST_METRIC_UNRESOLVED" });
+  });
+
+  it("NOT_COMPARABLE / MEDIAN_ZERO — median exactly 0 (not absent), multiplier null, takes the not-comparable branch, not cold start", () => {
+    const derived = deriveAnalysisTablePerformance(notComparablePerformanceWith(0), "reel", null);
+    expect(derived?.multiplierCell).toEqual({ kind: "not-comparable", reason: "MEDIAN_ZERO" });
+  });
+});
+
 describe("deriveAnalysisTablePerformance — disagreementLine (ticket #147, DESIGN-3B §3.1.1 amendment B5)", () => {
   const D1 =
     "The 1–5 reads this more favourably than the measured comparison does — it came in under this creator's usual for this kind of post. The measured figures above are the ones to quote.";

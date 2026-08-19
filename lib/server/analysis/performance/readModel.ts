@@ -171,18 +171,30 @@ function buildTier1Ratio(row: PerformanceBlockRow): Tier1Ratio | null {
 
 /**
  * `liveColdStartSampleSize` — ticket #206 (TDD §14.8a). Applied ONLY when
- * this row is cold start (`perfMultiplier == null`); a `MEASURED` row's
- * `sampleSize` is an operand of a stored multiplier and stays frozen,
- * unconditionally, regardless of what the caller passes in. `undefined`
- * (not injected by the caller) falls back to the stored column, exactly
- * the pre-#206 behaviour — this keeps every existing call site that
- * doesn't pass the new parameter unaffected.
+ * this row is a GENUINE cold start — no baseline exists yet
+ * (`perfMultiplier == null AND perfBaselineMedian == null`). A `MEASURED`
+ * row's `sampleSize` is an operand of a stored multiplier and stays
+ * frozen, unconditionally, regardless of what the caller passes in.
+ * `undefined` (not injected by the caller) falls back to the stored
+ * column, exactly the pre-#206 behaviour — this keeps every existing call
+ * site that doesn't pass the new parameter unaffected.
+ *
+ * Ticket #251 — `perfMultiplier == null` ALONE used to be treated as cold
+ * start here too, which meant a `NOT_COMPARABLE` row (a full baseline
+ * exists — `perfBaselineMedian` is non-null — but this post's own metric
+ * never resolved against it) had its FROZEN `perfBaselineSampleSize`
+ * silently overwritten with a live comparator count, the same
+ * `multiplier === null` conflation `BaselineResult` (types.ts) already
+ * closed off server-side. `perfBaselineMedian` is only ever written when a
+ * full baseline existed (see the discriminator table on `BaselineResult`),
+ * so requiring it to ALSO be null is what actually narrows this to cold
+ * start, not "cold start or not-comparable".
  */
 function buildTier2(row: PerformanceBlockRow, liveColdStartSampleSize?: number | null): PerformanceTier2 | null {
   if (row.perfBucketKey == null) {
     return null;
   }
-  const isColdStart = row.perfMultiplier == null;
+  const isColdStart = row.perfMultiplier == null && row.perfBaselineMedian == null;
   const sampleSize =
     isColdStart && liveColdStartSampleSize != null
       ? liveColdStartSampleSize
