@@ -718,4 +718,92 @@ describe("GET /api/analyses — ticket #252: the live multiplier end to end", ()
     // leak onto this row — it stays the frozen write-time column.
     expect(row.performance.computed.tier2.sampleSize).toBe(1);
   });
+
+  it("pool >= threshold and live median === 0 routes to NOT_COMPARABLE / MEDIAN_ZERO — never a fabricated 0x", async () => {
+    const profileId = randomUUID();
+    await insertProfile(db, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    const observedId = await insertAnalysis(db, {
+      username: "creator-zero",
+      resultContent: { overallScore: 3, scorecard: {}, performance: { performanceScore: null, verdict: "", drivers: [] } },
+      perfReachValue: 500, // own metric resolved
+      perfBucketKey: bucketKey,
+      perfBaselineMedian: null,
+      perfBaselineSampleSize: 0,
+      perfMultiplier: null,
+      perfTierUsed: "REACH_ONLY",
+      perfConfidence: "HIGH",
+      perfPostAgeHours: 200,
+      profileId,
+      schemaVersion: SCHEMA_VERSION,
+    });
+
+    // 5 more comparators, all reach 0 — pool clears BASELINE_MIN_SAMPLE (5)
+    // but their median is exactly 0.
+    for (const reach of [0, 0, 0, 0, 0]) {
+      await insertAnalysis(db, {
+        username: "creator-zero",
+        perfReachValue: reach,
+        perfBucketKey: bucketKey,
+        perfPostAgeHours: 200,
+        profileId,
+        schemaVersion: SCHEMA_VERSION,
+      });
+    }
+
+    const response = await listRoute.GET(makeGetRequest("?pageSize=10"));
+    const body = await response.json();
+    const row = body.analyses.find((a: { id: string }) => a.id === observedId);
+
+    expect(row.performance.computed.tier2.state).toBe("NOT_COMPARABLE");
+    expect(row.performance.computed.tier2.reason).toBe("MEDIAN_ZERO");
+    expect(row.performance.computed.tier2.median).toBe(0);
+    expect(row.performance.computed.tier2.multiplier).toBeNull();
+    expect(row.performance.computed.tier2.sampleSize).toBe(5);
+  });
+
+  it("owner ruling (#263 review, Finding 1): a row that was MEDIAN_ZERO at write time (stored perf_baseline_median present, perf_multiplier NULL) acquires a live multiplier once its live pool's median becomes non-zero — it is NOT frozen at the stored median", async () => {
+    const profileId = randomUUID();
+    await insertProfile(db, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    const observedId = await insertAnalysis(db, {
+      username: "creator-was-median-zero",
+      resultContent: { overallScore: 3, scorecard: {}, performance: { performanceScore: null, verdict: "", drivers: [] } },
+      perfReachValue: 500, // own metric resolved
+      perfBucketKey: bucketKey,
+      perfBaselineMedian: 0, // MEDIAN_ZERO at write time
+      perfBaselineSampleSize: 5,
+      perfMultiplier: null,
+      perfTierUsed: "REACH_ONLY",
+      perfConfidence: "HIGH",
+      perfPostAgeHours: 200,
+      profileId,
+      schemaVersion: SCHEMA_VERSION,
+    });
+
+    // The pool's live median is now non-zero — 6 comparators, median 100.
+    for (const reach of [50, 80, 100, 100, 120, 150]) {
+      await insertAnalysis(db, {
+        username: "creator-was-median-zero",
+        perfReachValue: reach,
+        perfBucketKey: bucketKey,
+        perfPostAgeHours: 200,
+        profileId,
+        schemaVersion: SCHEMA_VERSION,
+      });
+    }
+
+    const response = await listRoute.GET(makeGetRequest("?pageSize=10"));
+    const body = await response.json();
+    const row = body.analyses.find((a: { id: string }) => a.id === observedId);
+
+    // median of the 6 comparators: 50,80,100,100,120,150 -> (100+100)/2 = 100.
+    expect(row.performance.computed.tier2.state).toBe("MEASURED");
+    expect(row.performance.computed.tier2.reason).toBeNull();
+    expect(row.performance.computed.tier2.median).toBe(100);
+    expect(row.performance.computed.tier2.sampleSize).toBe(6);
+    expect(row.performance.computed.tier2.multiplier).toBeCloseTo(5, 5); // 500 / 100
+  });
 });

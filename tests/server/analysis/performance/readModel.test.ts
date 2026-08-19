@@ -229,14 +229,18 @@ describe("buildComputedPerformanceBlock — #206 carve-out, D8's actual boundary
 });
 
 describe("buildComputedPerformanceBlock — ticket #251, a NOT_COMPARABLE row must not be classified as cold start", () => {
-  it("a full-baseline, unresolved-own-metric row (median present, multiplier null) ignores the injected live pool — its sampleSize/median stay the FROZEN stored columns, not live", () => {
+  it("a full-baseline, unresolved-own-metric row (median present, multiplier null) ignores the injected live pool — its sampleSize stays the FROZEN stored column, not live; median is null (own-metric-unresolved has no median, #263 review Finding 1: a stored perfBaselineMedian no longer short-circuits/freezes this row)", () => {
     // Shape of production row 391b7615-339c-4007-9d37-6e8d48b66d21 (verified
     // against Turso, 2026-08-19): perf_baseline_median 7698,
     // perf_baseline_sample_size 5, perf_multiplier NULL, perf_reach_value
     // NULL — a full baseline exists, this post's own reach never resolved.
     // Pre-#251, `isColdStart = row.perfMultiplier == null` misclassified
     // this exact shape as cold start and let the injected live value
-    // clobber sampleSize.
+    // clobber sampleSize. Post-#263-review-Finding-1, this row is no longer
+    // routed through a frozen-reuse branch keyed on `perfBaselineMedian` —
+    // it reaches step 2 (own metric unresolved) same as any other
+    // `perfMultiplier == null` row, so `median` is `null` (no median exists
+    // for this state), not the stale stored `7698`.
     const row = baseRow({
       perfMultiplier: null,
       perfBaselineMedian: 7_698,
@@ -250,7 +254,7 @@ describe("buildComputedPerformanceBlock — ticket #251, a NOT_COMPARABLE row mu
     expect(withoutLive!.tier2).toEqual({
       state: "NOT_COMPARABLE",
       reason: "POST_METRIC_UNRESOLVED",
-      median: 7_698,
+      median: null,
       sampleSize: 5,
       bucketKey: "instagram:reel:full_video",
       multiplier: null,
@@ -467,5 +471,22 @@ describe("buildComputedPerformanceBlock — ticket #252, the live routing rule (
     expect(result!.tier2!.median).toBeNull();
     expect(result!.tier2!.multiplier).toBeNull();
     expect(result!.tier2!.sampleSize).toBe(3);
+  });
+
+  it("owner ruling (#263 review, Finding 1): a row that was MEDIAN_ZERO at write time (stored perfBaselineMedian === 0, perfMultiplier null) reaches step 4 and gets a live multiplier once the live pool's median is non-zero — NOT frozen at the stored zero median", () => {
+    const row = baseRow({
+      perfReachValue: 500, // own metric resolved
+      perfMultiplier: null,
+      perfBaselineMedian: 0, // MEDIAN_ZERO at write time
+      perfBaselineSampleSize: 5,
+    });
+    // Live pool clears the threshold and its median is now non-zero.
+    const result = buildComputedPerformanceBlock(row, comparators(50, 80, 100, 100, 120, 150));
+
+    expect(result!.tier2!.state).toBe("MEASURED");
+    expect(result!.tier2!.reason).toBeNull();
+    expect(result!.tier2!.median).toBe(100);
+    expect(result!.tier2!.sampleSize).toBe(6);
+    expect(result!.tier2!.multiplier).toBeCloseTo(5, 5); // 500 / 100
   });
 });

@@ -237,17 +237,14 @@ function excludeSelf(livePool: LiveComparator[] | null | undefined, id: string):
  *   4. Pool ≥ threshold → `MEASURED`, live multiplier.
  *   5. Else → `COLD_START`.
  *
- * A full baseline that already existed at WRITE time (`perfBaselineMedian
- * != null`, ticket #251's NOT_COMPARABLE carve-out) is reused verbatim
- * rather than re-derived live — that classification (own-metric-unresolved
- * or median-zero) can never change after the fact, because the post's own
- * reach/likes/comments are immutable stored columns, and the write path's
- * result on a genuinely completed baseline is what D8 already promises to
- * freeze. `livePool` is only consulted when `perfBaselineMedian == null` —
- * i.e. this row was still cold start the last time it was written — and
- * only for the sample-size leak fix (DESIGN-3C §4.3): the live count is
- * injected into `tier2.sampleSize` ONLY when the DERIVED state resolves to
- * `COLD_START`, never on a `NOT_COMPARABLE` row (own metric unresolved,
+ * A stored `perfBaselineMedian` (ticket #251's write-time NOT_COMPARABLE
+ * carve-out) does NOT short-circuit this — it gates on the stored
+ * **multiplier only** (step 1). A row that was `MEDIAN_ZERO` at write time
+ * MAY acquire a live multiplier later, once its pool's live median becomes
+ * non-zero (owner ruling, #263 review). `livePool` is consulted whenever
+ * `perfMultiplier == null`, and the live count is injected into
+ * `tier2.sampleSize` ONLY when the DERIVED state resolves to `COLD_START`
+ * (DESIGN-3C §4.3), never on a `NOT_COMPARABLE` row (own metric unresolved,
  * live pool below threshold) — that row "has no comparison at all", so no
  * surface (popover, future export, a11y label) should read a live-looking
  * count off it. Per constraint #4, no mixed-denominator `throw` is ported
@@ -283,25 +280,11 @@ function buildTier2(row: PerformanceBlockRow, livePool?: LiveComparator[] | null
     commentCount: row.commentCount,
   });
 
-  // A full baseline already existed at write time — reuse it verbatim
-  // (ticket #251's frozen NOT_COMPARABLE carve-out). `ownMetric` here is
-  // the SAME classification the write path made off the SAME immutable
-  // stored columns, so it agrees with whichever reason was frozen then.
-  if (row.perfBaselineMedian != null) {
-    return {
-      state: "NOT_COMPARABLE",
-      reason: ownMetric == null ? "POST_METRIC_UNRESOLVED" : "MEDIAN_ZERO",
-      median: row.perfBaselineMedian,
-      sampleSize: frozenSampleSize(row),
-      bucketKey: row.perfBucketKey,
-      multiplier: null,
-      minSample: BASELINE_MIN_SAMPLE,
-    };
-  }
-
-  // From here: this row was cold start the last time it was written
-  // (`perfBaselineMedian == null`). Its CURRENT state depends on the live
-  // pool.
+  // From here: no stored multiplier (`perfMultiplier == null`). Its CURRENT
+  // state depends on `ownMetric` and the live pool — a row that already had
+  // a stored `perfBaselineMedian` (write-time NOT_COMPARABLE) is NOT
+  // short-circuited here; it re-enters the live routing below like any
+  // other `perfMultiplier == null` row (DESIGN-3C §3, owner ruling #263).
 
   // Step 2 — own metric unresolved wins regardless of pool size. No live
   // comparator count is injected here (DESIGN-3C §4.3): this row has no
