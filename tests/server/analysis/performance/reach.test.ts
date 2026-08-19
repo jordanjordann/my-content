@@ -207,7 +207,7 @@ describe("resolveInstagramReach — #254: thin reel payload (OR-27, permitted di
   });
 
   it("a reel whose video_play_count/video_view_count keys came back absent, but is a confirmed video node, resolves TOP_LEVEL/UNKNOWN with hasVideo true — NOT NONE/image-only", () => {
-    const media = loadMedia("ig_reel_thin_no_reach_fields.json");
+    const media = loadMedia("ig_reel_thin_no_reach_fields.SYNTHETIC.json");
 
     const result = resolveInstagramReach(media);
 
@@ -222,7 +222,7 @@ describe("resolveInstagramReach — #254: thin reel payload (OR-27, permitted di
   });
 
   it("the fixture is a confirmed video node (__typename/is_video survive the strip, per the 4 production rows' analysis_mode='full_video')", () => {
-    const media = loadMedia("ig_reel_thin_no_reach_fields.json");
+    const media = loadMedia("ig_reel_thin_no_reach_fields.SYNTHETIC.json");
 
     expect(media.__typename).toBe("XDTGraphVideo");
     expect(media.is_video).toBe(true);
@@ -258,6 +258,28 @@ describe("resolveInstagramReach — #254: thin reel payload (OR-27, permitted di
       expect(result.derivedFrom).toBe("NONE");
       expect(result.hasVideo).toBe(false);
     }
+    expect(console.warn).not.toHaveBeenCalled();
+  });
+
+  it("PR #259 review, L5 — a video node WITH reach keys present resolves its reach value: the presence check gates before the OR-27 video signal is ever consulted (forbidden suppressing direction)", () => {
+    // ig_reel_1_zero_view_count.json is `isVideoNode()` AND has both reach
+    // keys present. If `isVideoNode()` were ever consulted BEFORE
+    // `hasReachFields()` (the forbidden direction — OR-27's own mutation
+    // test proves this breaks AC-4), this real, present, authoritative
+    // `video_play_count` would never be reached. Named separately from AC-4
+    // so this guarantee survives a future AC-4 rewrite for an unrelated
+    // reason.
+    const media = loadMedia("ig_reel_1_zero_view_count.json");
+
+    expect(media.__typename).toBe("XDTGraphVideo");
+    expect(media.is_video).toBe(true);
+    expect("video_play_count" in media || "video_view_count" in media).toBe(true);
+
+    const result = resolveInstagramReach(media);
+
+    expect(result.derivedFrom).toBe("TOP_LEVEL");
+    expect(result.state).toBe("AVAILABLE");
+    expect(result.value).toBe(116_333);
     expect(console.warn).not.toHaveBeenCalled();
   });
 });

@@ -175,8 +175,14 @@ function noneResult(laterSlideReach: LaterSlideReach = { usable: false }, hasVid
  * reachable: a node `isVideoNode()` confirms is video content, yet neither
  * reach KEY is present in the payload. Fires only from the branch above.
  * Never logs the API key or the full raw payload — just the identifying
- * fields and presence booleans needed to diagnose an upstream partial
- * resolution (verified-facts.md ~L754-767).
+ * fields and presence booleans needed to diagnose the shape of the payload
+ * ScrapeCreators actually returned. The upstream cause is NOT settled (see
+ * ticket #254): circumstantial evidence points at a partial GraphQL
+ * resolution (`dimensions`, `like_and_view_counts_disabled` and
+ * `clips_music_attribution_info` also vanished, `has_audio` flipped on one
+ * post within two minutes), but nobody has confirmed it, and it does not
+ * change what this function does — it only describes the observed presence
+ * booleans, never asserts why they are missing.
  */
 function warnThinVideoReach(raw: ScrapeCreatorsMedia): void {
   console.warn("[reach] video content with no reach fields present (thin payload)", {

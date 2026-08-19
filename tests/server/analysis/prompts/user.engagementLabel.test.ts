@@ -1,8 +1,22 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildUserPrompt, computePerformanceAssessmentBlock } from "@/lib/server/analysis/prompts";
 import { assertNumeralsAreReal, assertPerformanceProseIsSafe, NumeralFabricationError } from "@/lib/server/analysis/prose";
+import { resolveInstagramReach } from "@/lib/server/analysis/performance/reach";
+import type { ComputedPerformanceBlock } from "@/lib/server/analysis/performance/types";
+import type { ScrapeCreatorsMedia } from "@/lib/server/scrapecreators";
 import type { MediaMetadata } from "@/lib/server/analysis/types";
 import { buildTestComputedPerformanceBlock } from "./testHelpers";
+
+const igFixturesDir = path.join(process.cwd(), ".claude/context/fixtures/scrapecreators-instagram");
+
+function loadInstagramMedia(fixtureName: string): ScrapeCreatorsMedia {
+  const raw = JSON.parse(fs.readFileSync(path.join(igFixturesDir, fixtureName), "utf8")) as {
+    data: { xdt_shortcode_media: ScrapeCreatorsMedia };
+  };
+  return raw.data.xdt_shortcode_media;
+}
 
 /**
  * D1 (ticket #110): the prompt must label a displayed play count as "Plays",
@@ -551,6 +565,61 @@ describe("buildUserPrompt — isImageOnly consults mediaType, not just a null vi
     const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
 
     expect(performanceBlock).toContain("Konten ini berupa gambar");
+  });
+});
+
+/**
+ * PR #259 review, H1 (#254 AC): `isImageOnly` (`prompts/user.ts:269`) is the
+ * consumer that turned a thin-reel payload into a corrupted written
+ * analysis — Gemini was told a reel was image-only content — and had NO
+ * test pinning it anywhere in the #254 PR. Drives the real
+ * `resolveInstagramReach()` against the committed thin-reel fixture (the
+ * SAME shape `reach.test.ts` pins directly), then feeds that real
+ * `ReachResult` straight into `buildUserPrompt()`'s `computed.reach` — the
+ * exact fields `isImageOnly` reads (`derivedFrom`, `hasVideo`) come from the
+ * real resolver, not a hand-typed shape.
+ */
+describe("buildUserPrompt — isImageOnly for a thin reel payload (#254 H1, PR #259 review)", () => {
+  it("a reel whose reach keys came back absent (derivedFrom TOP_LEVEL, hasVideo true, value null) is NOT told the image-only copy", () => {
+    const reach = resolveInstagramReach(loadInstagramMedia("ig_reel_thin_no_reach_fields.SYNTHETIC.json"));
+    expect(reach.derivedFrom).toBe("TOP_LEVEL");
+    expect(reach.hasVideo).toBe(true);
+    expect(reach.value).toBeNull();
+
+    const metadata = baseMetadata({
+      mediaType: "reel",
+      viewCount: null,
+      playCount: null,
+      likeCount: 3_132,
+      commentCount: 75,
+      followerCount: 255_774,
+    });
+
+    const computed: ComputedPerformanceBlock = {
+      reach,
+      likeState: "AVAILABLE",
+      commentState: "AVAILABLE",
+      tier1Ratio: null,
+      tier3Ratio: null,
+      bucketKey: "reel:test",
+      baseline: { state: "COLD_START", bucketKey: "reel:test", sampleSize: 0 },
+      postAgeHours: null,
+      audienceSourceFetchedAt: null,
+      tierUsed: "UNAVAILABLE",
+      confidence: "NONE",
+      confidenceReason: null,
+      basedOnVideos: 0,
+      provisional: false,
+      unavailableReason: "REACH_UNKNOWN",
+    };
+
+    const prompt = buildUserPrompt(metadata, "focus", computed);
+    const performanceBlock = prompt.split("## Performance Assessment Data")[1] ?? "";
+
+    // The actual AC (#254): the model must never be told this reel is
+    // image-only content, even though no reach figure is available.
+    expect(performanceBlock).not.toContain("Konten ini berupa gambar");
+    expect(performanceBlock).not.toContain("image-only content");
   });
 });
 
