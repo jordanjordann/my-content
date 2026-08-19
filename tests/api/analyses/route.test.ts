@@ -184,6 +184,8 @@ describe("GET /api/analyses — performance shape, the ticket's three verificati
     expect(row.performance.computed.tierUsed).toBe("CREATOR_BASELINE");
     expect(row.performance.computed.tier1).toEqual({ denominator: "REACH", ratio: 0.0275, reachKind: "VIEWS" });
     expect(row.performance.computed.tier2).toEqual({
+      state: "MEASURED",
+      reason: null,
       median: 6_000,
       sampleSize: 6,
       bucketKey: "instagram:reel:full_video",
@@ -221,6 +223,8 @@ describe("GET /api/analyses — performance shape, the ticket's three verificati
 
     expect(row.performance.computed.tierUsed).toBe("REACH_ONLY");
     expect(row.performance.computed.tier2).toEqual({
+      state: "COLD_START",
+      reason: null,
       median: null,
       sampleSize: 2,
       bucketKey: "instagram:reel:full_video",
@@ -598,5 +602,120 @@ describe("GET /api/analyses — D3: one grouped query per page, never per row", 
     expect(response.status).toBe(200);
 
     expect(executeSpy).toHaveBeenCalledTimes(3);
+  });
+});
+
+/**
+ * Ticket #252 — end-to-end through the real route + DB, mirroring
+ * production's giorrando `instagram:reel:full_video` pool (verified against
+ * Turso, 2026-08-19: 8 rows, 7 resolving reach, each excludes itself ->
+ * 6 comparators, >= BASELINE_MIN_SAMPLE (5)). Proves the whole wire —
+ * `fetchLiveEligibleComparatorIds` -> route batching -> `buildTier2`'s
+ * self-exclusion -> the response body — not just the pure function in
+ * isolation (`readModel.test.ts` pins the arithmetic).
+ */
+describe("GET /api/analyses — ticket #252: the live multiplier end to end", () => {
+  it("a null-multiplier row whose live pool clears the threshold gets a real live multiplier, and no extra query beyond the existing D3 batch", async () => {
+    const profileId = randomUUID();
+    await insertProfile(db, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    // The observed row — 740570 reach, no stored baseline yet (cold start
+    // at write time), matching production's dea20a90.
+    const observedId = await insertAnalysis(db, {
+      username: "creator-giorrando",
+      resultContent: { overallScore: 3, scorecard: {}, performance: { performanceScore: null, verdict: "", drivers: [] } },
+      perfReachValue: 740_570,
+      perfReachKind: "VIEWS",
+      perfReachDerivedFrom: "TOP_LEVEL",
+      perfBucketKey: bucketKey,
+      perfBaselineMedian: null,
+      perfBaselineSampleSize: 0,
+      perfMultiplier: null,
+      perfTierUsed: "REACH_ONLY",
+      perfConfidence: "HIGH",
+      perfPostAgeHours: 200,
+      profileId,
+      schemaVersion: SCHEMA_VERSION,
+    });
+
+    // 6 more comparators in the SAME pool, matching production's other
+    // reach-bearing giorrando reels.
+    for (const reach of [5_492, 169_050, 7_698, 7_229, 63_281, 8_486]) {
+      await insertAnalysis(db, {
+        username: "creator-giorrando",
+        perfReachValue: reach,
+        perfBucketKey: bucketKey,
+        perfPostAgeHours: 200,
+        profileId,
+        schemaVersion: SCHEMA_VERSION,
+      });
+    }
+
+    const executeSpy = vi.spyOn(db, "execute");
+    const response = await listRoute.GET(makeGetRequest("?pageSize=10"));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+
+    const row = body.analyses.find((a: { id: string }) => a.id === observedId);
+    expect(row).toBeDefined();
+    expect(row.performance.computed.tier2.state).toBe("MEASURED");
+    expect(row.performance.computed.tier2.reason).toBeNull();
+    // median of the 6 OTHER reels (own reach excluded): 5492,7229,7698,8486,63281,169050 -> (7698+8486)/2 = 8092.
+    expect(row.performance.computed.tier2.median).toBe(8_092);
+    expect(row.performance.computed.tier2.sampleSize).toBe(6);
+    expect(row.performance.computed.tier2.multiplier).toBeCloseTo(91.5, 1);
+
+    // getAnalysesList (2: list + count) + getUniqueAccounts (1) + exactly
+    // ONE batched live-comparator query for all 7 null-multiplier rows —
+    // never one per row (D3, unaffected by #252 carrying values now).
+    expect(executeSpy).toHaveBeenCalledTimes(4);
+  });
+
+  it("an own-metric-unresolved row below the live threshold routes to NOT_COMPARABLE with no live count leak (DESIGN-3C §4.3, the sample-size leak fix)", async () => {
+    const profileId = randomUUID();
+    await insertProfile(db, profileId);
+    const bucketKey = "instagram:reel:full_video";
+
+    const observedId = await insertAnalysis(db, {
+      username: "creator-unresolved",
+      resultContent: { overallScore: 3, scorecard: {}, performance: { performanceScore: null, verdict: "", drivers: [] } },
+      perfReachValue: null, // own metric never resolved
+      perfBucketKey: bucketKey,
+      perfBaselineMedian: null,
+      perfBaselineSampleSize: 1, // frozen, write-time count
+      perfMultiplier: null,
+      perfTierUsed: "UNAVAILABLE",
+      perfConfidence: "NONE",
+      perfUnavailableReason: "REACH_HIDDEN",
+      perfPostAgeHours: 200,
+      profileId,
+      schemaVersion: SCHEMA_VERSION,
+    });
+
+    // 3 more comparators in the same pool — below BASELINE_MIN_SAMPLE (5),
+    // but state routing must not depend on that: own metric unresolved wins
+    // regardless of pool size (DESIGN-3C §3 step 2).
+    for (const reach of [1_000, 2_000, 3_000]) {
+      await insertAnalysis(db, {
+        username: "creator-unresolved",
+        perfReachValue: reach,
+        perfBucketKey: bucketKey,
+        perfPostAgeHours: 200,
+        profileId,
+        schemaVersion: SCHEMA_VERSION,
+      });
+    }
+
+    const response = await listRoute.GET(makeGetRequest("?pageSize=10"));
+    const body = await response.json();
+    const row = body.analyses.find((a: { id: string }) => a.id === observedId);
+
+    expect(row.performance.computed.tier2.state).toBe("NOT_COMPARABLE");
+    expect(row.performance.computed.tier2.reason).toBe("POST_METRIC_UNRESOLVED");
+    expect(row.performance.computed.tier2.multiplier).toBeNull();
+    // The live pool has 3 eligible comparators, but that number must NOT
+    // leak onto this row — it stays the frozen write-time column.
+    expect(row.performance.computed.tier2.sampleSize).toBe(1);
   });
 });

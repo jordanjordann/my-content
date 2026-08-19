@@ -220,7 +220,13 @@ function usableEngagementCount(value: number | null | undefined): number | null 
  * `ENGAGEMENT_COUNT` bucket's post with no usable likes/comments (a
  * disabled-counts image carousel) is excluded the same way, not scored `0`.
  */
-function metricFor(
+/**
+ * Exported (ticket #252) so the read path (`readModel.ts`) can classify a
+ * row's OWN reach/likes/comments against the SAME rules the write path and
+ * `fetchLiveEligibleComparatorIds()` use (TR-1 — one canonical classifier,
+ * reused, never reimplemented).
+ */
+export function metricFor(
   denominator: BaselineDenominator,
   post: BaselinePostMetrics,
 ): BaselineMetric | null {
@@ -239,7 +245,8 @@ function metricFor(
   return { denominator: "ENGAGEMENT_COUNT", value: likes + comments };
 }
 
-function median(values: number[]): number {
+/** Exported (ticket #252) so the read path computes a live median with the SAME arithmetic `computeBaseline()` uses — never a second implementation. */
+export function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   if (sorted.length % 2 === 0) {
@@ -363,31 +370,48 @@ export function candidatePoolKey(pool: CandidatePoolKey): string {
 const poolKeyOf = candidatePoolKey;
 
 /**
+ * Ticket #252 — one eligible comparator, id AND its classified metric value.
+ * `id` lets a caller self-exclude before taking a median (this row's own id
+ * may be present in its own pool's array — the DB query has no reason to
+ * know which row is "self" across many batched pools, D3); `value` is the
+ * SAME number `metricFor()` classified it as, so a caller (`readModel.ts`)
+ * never re-fetches or re-derives it (constraint: no extra DB queries).
+ */
+export interface LiveComparator {
+  id: string;
+  value: number;
+}
+
+/**
  * D3 — one grouped query per request, never per row. Given the distinct
- * `(profileId, bucketKey, schemaVersion)` pools a page's COLD_START rows
- * need a live count for, returns the SET of analysis ids that count as an
- * eligible Tier 2 comparator right now, keyed by `poolKeyOf()`. The caller
- * (the read path, per row) derives that row's live sample size as
- * `eligibleIds.size - (eligibleIds.has(thisRow.id) ? 1 : 0)` — exact,
- * because self-exclusion is the only per-row difference from the shared
- * predicate `fetchCandidateRows()` already applies (D3 step 4). Classifies
- * with the SAME `metricFor()` `computeBaseline()` uses (TR-1/D4), not a
- * copy. Every requested pool gets an entry, even an empty `Set`, so a
- * caller never has to distinguish "not fetched" from "fetched, zero
- * eligible".
+ * `(profileId, bucketKey, schemaVersion)` pools a page's null-multiplier
+ * rows need live comparators for, returns every analysis id that counts as
+ * an eligible Tier 2 comparator right now TOGETHER WITH its classified
+ * metric value, keyed by `poolKeyOf()`. The caller (the read path, per row)
+ * derives that row's live sample size / median by filtering its OWN id out
+ * of its own pool's array before counting/taking the median — self-exclusion
+ * is the only per-row difference from the shared predicate
+ * `fetchCandidateRows()` already applies (D3 step 4). Classifies with the
+ * SAME `metricFor()` `computeBaseline()` uses (TR-1/D4), not a copy.
+ * `value` is retained here rather than discarded (ticket #252) — it costs
+ * zero extra I/O, rows, or classification versus the id-only shape this
+ * used to return; it turns the batched pool into ALSO being reusable for a
+ * live multiplier/median, not only a live count. Every requested pool gets
+ * an entry, even an empty array, so a caller never has to distinguish "not
+ * fetched" from "fetched, zero eligible".
  */
 export async function fetchLiveEligibleComparatorIds(
   pools: CandidatePoolKey[],
   minPostAgeHours: number,
-): Promise<Map<string, Set<string>>> {
+): Promise<Map<string, LiveComparator[]>> {
   const uniquePools = new Map<string, CandidatePoolKey>();
   for (const pool of pools) {
     uniquePools.set(poolKeyOf(pool), pool);
   }
 
-  const result = new Map<string, Set<string>>();
+  const result = new Map<string, LiveComparator[]>();
   for (const key of uniquePools.keys()) {
-    result.set(key, new Set());
+    result.set(key, []);
   }
   if (uniquePools.size === 0) {
     return result;
@@ -420,7 +444,7 @@ export async function fetchLiveEligibleComparatorIds(
     if (metric == null) {
       continue;
     }
-    result.get(key)!.add(row.id);
+    result.get(key)!.push({ id: row.id, value: metric.value });
   }
 
   return result;

@@ -7,6 +7,7 @@ import {
   candidatePoolKey,
   fetchLiveEligibleComparatorIds,
   MATURITY_FLOOR_HOURS,
+  type LiveComparator,
   type PerformanceBlockRow,
 } from "@/lib/server/analysis/performance";
 import type { AnalysisPerformance } from "@/lib/api/analyses/types";
@@ -38,9 +39,12 @@ export async function GET(
       }
     }
 
-    // Ticket #206 (D1/D3) — same batched-live-count derivation as the list
-    // endpoint, degenerate to a single-pool request here (one detail row).
-    let liveColdStartSampleSize: number | null = null;
+    // Ticket #206 (D1/D3), extended live by #252 — same batched live
+    // comparator derivation as the list endpoint, degenerate to a
+    // single-pool request here (one detail row). `buildTier2()` decides
+    // whether/how to use it; this row's own id may legitimately be a
+    // member of its own pool (self-exclusion happens in `readModel.ts`).
+    let livePool: LiveComparator[] | null = null;
     if (
       detail.perfBucketKey != null &&
       detail.perfMultiplier == null &&
@@ -52,16 +56,14 @@ export async function GET(
         bucketKey: detail.perfBucketKey,
         schemaVersion: detail.schemaVersion,
       };
-      const liveEligibleIds = await fetchLiveEligibleComparatorIds([pool], MATURITY_FLOOR_HOURS);
-      const eligibleIds = liveEligibleIds.get(candidatePoolKey(pool));
-      if (eligibleIds != null) {
-        liveColdStartSampleSize = eligibleIds.size - (eligibleIds.has(detail.id) ? 1 : 0);
-      }
+      const liveComparators = await fetchLiveEligibleComparatorIds([pool], MATURITY_FLOOR_HOURS);
+      livePool = liveComparators.get(candidatePoolKey(pool)) ?? null;
     }
 
     // Ticket #144 (TDD §7) — purely additive, verbatim same derivation as
     // `app/api/analyses/route.ts`'s list endpoint.
     const computed = buildComputedPerformanceBlock({
+      id: detail.id,
       platform: detail.platform as "instagram" | "youtube",
       likeCount: detail.likeCount,
       commentCount: detail.commentCount,
@@ -84,7 +86,7 @@ export async function GET(
       perfConfidenceReason: detail.perfConfidenceReason as PerformanceBlockRow["perfConfidenceReason"],
       perfProvisional: detail.perfProvisional,
       perfUnavailableReason: detail.perfUnavailableReason as PerformanceBlockRow["perfUnavailableReason"],
-    }, liveColdStartSampleSize);
+    }, livePool);
 
     const resultsPerformance = (results as { performance?: { performanceScore: number | null; verdict: string; drivers: string[] } } | null)
       ?.performance;

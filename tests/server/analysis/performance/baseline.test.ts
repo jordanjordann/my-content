@@ -70,6 +70,11 @@ async function insertAnalysis(client: Client, opts: SeedAnalysis): Promise<strin
   return id;
 }
 
+/** Ticket #252 — `fetchLiveEligibleComparatorIds()` now returns `{ id, value }[]` per pool, not `Set<string>`; this projects a pool's array down to just the ids for assertions that only care about membership. */
+function idsOf(comparators: { id: string; value: number }[] | undefined): string[] {
+  return (comparators ?? []).map((comparator) => comparator.id);
+}
+
 /** ISO-8601 UTC timestamp `hoursAgo` hours before now — mirrors `fetcher/adapter.ts`'s stored shape. */
 function isoHoursAgo(hoursAgo: number): string {
   return new Date(Date.now() - hoursAgo * 60 * 60 * 1000).toISOString();
@@ -863,9 +868,11 @@ describe("fetchLiveEligibleComparatorIds — D3/D4: the batched, grouped live co
     const pool = { profileId, bucketKey, schemaVersion: SCHEMA_VERSION };
     const result = await fetchLiveEligibleComparatorIds([pool], 72);
 
-    const ids = result.get(candidatePoolKey(pool));
-    expect(ids).toBeDefined();
-    expect([...ids!]).toEqual([eligibleId]);
+    const comparators = result.get(candidatePoolKey(pool));
+    expect(comparators).toBeDefined();
+    expect(idsOf(comparators)).toEqual([eligibleId]);
+    // Ticket #252 — the classified metric value is retained, not discarded.
+    expect(comparators).toEqual([{ id: eligibleId, value: 1_000 }]);
   });
 
   it("an empty pool list issues no query and returns an empty map", async () => {
@@ -888,7 +895,7 @@ describe("fetchLiveEligibleComparatorIds — D3/D4: the batched, grouped live co
 
     const result = await fetchLiveEligibleComparatorIds([pool], 72);
 
-    expect(result.get(candidatePoolKey(pool))).toEqual(new Set());
+    expect(result.get(candidatePoolKey(pool))).toEqual([]);
   });
 
   it("one call covers multiple distinct pools without cross-contaminating their eligible sets", async () => {
@@ -909,8 +916,8 @@ describe("fetchLiveEligibleComparatorIds — D3/D4: the batched, grouped live co
     const poolB = { profileId: profileB, bucketKey, schemaVersion: SCHEMA_VERSION };
     const result = await fetchLiveEligibleComparatorIds([poolA, poolB], 72);
 
-    expect([...result.get(candidatePoolKey(poolA))!].sort()).toEqual([idA].sort());
-    expect([...result.get(candidatePoolKey(poolB))!].sort()).toEqual([idB1, idB2].sort());
+    expect(idsOf(result.get(candidatePoolKey(poolA))).sort()).toEqual([idA].sort());
+    expect(idsOf(result.get(candidatePoolKey(poolB))).sort()).toEqual([idB1, idB2].sort());
   });
 
   it("two pools sharing (profileId, bucketKey) but differing only in schemaVersion do not cross-contaminate (reviewer repro, BLOCKER 1)", async () => {
@@ -948,8 +955,8 @@ describe("fetchLiveEligibleComparatorIds — D3/D4: the batched, grouped live co
     const poolV2 = { profileId, bucketKey, schemaVersion: 2 };
     const result = await fetchLiveEligibleComparatorIds([poolV3, poolV2], 72);
 
-    expect([...result.get(candidatePoolKey(poolV3))!].sort()).toEqual([idV3a, idV3b].sort());
-    expect([...result.get(candidatePoolKey(poolV2))!].sort()).toEqual([idV2]);
+    expect(idsOf(result.get(candidatePoolKey(poolV3))).sort()).toEqual([idV3a, idV3b].sort());
+    expect(idsOf(result.get(candidatePoolKey(poolV2))).sort()).toEqual([idV2]);
 
     // Read path and write path must agree on the same data.
     const v2Baseline = await computeBaseline({
@@ -961,7 +968,7 @@ describe("fetchLiveEligibleComparatorIds — D3/D4: the batched, grouped live co
       currentPost: { reachValue: 500, likeCount: null, commentCount: null },
     });
     expect(v2Baseline.sampleSize).toBe(1);
-    expect(result.get(candidatePoolKey(poolV2))!.size).toBe(v2Baseline.sampleSize);
+    expect(result.get(candidatePoolKey(poolV2))!.length).toBe(v2Baseline.sampleSize);
   });
 
   it("two pools sharing (profileId, schemaVersion) but differing only in bucketKey do not cross-contaminate", async () => {
@@ -998,7 +1005,34 @@ describe("fetchLiveEligibleComparatorIds — D3/D4: the batched, grouped live co
     const poolB = { profileId, bucketKey: bucketKeyB, schemaVersion: SCHEMA_VERSION };
     const result = await fetchLiveEligibleComparatorIds([poolA, poolB], 72);
 
-    expect([...result.get(candidatePoolKey(poolA))!].sort()).toEqual([idA]);
-    expect([...result.get(candidatePoolKey(poolB))!].sort()).toEqual([idB1, idB2].sort());
+    expect(idsOf(result.get(candidatePoolKey(poolA))).sort()).toEqual([idA]);
+    expect(idsOf(result.get(candidatePoolKey(poolB))).sort()).toEqual([idB1, idB2].sort());
+  });
+});
+
+/**
+ * Ticket #252 — `metricFor()` is now exported so the read path can classify
+ * a row's own metric with the SAME rules (TR-1). Covers just the export
+ * boundary; the classification rules themselves are already covered
+ * exhaustively via `computeBaseline()`'s and `fetchLiveEligibleComparatorIds()`'s
+ * own tests above, which call it internally.
+ */
+describe("metricFor — ticket #252, exported for the read path (TR-1)", () => {
+  it("REACH denominator: a non-negative reach value classifies, a null/negative one does not", async () => {
+    const { metricFor } = await import("@/lib/server/analysis/performance/baseline");
+    expect(metricFor("REACH", { reachValue: 1_000, likeCount: null, commentCount: null })).toEqual({
+      denominator: "REACH",
+      value: 1_000,
+    });
+    expect(metricFor("REACH", { reachValue: null, likeCount: null, commentCount: null })).toBeNull();
+  });
+
+  it("ENGAGEMENT_COUNT denominator: likes + comments, both must be usable", async () => {
+    const { metricFor } = await import("@/lib/server/analysis/performance/baseline");
+    expect(metricFor("ENGAGEMENT_COUNT", { reachValue: null, likeCount: 10, commentCount: 2 })).toEqual({
+      denominator: "ENGAGEMENT_COUNT",
+      value: 12,
+    });
+    expect(metricFor("ENGAGEMENT_COUNT", { reachValue: null, likeCount: null, commentCount: 2 })).toBeNull();
   });
 });

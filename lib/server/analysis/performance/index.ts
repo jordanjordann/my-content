@@ -24,7 +24,7 @@ export {
   fetchLiveEligibleComparatorIds,
   candidatePoolKey,
 } from "./baseline";
-export type { AnalysisMode, CandidatePoolKey, ComputeBaselineInput, MediaType } from "./baseline";
+export type { AnalysisMode, CandidatePoolKey, ComputeBaselineInput, LiveComparator, MediaType } from "./baseline";
 
 export {
   computeConfidence,
@@ -41,7 +41,13 @@ export { computePerformanceBlock } from "./computeBlock";
 export type { ComputePerformanceBlockInput } from "./computeBlock";
 
 export { buildComputedPerformanceBlock } from "./readModel";
-export type { PerformanceBlockRow, PerformanceComputed, PerformanceTier2 } from "./readModel";
+export type {
+  PerformanceBlockRow,
+  PerformanceComputed,
+  PerformanceTier2,
+  PerformanceTier2Reason,
+  PerformanceTier2State,
+} from "./readModel";
 
 export { assertNever } from "./types";
 export type {
