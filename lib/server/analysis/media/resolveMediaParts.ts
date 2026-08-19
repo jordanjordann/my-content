@@ -72,7 +72,12 @@ function resolveCounts(node: ScrapeCreatorsMedia | ScrapeCreatorsCarouselChildNo
 // C7: discriminate on __typename/is_video, NEVER on video_url presence — an
 // all-image carousel's image children carry `video_url: null` (key present,
 // value null), not absent.
-function isVideoNode(node: ScrapeCreatorsMedia | ScrapeCreatorsCarouselChildNode): boolean {
+//
+// Exported (#254, OR-27): `reach.ts` reuses this SAME discriminator, in the
+// PERMITTED direction only — inside its already-`NONE` branch, to establish
+// that missing reach on video content is an error state, never to suppress
+// or override a reach field that IS present. See `reach.ts`'s module doc.
+export function isVideoNode(node: ScrapeCreatorsMedia | ScrapeCreatorsCarouselChildNode): boolean {
   return node.__typename === "XDTGraphVideo" || node.is_video === true;
 }
 

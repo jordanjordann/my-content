@@ -231,7 +231,23 @@ export interface ScrapeCreatorsProfileUser {
   [key: string]: unknown;
 }
 
-/** Envelope returned by `/v1/instagram/profile`. */
+/**
+ * Envelope returned by `/v1/instagram/profile`.
+ *
+ * PR #259 review, M2: this endpoint feeds `follower_count` — the tier-1
+ * denominator for a genuine image post — so a silently partial response
+ * here is materially similar to the #254 defect on the post endpoint. NOT
+ * given the same `errors`/`warnScrapeCreatorsErrors()` treatment as
+ * `ScrapeCreatorsPostEnvelope` in this PR: `.claude/context/verified-facts.md`
+ * documents the partial-`errors`-array shape only for `/v1/instagram/post`
+ * (~L754-767); there is no confirmed live capture of `/v1/instagram/profile`
+ * returning a populated `errors` array, and per this repo's external-API
+ * rule an undocumented field must not be guessed at (same key names, same
+ * shape, on a different endpoint — the hard rule is explicit: if a field
+ * isn't listed, stop and flag it). Flagged, not implemented — worth its own
+ * ticket once a real profile-endpoint capture with `errors` exists to
+ * confirm the shape against.
+ */
 export interface ScrapeCreatorsProfileEnvelope {
   success?: boolean;
   credits_remaining?: number;

@@ -5,6 +5,24 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Client } from "@libsql/client";
 import type { ReachResult } from "@/lib/server/analysis/performance/types";
+import { resolveInstagramReach } from "@/lib/server/analysis/performance/reach";
+import type { ScrapeCreatorsMedia } from "@/lib/server/scrapecreators";
+
+/**
+ * PR #259 review, M1: joins this describe block's input to the real
+ * `resolveInstagramReach()` output for the committed thin-reel fixture,
+ * rather than a hand-copied `ReachResult` literal — a literal typed by hand
+ * can pass for the wrong reason if `resolveInstagramReach()`'s returned
+ * shape ever drifts from what `reach.test.ts` separately pins.
+ */
+const igFixturesDir = join(process.cwd(), ".claude/context/fixtures/scrapecreators-instagram");
+
+function loadInstagramMedia(fixtureName: string): ScrapeCreatorsMedia {
+  const raw = JSON.parse(readFileSync(join(igFixturesDir, fixtureName), "utf8")) as {
+    data: { xdt_shortcode_media: ScrapeCreatorsMedia };
+  };
+  return raw.data.xdt_shortcode_media;
+}
 
 /**
  * Ticket #143 — `computeBlock.ts`'s single entry point, `computePerformanceBlock()`.
@@ -235,6 +253,44 @@ describe("computePerformanceBlock — all-image carousel (§12.2)", () => {
     expect(result.tierUsed).toBe("UNAVAILABLE");
     expect(result.unavailableReason).not.toBeNull();
     expect(result.unavailableReason).toBe("CONTENT_KIND_UNSUPPORTED");
+  });
+});
+
+describe("computePerformanceBlock — #254: thin reel payload (reach exists-but-unusable video content)", () => {
+  it("REACH_UNKNOWN/UNAVAILABLE, tier1Ratio null, tier3Ratio null — no FOLLOWERS denominator is produced (tier1Ratio's own discriminated union carries the denominator, there is no separate tier1Denominator field)", async () => {
+    const { computePerformanceBlock } = await import("@/lib/server/analysis/performance/computeBlock");
+
+    // Driven from the real fixture via the real resolver (PR #259 review,
+    // M1) rather than a hand-copied ReachResult literal — this is the SAME
+    // shape reach.test.ts pins directly, so if resolveInstagramReach()'s
+    // returned shape ever drifts, this test breaks too instead of staying
+    // green against a shape nothing produces. Mirrors row `581a798a`'s
+    // real-world likes/comments (3132 + 75) so the hidden-counts gate at
+    // judgement.ts:91 does not fire either.
+    const thinVideoReach: ReachResult = resolveInstagramReach(
+      loadInstagramMedia("ig_reel_thin_no_reach_fields.SYNTHETIC.json"),
+    );
+
+    const result = await computePerformanceBlock({
+      platform: "instagram",
+      mediaType: "reel",
+      analysisMode: "full_video",
+      reach: thinVideoReach,
+      likeCount: 3_132,
+      commentCount: 75,
+      likeAndViewCountsDisabled: undefined,
+      followerCount: 255_774,
+      audienceSourceFetchedAt: null,
+      postDate: new Date(Date.now() - 1000 * 60 * 60 * 200).toISOString(),
+      profileId: null,
+      analysisId: randomUUID(),
+      schemaVersion: SCHEMA_VERSION,
+    });
+
+    expect(result.tier1Ratio).toBeNull();
+    expect(result.tier3Ratio).toBeNull();
+    expect(result.tierUsed).toBe("UNAVAILABLE");
+    expect(result.unavailableReason).toBe("REACH_UNKNOWN");
   });
 });
 

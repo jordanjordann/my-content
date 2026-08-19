@@ -26,6 +26,23 @@ import type {
 const SC_TRIM = false;
 
 /**
+ * #254 §3.2 — `errors` (C6, `types.ts`) can be a populated array alongside
+ * `success: true`: a GraphQL-style partial/non-fatal error for one sub-field,
+ * not a request failure (verified-facts.md ~L754-767). Logged so a thin
+ * payload — like the one that motivated ticket #254 — leaves a trace instead
+ * of silently degrading; deliberately NON-FATAL per OR-25 (no retry): this
+ * never throws, only warns.
+ */
+function warnScrapeCreatorsErrors(envelope: ScrapeCreatorsPostEnvelope): void {
+  if (envelope.errors && envelope.errors.length > 0) {
+    console.warn(
+      "[ScrapeCreators] /v1/instagram/post returned success alongside a non-empty errors array",
+      envelope.errors.map((e) => ({ message: e.message, path: e.path, severity: e.severity })),
+    );
+  }
+}
+
+/**
  * Fetch the raw Instagram post/reel/carousel envelope. No mapping happens
  * here — the fetcher (lib/server/analysis/fetcher/instagram.ts) unwraps
  * `data.xdt_shortcode_media` and the adapter
@@ -33,7 +50,9 @@ const SC_TRIM = false;
  * MediaMetadata.
  */
 export async function getInstagramPost(url: string): Promise<ScrapeCreatorsPostEnvelope> {
-  return scRequest<ScrapeCreatorsPostEnvelope>(SC_PATHS.post, { url, trim: SC_TRIM });
+  const envelope = await scRequest<ScrapeCreatorsPostEnvelope>(SC_PATHS.post, { url, trim: SC_TRIM });
+  warnScrapeCreatorsErrors(envelope);
+  return envelope;
 }
 
 /**
