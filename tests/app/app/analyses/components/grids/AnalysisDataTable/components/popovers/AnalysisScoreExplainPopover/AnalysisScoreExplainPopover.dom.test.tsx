@@ -5,7 +5,6 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { AnalysisScoreExplainPopover } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/popovers/AnalysisScoreExplainPopover";
-import { BASELINE_MIN_SAMPLE_DISPLAY } from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
 import { scoreExplainFooter } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/popovers/AnalysisScoreExplainPopover/constants";
 import { formatMeasuredDate } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/popovers/AnalysisScoreExplainPopover/helpers";
 import { deriveAnalysisTablePerformance } from "@/lib/api/analyses/helpers";
@@ -59,7 +58,7 @@ const AGREEING_PERFORMANCE: AnalysisPerformance = {
     audience: { value: 10_000, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
     postAgeHours: 240,
     tier1: { denominator: "REACH", ratio: 0.068, reachKind: "VIEWS" },
-    tier2: { median: 151_000, sampleSize: 7, bucketKey: "instagram:reel:full_video", multiplier: 3.2 },
+    tier2: { median: 151_000, sampleSize: 7, bucketKey: "instagram:reel:full_video", multiplier: 3.2, minSample: 5 },
     tier3: null,
     tierUsed: "CREATOR_BASELINE",
     confidence: "HIGH",
@@ -91,7 +90,7 @@ const COLD_START_PERFORMANCE: AnalysisPerformance = {
   ...AGREEING_PERFORMANCE,
   computed: {
     ...AGREEING_PERFORMANCE.computed,
-    tier2: { median: null, sampleSize: 2, bucketKey: "instagram:carousel:full_video", multiplier: null },
+    tier2: { median: null, sampleSize: 2, bucketKey: "instagram:carousel:full_video", multiplier: null, minSample: 5 },
   },
   judgement: { performanceScore: 4, verdict: "Strong hook.", drivers: ["Hook kuat sejak detik pertama."] },
 };
@@ -104,7 +103,7 @@ const MEASURED_CAROUSEL_PERFORMANCE: AnalysisPerformance = {
   ...AGREEING_PERFORMANCE,
   computed: {
     ...AGREEING_PERFORMANCE.computed,
-    tier2: { median: 151_000, sampleSize: 7, bucketKey: "instagram:carousel:full_video", multiplier: 3.2 },
+    tier2: { median: 151_000, sampleSize: 7, bucketKey: "instagram:carousel:full_video", multiplier: 3.2, minSample: 5 },
   },
 };
 
@@ -231,7 +230,7 @@ describe("AnalysisScoreExplainPopover — the footer, F2 cold-start carve-out (D
     }
 
     const popup = openPopover(row);
-    const expectedCellText = `${multiplierCell.sampleSize} of ${BASELINE_MIN_SAMPLE_DISPLAY} ${multiplierCell.bucketNoun}`;
+    const expectedCellText = `${multiplierCell.sampleSize} of ${multiplierCell.minSample} ${multiplierCell.bucketNoun}`;
 
     expect(multiplierCell.bucketNoun).toBe("carousels");
     expect(expectedCellText).toBe("2 of 5 carousels");

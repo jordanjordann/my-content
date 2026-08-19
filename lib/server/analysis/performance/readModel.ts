@@ -5,6 +5,7 @@ import {
   resolveYoutubeCommentAvailability,
   resolveYoutubeLikeAvailability,
 } from "./availability";
+import { BASELINE_MIN_SAMPLE } from "./constants";
 import { computeReachPerFollower } from "./ratios";
 import type {
   AvailabilityState,
@@ -101,6 +102,14 @@ export interface PerformanceTier2 {
   bucketKey: string;
   /** `null` at cold start, or `NOT_COMPARABLE` (a full baseline exists but this post's own metric didn't resolve against it). */
   multiplier: number | null;
+  /**
+   * Ticket #260 — the server's own `BASELINE_MIN_SAMPLE` (`constants.ts`, default `5`,
+   * env-overridable via `PERFORMANCE_BASELINE_MIN_SAMPLE`), carried per row so the client
+   * never re-declares this threshold as a hardcoded, driftable duplicate constant (ticket
+   * #260 deleted the old client-side copy of it). This is the single source of truth the
+   * cold-start progress cell clamps its live `sampleSize` against.
+   */
+  minSample: number;
 }
 
 export interface PerformanceComputed {
@@ -208,6 +217,7 @@ function buildTier2(row: PerformanceBlockRow, liveColdStartSampleSize?: number |
     sampleSize,
     bucketKey: row.perfBucketKey,
     multiplier: row.perfMultiplier,
+    minSample: BASELINE_MIN_SAMPLE,
   };
 }
 

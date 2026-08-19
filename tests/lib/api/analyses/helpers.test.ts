@@ -299,7 +299,7 @@ function performanceWith(score: number | null, multiplier: number | null): Analy
       tier2:
         multiplier == null
           ? null
-          : { median: 151_000, sampleSize: 7, bucketKey: "instagram:reel:full_video", multiplier },
+          : { median: 151_000, sampleSize: 7, bucketKey: "instagram:reel:full_video", multiplier, minSample: 5 },
       tier3: null,
       tierUsed: "CREATOR_BASELINE",
       confidence: "HIGH",
@@ -318,7 +318,7 @@ function performanceWith(score: number | null, multiplier: number | null): Analy
  * `kind: "cold-start"` branch. Reviewer N5 — the prior fixture (`performanceWith(score,
  * null)`) set `tier2` to `null` outright, which never exercised a cold start.
  */
-function coldStartPerformanceWith(score: number | null): AnalysisPerformance {
+function coldStartPerformanceWith(score: number | null, sampleSize = 3, minSample = 5): AnalysisPerformance {
   const base = performanceWith(score, 3.2);
   if (base == null) {
     throw new Error("performanceWith never returns null in this fixture");
@@ -327,7 +327,7 @@ function coldStartPerformanceWith(score: number | null): AnalysisPerformance {
     ...base,
     computed: {
       ...base.computed,
-      tier2: { median: null, sampleSize: 3, bucketKey: "instagram:reel:full_video", multiplier: null },
+      tier2: { median: null, sampleSize, bucketKey: "instagram:reel:full_video", multiplier: null, minSample },
     },
   };
 }
@@ -345,7 +345,7 @@ function notComparablePerformanceWith(median: number): AnalysisPerformance {
     ...base,
     computed: {
       ...base.computed,
-      tier2: { median, sampleSize: 5, bucketKey: "instagram:reel:full_video", multiplier: null },
+      tier2: { median, sampleSize: 5, bucketKey: "instagram:reel:full_video", multiplier: null, minSample: 5 },
     },
   };
 }
@@ -363,7 +363,7 @@ describe("deriveAnalysisTablePerformance — multiplierCell, ticket #251's three
 
   it("COLD_START — tier2 present, median AND multiplier both null, renders 'cold-start' (unchanged behaviour)", () => {
     const derived = deriveAnalysisTablePerformance(coldStartPerformanceWith(4), "reel", null);
-    expect(derived?.multiplierCell).toEqual({ kind: "cold-start", sampleSize: 3, bucketNoun: "reels" });
+    expect(derived?.multiplierCell).toEqual({ kind: "cold-start", sampleSize: 3, minSample: 5, bucketNoun: "reels" });
   });
 
   it("NOT_COMPARABLE / POST_METRIC_UNRESOLVED — median present (non-zero), multiplier null, must NOT render 'cold-start' (the #251 bug: '5 of 5 reels')", () => {
@@ -374,6 +374,29 @@ describe("deriveAnalysisTablePerformance — multiplierCell, ticket #251's three
   it("NOT_COMPARABLE / MEDIAN_ZERO — median exactly 0 (not absent), multiplier null, takes the not-comparable branch, not cold start", () => {
     const derived = deriveAnalysisTablePerformance(notComparablePerformanceWith(0), "reel", null);
     expect(derived?.multiplierCell).toEqual({ kind: "not-comparable", reason: "MEDIAN_ZERO" });
+  });
+});
+
+/**
+ * Ticket #260 — the "6 of 5" bug. `tier2.sampleSize` is a LIVE, unbounded count
+ * (readModel.ts's `liveColdStartSampleSize` carve-out, ticket #206); `deriveMultiplierCell`
+ * must clamp it to `tier2.minSample` (the server's own `BASELINE_MIN_SAMPLE`, carried per
+ * row) rather than let the numerator exceed its own stated maximum.
+ */
+describe("deriveAnalysisTablePerformance — multiplierCell, ticket #260's clamp", () => {
+  it("a live sampleSize (6) greater than minSample (5) is clamped to 5, never rendered as 6 of 5", () => {
+    const derived = deriveAnalysisTablePerformance(coldStartPerformanceWith(4, 6, 5), "reel", null);
+    expect(derived?.multiplierCell).toEqual({ kind: "cold-start", sampleSize: 5, minSample: 5, bucketNoun: "reels" });
+  });
+
+  it("a live sampleSize (6) under a raised server threshold (8) is carried unclamped, rendering 6 of 8", () => {
+    const derived = deriveAnalysisTablePerformance(coldStartPerformanceWith(4, 6, 8), "reel", null);
+    expect(derived?.multiplierCell).toEqual({ kind: "cold-start", sampleSize: 6, minSample: 8, bucketNoun: "reels" });
+  });
+
+  it("a live sampleSize exactly equal to minSample is unaffected by the clamp", () => {
+    const derived = deriveAnalysisTablePerformance(coldStartPerformanceWith(4, 5, 5), "reel", null);
+    expect(derived?.multiplierCell).toEqual({ kind: "cold-start", sampleSize: 5, minSample: 5, bucketNoun: "reels" });
   });
 });
 

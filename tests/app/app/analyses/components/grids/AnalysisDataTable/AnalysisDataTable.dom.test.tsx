@@ -52,7 +52,7 @@ const ROW_A_SCORED = baseRow({
       audience: { value: 10_000, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
       postAgeHours: 10,
       tier1: { denominator: "REACH", ratio: 0.041, reachKind: "VIEWS" },
-      tier2: { median: 1.0, sampleSize: 8, bucketKey: "instagram:reel:full_video", multiplier: 3.2 },
+      tier2: { median: 1.0, sampleSize: 8, bucketKey: "instagram:reel:full_video", multiplier: 3.2, minSample: 5 },
       tier3: null,
       tierUsed: "CREATOR_BASELINE",
       confidence: "HIGH",
@@ -77,7 +77,7 @@ const ROW_B_COLD_START = baseRow({
       audience: { value: 284_000, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
       postAgeHours: 200,
       tier1: { denominator: "FOLLOWERS", ratio: 0.162 },
-      tier2: { median: null, sampleSize: 2, bucketKey: "instagram:carousel:full_video", multiplier: null },
+      tier2: { median: null, sampleSize: 2, bucketKey: "instagram:carousel:full_video", multiplier: null, minSample: 5 },
       tier3: null,
       tierUsed: "AUDIENCE_FALLBACK",
       confidence: "MEDIUM",
@@ -245,7 +245,7 @@ const ROW_I_REEL_NO_RESULT_REACH = baseRow({
       audience: { value: 50_000, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
       postAgeHours: 20,
       tier1: { denominator: "FOLLOWERS", ratio: 0.006 },
-      tier2: { median: null, sampleSize: 1, bucketKey: "instagram:reel:full_video", multiplier: null },
+      tier2: { median: null, sampleSize: 1, bucketKey: "instagram:reel:full_video", multiplier: null, minSample: 5 },
       tier3: null,
       tierUsed: "AUDIENCE_FALLBACK",
       confidence: "MEDIUM",
@@ -342,7 +342,7 @@ const ROW_L_IMAGES_ONLY = baseRow({
       audience: { value: 1_000, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
       postAgeHours: 10,
       tier1: null,
-      tier2: { median: null, sampleSize: 0, bucketKey: "instagram:carousel:images_only", multiplier: null },
+      tier2: { median: null, sampleSize: 0, bucketKey: "instagram:carousel:images_only", multiplier: null, minSample: 5 },
       tier3: null,
       tierUsed: "UNAVAILABLE",
       confidence: "NONE",
@@ -367,7 +367,7 @@ const ROW_M_METADATA_ONLY = baseRow({
       audience: { value: 1_000, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
       postAgeHours: 10,
       tier1: null,
-      tier2: { median: null, sampleSize: 0, bucketKey: "instagram:post:metadata_only", multiplier: null },
+      tier2: { median: null, sampleSize: 0, bucketKey: "instagram:post:metadata_only", multiplier: null, minSample: 5 },
       tier3: null,
       tierUsed: "UNAVAILABLE",
       confidence: "NONE",
@@ -392,7 +392,7 @@ const ROW_N_FULL_VIDEO = baseRow({
       audience: { value: 1_000, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
       postAgeHours: 10,
       tier1: { denominator: "REACH", ratio: 0.01, reachKind: "VIEWS" },
-      tier2: { median: 1, sampleSize: 6, bucketKey: "instagram:reel:full_video", multiplier: 1.1 },
+      tier2: { median: 1, sampleSize: 6, bucketKey: "instagram:reel:full_video", multiplier: 1.1, minSample: 5 },
       tier3: null,
       tierUsed: "CREATOR_BASELINE",
       confidence: "HIGH",
@@ -1078,5 +1078,86 @@ describe("AnalysisDataTable — Style column, off by default, toggled on, never 
     // No `localStorage`/`sessionStorage` write anywhere in the toggle path (OR-5's hard rule).
     expect(setItemSpy).not.toHaveBeenCalled();
     setItemSpy.mockRestore();
+  });
+});
+
+/**
+ * Ticket #260 — the cold-start progress cell's live `sampleSize` (readModel.ts's
+ * `liveColdStartSampleSize` carve-out, ticket #206) is unbounded: it grows as the creator's
+ * library grows even though this row's cold-start classification is frozen. Before this fix,
+ * `AnalysisTableRow` rendered `{sampleSize} of {5}` with the `5` hardcoded and no clamp,
+ * so a row past its own threshold rendered the nonsensical `6 of 5 reels`. The fix clamps
+ * `sampleSize` to `tier2.minSample` — the server's own `BASELINE_MIN_SAMPLE`, now carried per
+ * row instead of a hardcoded, driftable client constant — in the derive layer
+ * (`deriveMultiplierCell`, `lib/api/analyses/helpers.ts`).
+ */
+describe("AnalysisDataTable — ticket #260, cold-start progress is clamped to its own threshold", () => {
+  /** A cold-start row whose live `sampleSize` (6) has already overtaken `minSample` (5) — the
+   * exact shape production served on five real `giorrando` reel rows. */
+  const ROW_OVER_THRESHOLD = baseRow({
+    id: "row-over-threshold",
+    mediaType: "reel",
+    title: "Cold start past its own threshold",
+    performance: {
+      computed: {
+        reach: { value: null, kind: null, derivedFrom: "NONE", state: "UNKNOWN" },
+        likes: { value: 500, state: "AVAILABLE" },
+        comments: { value: 8, state: "AVAILABLE" },
+        audience: { value: 120_000, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
+        postAgeHours: 200,
+        tier1: { denominator: "FOLLOWERS", ratio: 0.05 },
+        tier2: { median: null, sampleSize: 6, bucketKey: "instagram:reel:full_video", multiplier: null, minSample: 5 },
+        tier3: null,
+        tierUsed: "AUDIENCE_FALLBACK",
+        confidence: "MEDIUM",
+        confidenceReason: "CACHED_FOLLOWER_DENOMINATOR",
+        provisional: false,
+        unavailableReason: null,
+      },
+      judgement: { performanceScore: 3, verdict: "Rough read.", drivers: [] },
+    },
+  });
+
+  it("clamps a live sampleSize (6) greater than the threshold (5) to '5 of 5 reels', never '6 of 5'", async () => {
+    renderTable([ROW_OVER_THRESHOLD]);
+    expect(await screen.findByText("5 of 5 reels")).toBeInTheDocument();
+    expect(screen.queryByText("6 of 5 reels")).not.toBeInTheDocument();
+  });
+
+  /**
+   * The server-side half of the fix (`PerformanceTier2.minSample` carrying the
+   * env-overridable `BASELINE_MIN_SAMPLE`, `vi.stubEnv`-tested in
+   * `tests/server/analysis/performance/readModel.test.ts`) is covered separately — this test
+   * proves the client half: given a row whose `minSample` reflects a raised server threshold
+   * (8), the cell renders that denominator, never the hardcoded `5`.
+   */
+  it("with the server threshold at 8 (unclamped, sampleSize 6 < 8), the cell renders '6 of 8 reels', never '6 of 5'", async () => {
+    const rowWithHigherThreshold = baseRow({
+      id: "row-higher-threshold",
+      mediaType: "reel",
+      title: "Cold start under a raised threshold",
+      performance: {
+        computed: {
+          reach: { value: null, kind: null, derivedFrom: "NONE", state: "UNKNOWN" },
+          likes: { value: 500, state: "AVAILABLE" },
+          comments: { value: 8, state: "AVAILABLE" },
+          audience: { value: 120_000, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
+          postAgeHours: 200,
+          tier1: { denominator: "FOLLOWERS", ratio: 0.05 },
+          tier2: { median: null, sampleSize: 6, bucketKey: "instagram:reel:full_video", multiplier: null, minSample: 8 },
+          tier3: null,
+          tierUsed: "AUDIENCE_FALLBACK",
+          confidence: "MEDIUM",
+          confidenceReason: "CACHED_FOLLOWER_DENOMINATOR",
+          provisional: false,
+          unavailableReason: null,
+        },
+        judgement: { performanceScore: 3, verdict: "Rough read.", drivers: [] },
+      },
+    });
+
+    renderTable([rowWithHigherThreshold]);
+    expect(await screen.findByText("6 of 8 reels")).toBeInTheDocument();
+    expect(screen.queryByText("6 of 5 reels")).not.toBeInTheDocument();
   });
 });
