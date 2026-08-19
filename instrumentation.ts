@@ -8,29 +8,21 @@
  *
  * The `NEXT_RUNTIME` narrowing is the documented pattern for importing
  * runtime-specific code (node_modules/next/dist/docs/01-app/02-guides/instrumentation.md).
+ * The actual guard logic (including the Node-only `process.exit`) lives in
+ * `./instrumentation-node`, a separate file, and NOT inline here — Next's
+ * Edge Runtime bundle of this file is built by statically scanning its
+ * source for Node.js APIs, and it does that scan regardless of the
+ * `NEXT_RUNTIME` check below (the check only affects which code path runs,
+ * not what the bundler sees). A `process.exit` call written directly in this
+ * file trips that scan and produces the Edge Runtime warning even though it
+ * is unreachable in the Edge runtime. Keeping this file itself free of
+ * Node-only APIs, and only reaching them through a conditional dynamic
+ * `import()`, is the documented fix (see "Importing runtime-specific code"
+ * in the doc above) — Next code-splits dynamic imports rather than inlining
+ * them into the Edge bundle.
  */
 export async function register() {
-  if (process.env.NEXT_RUNTIME !== "nodejs") {
-    return;
-  }
-
-  // Verified against a real `docker run` (#244): a thrown/rejected `register()`
-  // is logged by Next's standalone `server.js` ("Failed to prepare server" /
-  // `unhandledRejection`) but does NOT terminate the process — the container
-  // stays "Up" and every request 500s forever instead of the container
-  // exiting. That defeats the point of a boot guard (a platform healthcheck
-  // would never go green, but nothing ever tells the platform to give up and
-  // restart/roll back). Exit explicitly so the container actually stops.
-  //
-  // The dynamic `import` is inside this `try` on purpose: a failed module
-  // resolution (the #241 tracing failure mode) rejects exactly like a thrown
-  // `assertProductionEnv` and must hit the same `process.exit(1)`, not
-  // reject `register()` uncaught.
-  try {
-    const { assertProductionEnv } = await import("./lib/server/env/productionEnv");
-    assertProductionEnv();
-  } catch (error) {
-    console.error(error);
-    process.exit(1);
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    await import("./instrumentation-node");
   }
 }
