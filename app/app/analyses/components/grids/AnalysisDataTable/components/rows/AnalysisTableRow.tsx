@@ -6,6 +6,7 @@ import { AnalysisContentCell } from "@/app/app/analyses/components/grids/Analysi
 import { AnalysisCreatorCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisCreatorCell";
 import { AnalysisStyleCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisStyleCell";
 import type { AnalysisListItemIndexed } from "@/lib/api/analyses/types";
+import { NOT_COMPARABLE_MULTIPLIER_CELL_COPY } from "@/lib/api/analyses/constants";
 import type { AnalysisTableColumnDef, AnalysisTableDensity } from "@/app/app/analyses/components/grids/AnalysisDataTable/types";
 import {
   BASELINE_MIN_SAMPLE_DISPLAY,
@@ -248,6 +249,12 @@ function MultiplierCell({ row, failed }: { row: AnalysisListItemIndexed; failed:
         <p className="text-[11px] text-muted-foreground">builds as you analyse more</p>
       </div>
     );
+  }
+  if (content.kind === "not-comparable") {
+    // Ticket #251 — a full baseline exists but this post's own metric never resolved
+    // against it. Statement only: no button, link, or other interactive affordance
+    // (OR-25, settled — no retry).
+    return <p className="text-[11px] text-muted-foreground">{NOT_COMPARABLE_MULTIPLIER_CELL_COPY[content.reason]}</p>;
   }
   return (
     <div>

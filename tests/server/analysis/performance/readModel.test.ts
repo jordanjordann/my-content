@@ -207,3 +207,34 @@ describe("buildComputedPerformanceBlock — #206 carve-out, D8's actual boundary
     expect(result!.tier2!.sampleSize).toBe(2);
   });
 });
+
+describe("buildComputedPerformanceBlock — ticket #251, a NOT_COMPARABLE row must not be classified as cold start", () => {
+  it("a full-baseline, unresolved-multiplier row (median present, multiplier null) ignores the injected live value — its sampleSize stays the FROZEN stored column, not the live count", () => {
+    // Shape of production row 9470151e-833f-4342-a55d-2f922a401937 (verified against
+    // Turso, 2026-08-19): perf_baseline_median 7698, perf_baseline_sample_size 5,
+    // perf_multiplier NULL — a full baseline exists, this post's own metric didn't
+    // resolve. Pre-#251, `isColdStart = row.perfMultiplier == null` misclassified this
+    // exact shape as cold start and let the injected live value clobber sampleSize.
+    const row = baseRow({ perfMultiplier: null, perfBaselineMedian: 7_698, perfBaselineSampleSize: 5 });
+
+    const withoutLive = buildComputedPerformanceBlock(row);
+    const withLive = buildComputedPerformanceBlock(row, 999);
+
+    expect(withoutLive!.tier2).toEqual({
+      median: 7_698,
+      sampleSize: 5,
+      bucketKey: "instagram:reel:full_video",
+      multiplier: null,
+    });
+    // The injected "live cold-start" value must NOT reach a NOT_COMPARABLE row's
+    // sampleSize — there is no progress to report, so nothing here is live.
+    expect(withLive!.tier2!.sampleSize).toBe(5);
+    expect(withLive).toEqual(withoutLive);
+  });
+
+  it("a genuine cold-start row (median absent too) is unaffected by this fix — still takes the live value", () => {
+    const row = baseRow({ perfMultiplier: null, perfBaselineMedian: null, perfBaselineSampleSize: 2 });
+    const result = buildComputedPerformanceBlock(row, 4);
+    expect(result!.tier2!.sampleSize).toBe(4);
+  });
+});

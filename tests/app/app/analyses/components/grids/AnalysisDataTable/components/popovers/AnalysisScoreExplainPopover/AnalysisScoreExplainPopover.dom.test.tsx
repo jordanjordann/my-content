@@ -76,15 +76,22 @@ const DISAGREEING_PERFORMANCE: AnalysisPerformance = {
   judgement: { performanceScore: 2, verdict: "Weak content, strong reach.", drivers: ["Konten kurang kuat."] },
 };
 
-/** Cold start — tier2 present, multiplier `null` (ticket #220 / DESIGN-3B §4.5.1 amendment B6).
- * Bucket key is a carousel so the footer's F2 noun can be checked against the cell's own
- * noun, both read from the same `bucketKey` (the "carousels-above-reels" bug DESIGN-3B names
- * by name). */
+/** Cold start — tier2 present, median AND multiplier both `null` (ticket #220 / DESIGN-3B
+ * §4.5.1 amendment B6). Bucket key is a carousel so the footer's F2 noun can be checked
+ * against the cell's own noun, both read from the same `bucketKey` (the
+ * "carousels-above-reels" bug DESIGN-3B names by name).
+ *
+ * Ticket #251 — `median` MUST be `null` here, not merely `multiplier`. The original
+ * fixture set `median: 151_000` with `multiplier: null`, which is the NOT_COMPARABLE
+ * shape (a full baseline exists; this post's own metric never resolved), not cold start
+ * — that exact shape is the bug #251 fixes. A genuine cold start has no baseline at all,
+ * so `median` is absent too (see `BaselineResult`'s discriminator table,
+ * `lib/server/analysis/performance/types.ts`). */
 const COLD_START_PERFORMANCE: AnalysisPerformance = {
   ...AGREEING_PERFORMANCE,
   computed: {
     ...AGREEING_PERFORMANCE.computed,
-    tier2: { median: 151_000, sampleSize: 2, bucketKey: "instagram:carousel:full_video", multiplier: null },
+    tier2: { median: null, sampleSize: 2, bucketKey: "instagram:carousel:full_video", multiplier: null },
   },
   judgement: { performanceScore: 4, verdict: "Strong hook.", drivers: ["Hook kuat sejak detik pertama."] },
 };
