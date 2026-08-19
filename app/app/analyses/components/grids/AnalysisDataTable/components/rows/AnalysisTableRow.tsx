@@ -8,10 +8,7 @@ import { AnalysisStyleCell } from "@/app/app/analyses/components/grids/AnalysisD
 import type { AnalysisListItemIndexed } from "@/lib/api/analyses/types";
 import { NOT_COMPARABLE_MULTIPLIER_CELL_COPY } from "@/lib/api/analyses/constants";
 import type { AnalysisTableColumnDef, AnalysisTableDensity } from "@/app/app/analyses/components/grids/AnalysisDataTable/types";
-import {
-  BASELINE_MIN_SAMPLE_DISPLAY,
-  ROW_HEIGHT_PX,
-} from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
+import { ROW_HEIGHT_PX } from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
 import {
   formatPostedAge,
   formatPostedDate,
@@ -244,7 +241,7 @@ function MultiplierCell({ row, failed }: { row: AnalysisListItemIndexed; failed:
     return (
       <div>
         <p className="text-[11px] text-muted-foreground">
-          {content.sampleSize} of {BASELINE_MIN_SAMPLE_DISPLAY} {content.bucketNoun}
+          {content.sampleSize} of {content.minSample} {content.bucketNoun}
         </p>
         <p className="text-[11px] text-muted-foreground">builds as you analyse more</p>
       </div>

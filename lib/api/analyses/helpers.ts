@@ -387,12 +387,25 @@ function deriveMultiplierCell(computed: PerformanceComputed): AnalysisTableMulti
   if (tier2.median != null) {
     // NOT_COMPARABLE (§5.3, ticket #251) — a full baseline exists but this post's own
     // metric never resolved against it. There is nothing left to wait for; never render
-    // the cold-start "N of BASELINE_MIN_SAMPLE_DISPLAY" framing here.
+    // the cold-start "N of {minSample}" framing here.
     return { kind: "not-comparable", reason: tier2.median === 0 ? "MEDIAN_ZERO" : "POST_METRIC_UNRESOLVED" };
   }
 
   // Cold start (§5.3, R-C4 — a partial absence, not an absent score; never sinks).
-  return { kind: "cold-start", sampleSize: tier2.sampleSize, bucketNoun: bucketNoun(tier2.bucketKey) };
+  //
+  // Ticket #260 — `tier2.sampleSize` here is a LIVE, unbounded count (readModel.ts's
+  // `liveColdStartSampleSize` carve-out, ticket #206): it grows as the creator's library
+  // grows, even though this row's cold-start classification is frozen. Clamping it to
+  // `tier2.minSample` — the server's own `BASELINE_MIN_SAMPLE`, carried per row — is what
+  // stops the numerator from exceeding its own stated maximum (the "6 of 5" bug). Clamped
+  // here, in the derive layer, per AGENTS.md ("transform as early as possible; never in the
+  // UI") — the component only renders `sampleSize`/`minSample` as given.
+  return {
+    kind: "cold-start",
+    sampleSize: Math.min(tier2.sampleSize, tier2.minSample),
+    minSample: tier2.minSample,
+    bucketNoun: bucketNoun(tier2.bucketKey),
+  };
 }
 
 /**

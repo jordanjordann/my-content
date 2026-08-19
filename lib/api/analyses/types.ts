@@ -88,6 +88,12 @@ export type PerformanceTier2 = {
   bucketKey: string;
   /** `null` at cold start, or when a full baseline exists but this post's own metric didn't resolve against it. */
   multiplier: number | null;
+  /**
+   * Ticket #260 — the server's `BASELINE_MIN_SAMPLE` threshold, carried per row (mirrors
+   * `lib/server/analysis/performance/readModel.ts`'s `PerformanceTier2`). The single source
+   * of truth the cold-start progress cell clamps and renders its denominator against.
+   */
+  minSample: number;
 };
 
 export type PerformanceComputed = {
@@ -169,13 +175,13 @@ export type AnalysisTablePerformanceCell =
  * (`sampleSize >= BASELINE_MIN_SAMPLE`) but this specific post's own metric could not be
  * measured against it (`BaselineResult.state === "NOT_COMPARABLE"`,
  * `lib/server/analysis/performance/types.ts`). There is nothing left to "build" — the
- * bare `N of BASELINE_MIN_SAMPLE_DISPLAY` progress framing (R-C1, the cold-start-only
+ * bare `N of {minSample}` progress framing (R-C1, the cold-start-only
  * framing) must never render here. Statement only — OR-25 (no retry) forbids a button or
  * link on this cell in any state.
  */
 export type AnalysisTableMultiplierCell =
   | { kind: "measured"; multiplier: number; sampleSize: number; bucketNoun: string }
-  | { kind: "cold-start"; sampleSize: number; bucketNoun: string }
+  | { kind: "cold-start"; sampleSize: number; minSample: number; bucketNoun: string }
   | { kind: "not-comparable"; reason: "POST_METRIC_UNRESOLVED" | "MEDIAN_ZERO" }
   | { kind: "reason"; text: string | null }
   | { kind: "dash" };

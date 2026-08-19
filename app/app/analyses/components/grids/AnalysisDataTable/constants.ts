@@ -101,14 +101,3 @@ export const SKELETON_ROW_COUNT = 8;
  */
 export const DEFAULT_SORT_FIELD: AnalysesSortField = "posted";
 export const DEFAULT_SORT_DIR = "desc" as const;
-
-/**
- * DESIGN-3B §5.3 / R-C2 — the Tier 2 baseline minimum, mirrored client-side as a named
- * constant (never a bare literal in copy) because the API response does not carry the
- * threshold itself (only `sampleSize`/`median`/`multiplier`). This MUST stay in sync
- * with `lib/server/analysis/performance/constants.ts`'s `BASELINE_MIN_SAMPLE` (default
- * 5, env-overridable via `PERFORMANCE_BASELINE_MIN_SAMPLE`) — flagged in ticket #145's
- * PR body as a follow-up: if that env var is ever set, this constant silently drifts.
- * Ideally the response would carry the threshold per bucket; out of this ticket's scope.
- */
-export const BASELINE_MIN_SAMPLE_DISPLAY = 5;

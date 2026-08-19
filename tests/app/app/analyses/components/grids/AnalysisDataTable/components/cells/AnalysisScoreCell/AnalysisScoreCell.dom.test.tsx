@@ -21,7 +21,7 @@ const SCORED_PERFORMANCE: AnalysisPerformance = {
     audience: { value: 10_000, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
     postAgeHours: 240,
     tier1: { denominator: "REACH", ratio: 0.068, reachKind: "VIEWS" },
-    tier2: { median: 151_000, sampleSize: 7, bucketKey: "instagram:reel:full_video", multiplier: 3.2 },
+    tier2: { median: 151_000, sampleSize: 7, bucketKey: "instagram:reel:full_video", multiplier: 3.2, minSample: 5 },
     tier3: null,
     tierUsed: "CREATOR_BASELINE",
     confidence: "HIGH",

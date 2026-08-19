@@ -188,6 +188,7 @@ describe("GET /api/analyses — performance shape, the ticket's three verificati
       sampleSize: 6,
       bucketKey: "instagram:reel:full_video",
       multiplier: 1.33,
+      minSample: 5,
     });
     expect(row.performance.judgement).toEqual({
       performanceScore: 5,
@@ -224,6 +225,7 @@ describe("GET /api/analyses — performance shape, the ticket's three verificati
       sampleSize: 2,
       bucketKey: "instagram:reel:full_video",
       multiplier: null,
+      minSample: 5,
     });
     expect(row.performance.computed.tier1).not.toBeNull();
   });

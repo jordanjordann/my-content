@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildComputedPerformanceBlock } from "@/lib/server/analysis/performance/readModel";
 import type { PerformanceBlockRow } from "@/lib/server/analysis/performance/readModel";
@@ -71,6 +71,7 @@ describe("buildComputedPerformanceBlock — a scored row (CREATOR_BASELINE, Tier
       sampleSize: 7,
       bucketKey: "instagram:reel:full_video",
       multiplier: 1.25,
+      minSample: 5,
     });
     // reach ÷ followers = 5000 / 10000 = 0.5 — recomputed via ratios.ts's own function, not stored.
     expect(result!.tier3).toEqual({ reachPerFollower: 0.5 });
@@ -105,6 +106,7 @@ describe("buildComputedPerformanceBlock — a cold-start row (Tier 2 COLD_START,
       sampleSize: 2,
       bucketKey: "instagram:reel:full_video",
       multiplier: null,
+      minSample: 5,
     });
     // Tier 1 still renders — cold start is a partial absence (R-C4), not a suppression.
     expect(result!.tier1).toEqual({ denominator: "REACH", ratio: 0.022, reachKind: "VIEWS" });
@@ -225,6 +227,7 @@ describe("buildComputedPerformanceBlock — ticket #251, a NOT_COMPARABLE row mu
       sampleSize: 5,
       bucketKey: "instagram:reel:full_video",
       multiplier: null,
+      minSample: 5,
     });
     // The injected "live cold-start" value must NOT reach a NOT_COMPARABLE row's
     // sampleSize — there is no progress to report, so nothing here is live.
@@ -236,5 +239,36 @@ describe("buildComputedPerformanceBlock — ticket #251, a NOT_COMPARABLE row mu
     const row = baseRow({ perfMultiplier: null, perfBaselineMedian: null, perfBaselineSampleSize: 2 });
     const result = buildComputedPerformanceBlock(row, 4);
     expect(result!.tier2!.sampleSize).toBe(4);
+  });
+});
+
+/**
+ * Ticket #260 — `PerformanceTier2.minSample` carries the server's own `BASELINE_MIN_SAMPLE`
+ * (`constants.ts`) per row, replacing the deleted client-side hardcoded-`5` duplicate
+ * constant. Env-override pattern mirrors `tests/server/analysis/performance/constants.test.ts`.
+ */
+describe("buildComputedPerformanceBlock — ticket #260, tier2.minSample carries BASELINE_MIN_SAMPLE", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("defaults to 5 when PERFORMANCE_BASELINE_MIN_SAMPLE is unset", () => {
+    const result = buildComputedPerformanceBlock(baseRow());
+    expect(result!.tier2!.minSample).toBe(5);
+  });
+
+  it("carries the PERFORMANCE_BASELINE_MIN_SAMPLE override (8) unclamped — the numerator, not this field, is what gets clamped, and clamping itself happens client-side in the derive layer", async () => {
+    vi.stubEnv("PERFORMANCE_BASELINE_MIN_SAMPLE", "8");
+    vi.resetModules();
+    const { buildComputedPerformanceBlock: buildWithOverride } = await import(
+      "@/lib/server/analysis/performance/readModel"
+    );
+
+    const row = baseRow({ perfMultiplier: null, perfBaselineMedian: null, perfBaselineSampleSize: 1 });
+    const result = buildWithOverride(row, 6);
+
+    expect(result!.tier2!.minSample).toBe(8);
+    expect(result!.tier2!.sampleSize).toBe(6);
   });
 });
