@@ -493,7 +493,7 @@ keys and no others**:
 
 ```
 __typename: "XDTGraphImage"
-id: string                  // e.g. "POLARIS_3849791073308725783" — POLARIS_-prefixed
+id: string                  // e.g. "POLARIS_9445383986838411611" — POLARIS_-prefixed
 shortcode: string           // per-slide shortcode, e.g. "r2XmiZO8THA"
 display_url: string
 video_url: null             // *** key PRESENT but null on image children ***
@@ -646,7 +646,7 @@ Report below; #71 owns updating `types.ts`/the adapter.
 
 ```
 __typename: "XDTGraphVideo"
-id: string                    // e.g. "3909753692152934905" — PLAIN NUMERIC,
+id: string                    // e.g. "4107237313804245088" — PLAIN NUMERIC,
                                // same format as top-level media id. NOT
                                // POLARIS_-prefixed (contradicts the prior
                                // all-image carousel's child id format — see
@@ -1490,9 +1490,9 @@ per this file's supersede convention.
 "edge_media_preview_like": {
   "count": -1,
   "edges": [
-    { "node": { "id": "...", "username": "nikkires94", ... } },
-    { "node": { "id": "...", "username": "coachviktoriav", ... } },
-    { "node": { "id": "...", "username": "aaronswitzerrealtor", ... } }
+    { "node": { "id": "...", "username": "commenter_031", ... } },
+    { "node": { "id": "...", "username": "commenter_032", ... } },
+    { "node": { "id": "...", "username": "commenter_033", ... } }
   ]
 }
 ```
