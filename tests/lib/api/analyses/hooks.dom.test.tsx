@@ -29,8 +29,8 @@ const TARGET_INDEX = 50; // 0-indexed row that only exists past the default 50-r
 const TARGET_ACCOUNT = `creator-${TARGET_INDEX}`;
 
 function makeAnalysis(index: number): AnalysisListItem {
-  // Newest first as index increases from 0 — mirrors the server's default
-  // `sortBy: "posted", sortDir: "desc"` ordering.
+  // Newest first as index increases from 0 — mirrors the server's fixed
+  // `updated_at DESC` order (#266); the exact date field is incidental here.
   const postDate = new Date(Date.UTC(2026, 0, 1) - index * 86_400_000).toISOString();
   return {
     id: `analysis-${index}`,
@@ -132,9 +132,14 @@ describe("B4 — the OLD /app/analyses page's fetch-all bridge (useAllAnalysesQu
  * same `QueryClient` (React Query lives at the app root, same as in the real page tree) — and
  * asserts TanStack Query's query-key hashing dedupes them into ONE network request. Before the
  * fix (params objects that didn't structurally match), this fired two.
+ *
+ * #266 (2026-08-20 owner ruling) removed `sortBy`/`sortDir` from `GetAnalysesParams` entirely —
+ * both real call sites now build the bare `{ pageSize }` shape (see `AnalysesContent.tsx` and
+ * `AnalysisDataTable.tsx`'s own `useAnalysesQuery` calls). The assertion itself is unchanged:
+ * still ONE request for matching params. Only the object shape moves.
  */
 describe("PR #203 review, blocker 1 — the full-corpus fetch is not doubled", () => {
-  it("two call sites requesting the SAME { sortBy, sortDir, pageSize } params share ONE network request", async () => {
+  it("two call sites requesting the SAME { pageSize } params share ONE network request", async () => {
     let fetchCallCount = 0;
     const baseFetch = buildFetchMock();
     globalThis.fetch = (async (input: unknown) => {
@@ -143,7 +148,7 @@ describe("PR #203 review, blocker 1 — the full-corpus fetch is not doubled", (
     }) as unknown as typeof fetch;
 
     const wrapper = createWrapper();
-    const params = { sortBy: "posted" as const, sortDir: "desc" as const, pageSize: ANALYSES_FETCH_ALL_PAGE_SIZE };
+    const params = { pageSize: ANALYSES_FETCH_ALL_PAGE_SIZE };
 
     // Two independent hook consumers (mirrors `AnalysesContent` and `AnalysisDataTable`, both
     // mounted under the same page-level `QueryClient`).
@@ -158,7 +163,7 @@ describe("PR #203 review, blocker 1 — the full-corpus fetch is not doubled", (
     expect(tableSite.result.current.data?.analyses).toHaveLength(TOTAL_ROWS);
   });
 
-  it("REGRESSION GUARD — mismatched params (the pre-fix shape) genuinely produce TWO requests, proving the assertion above is not vacuous", async () => {
+  it("REGRESSION GUARD — mismatched params genuinely produce TWO requests, proving the assertion above is not vacuous", async () => {
     let fetchCallCount = 0;
     const baseFetch = buildFetchMock();
     globalThis.fetch = (async (input: unknown) => {
@@ -168,18 +173,14 @@ describe("PR #203 review, blocker 1 — the full-corpus fetch is not doubled", (
 
     const wrapper = createWrapper();
 
-    // Pre-fix shape: `AnalysesContent` called the bare bridge (no `sortBy`/`sortDir`), while
-    // `AnalysisDataTable` forwarded its own local sort state — two different query keys.
+    // Two structurally different params objects (one carries an explicit `page`, the other
+    // doesn't) must still hash to two different query keys — proving TanStack Query's key
+    // hashing is genuinely shape-sensitive, not a vacuous pass.
     const contentSite = renderHook(() => useAnalysesQuery({ pageSize: ANALYSES_FETCH_ALL_PAGE_SIZE }), {
       wrapper,
     });
     const tableSite = renderHook(
-      () =>
-        useAnalysesQuery({
-          sortBy: "posted" as const,
-          sortDir: "desc" as const,
-          pageSize: ANALYSES_FETCH_ALL_PAGE_SIZE,
-        }),
+      () => useAnalysesQuery({ page: 1, pageSize: ANALYSES_FETCH_ALL_PAGE_SIZE }),
       { wrapper },
     );
 

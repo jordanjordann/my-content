@@ -7,13 +7,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useAnalysesQuery, useAnalyzeContentMutation } from "@/lib/api/analyses";
 import { ANALYSES_FETCH_ALL_PAGE_SIZE } from "@/lib/api/analyses/constants";
-import type { AnalysesSortField, SortDirection } from "@/lib/api/analyses/types";
 import type { ProgressState } from "@/app/app/analyses/components/progress/AnalysisProgressPanel/types";
 import { AnalysisDataTable } from "@/app/app/analyses/components/grids/AnalysisDataTable";
-import {
-  DEFAULT_SORT_DIR,
-  DEFAULT_SORT_FIELD,
-} from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
 import { AnalysisFilterSection } from "@/app/app/analyses/components/sections/AnalysisFilterSection";
 import { NewAnalysisModal } from "@/app/app/analyses/components/modals/NewAnalysisModal";
 import { AnalysisProgressPanel } from "@/app/app/analyses/components/progress/AnalysisProgressPanel";
@@ -27,23 +22,15 @@ export function AnalysesContent() {
   const searchParams = useSearchParams();
   const detailId = searchParams.get("id");
 
-  // PR #203 review, blocker 1 — `sortBy`/`sortDir` are owned HERE, not inside `AnalysisDataTable`,
-  // and passed down as controlled props (`AnalysisDataTable`'s own doc comment explains why):
-  // this page's filter-bar counts and the table's own rows both need the full corpus, and this
-  // is what lets both `useAnalysesQuery` calls below build an IDENTICAL params object so
-  // TanStack Query dedupes them into ONE network request instead of two independent 5000-row
-  // fetches. B4 (PR #196 review) is why the corpus is fetched in one response at all — `analyses`
-  // must be the full corpus for the client-side filters to search more than one page.
-  const [sortBy, setSortBy] = useState<AnalysesSortField>(DEFAULT_SORT_FIELD);
-  const [sortDir, setSortDir] = useState<SortDirection>(DEFAULT_SORT_DIR);
-  const handleSortChange = useCallback((nextSortBy: AnalysesSortField, nextSortDir: SortDirection) => {
-    setSortBy(nextSortBy);
-    setSortDir(nextSortDir);
-  }, []);
-
+  // PR #203 review, blocker 1 — this page's filter-bar counts and `AnalysisDataTable`'s own
+  // rows both need the full corpus, and both build the exact same `{ pageSize }` params object
+  // (this table's own `useAnalysesQuery` call), so TanStack Query dedupes the two hook calls
+  // into ONE network request instead of two independent 5000-row fetches. B4 (PR #196 review)
+  // is why the corpus is fetched in one response at all — `analyses` must be the full corpus for
+  // the client-side filters to search more than one page. #266 (2026-08-20 owner ruling) removed
+  // sorting entirely — there is no `sortBy`/`sortDir` left to keep in sync between the two call
+  // sites; the server's fixed `updated_at DESC` order is the only order there is.
   const { data, isPending } = useAnalysesQuery({
-    sortBy,
-    sortDir,
     pageSize: ANALYSES_FETCH_ALL_PAGE_SIZE,
   });
   const { mutate: startAnalysis, isPending: isAnalyzing } = useAnalyzeContentMutation();
@@ -196,9 +183,6 @@ export function AnalysesContent() {
           openAnalysisId={detailId}
           onClearFilters={clearAll}
           filters={filters}
-          sortBy={sortBy}
-          sortDir={sortDir}
-          onSortChange={handleSortChange}
         />
 
         <NewAnalysisModal

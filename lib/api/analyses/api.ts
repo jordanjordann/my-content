@@ -19,15 +19,14 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 /**
  * AGENTS.md layering: returns the payload AS-IS, no transformation. Ticket
- * #144's pagination/sort params are forwarded verbatim as query params;
+ * #144's pagination params are forwarded verbatim as query params;
  * `lib/api/analyses/hooks.ts`'s `select` is the only place the response is
- * ever reshaped.
+ * ever reshaped. Sorting was removed by owner ruling (#266, 2026-08-20) —
+ * there is no `sortBy`/`sortDir` param to forward anymore.
  */
 export async function getAnalyses(params: GetAnalysesParams = {}): Promise<AnalysesListResponse> {
   const searchParams = new URLSearchParams();
   if (params.page != null) searchParams.set("page", String(params.page));
-  if (params.sortBy != null) searchParams.set("sortBy", params.sortBy);
-  if (params.sortDir != null) searchParams.set("sortDir", params.sortDir);
   if (params.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
 
   const query = searchParams.toString();

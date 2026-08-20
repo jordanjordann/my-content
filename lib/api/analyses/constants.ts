@@ -40,7 +40,7 @@ export const ANALYSIS_KEYS = {
  * so a correct filtered count/page can only be computed client-side over the full corpus. This
  * is a second, equally interim stopgap — "the old page already uses it" is not license to reach
  * for it elsewhere. `AnalysesContent` (the old page's shell) and `AnalysisDataTable` now
- * deliberately build the SAME `{ sortBy, sortDir, pageSize }` params object so TanStack Query's
+ * deliberately build the SAME `{ pageSize }` params object so TanStack Query's
  * key hashing dedupes the two `useAnalysesQuery` calls into one network request instead of two
  * independent 5000-row fetches — if you add a third call site, route it through the same shared
  * params or it will silently double the fetch again. This constant, `useAllAnalysesQuery`, and

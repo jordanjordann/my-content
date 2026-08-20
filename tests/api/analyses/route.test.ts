@@ -54,6 +54,8 @@ interface InsertOpts {
   /** Ticket #206 — the live cold-start count's grouping key. Unset (null) means "no creator", exactly `computeBlock.ts`'s own COLD_START/sampleSize:0 short-circuit. */
   profileId?: string | null;
   schemaVersion?: number | null;
+  /** #266 — the fixed order key. Unset leaves the column default (`datetime('now')`). */
+  updatedAt?: string | null;
 }
 
 const SCHEMA_VERSION = 3;
@@ -77,8 +79,10 @@ async function insertAnalysis(db: Client, opts: InsertOpts): Promise<string> {
         perf_baseline_median, perf_baseline_sample_size, perf_multiplier,
         perf_post_age_hours, audience_source_fetched_at, perf_tier_used,
         perf_confidence, perf_provisional, perf_unavailable_reason,
-        profile_id, schema_version
-      ) VALUES (?, 'p', 'https://instagram.com/reel/x', 'instagram', 'reel', ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        profile_id, schema_version${opts.updatedAt !== undefined ? ", updated_at" : ""}
+      ) VALUES (?, 'p', 'https://instagram.com/reel/x', 'instagram', 'reel', ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${
+        opts.updatedAt !== undefined ? ", ?" : ""
+      })
     `,
     args: [
       id,
@@ -105,6 +109,7 @@ async function insertAnalysis(db: Client, opts: InsertOpts): Promise<string> {
       opts.perfUnavailableReason ?? null,
       opts.profileId ?? null,
       opts.schemaVersion ?? null,
+      ...(opts.updatedAt !== undefined ? [opts.updatedAt] : []),
     ],
   });
   return id;
@@ -308,10 +313,18 @@ describe("GET /api/analyses — D8, byte-identical across two reads", () => {
    */
 });
 
-describe("GET /api/analyses — pagination and sorting", () => {
-  it("defaults to Posted descending (OR-8) and returns pagination metadata", async () => {
-    const older = await insertAnalysis(db, { username: "a", postDate: "2026-01-01T00:00:00.000Z" });
-    const newer = await insertAnalysis(db, { username: "b", postDate: "2026-06-01T00:00:00.000Z" });
+describe("GET /api/analyses — pagination and order (#266, 2026-08-20 owner ruling)", () => {
+  it("orders by updated_at DESC (OR-8 superseded) and returns pagination metadata", async () => {
+    const older = await insertAnalysis(db, {
+      username: "a",
+      postDate: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-01-01 00:00:00",
+    });
+    const newer = await insertAnalysis(db, {
+      username: "b",
+      postDate: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-06-01 00:00:00",
+    });
 
     const response = await listRoute.GET(makeGetRequest());
     const body = await response.json();
@@ -320,9 +333,10 @@ describe("GET /api/analyses — pagination and sorting", () => {
     expect(body.pagination).toEqual({ page: 1, pageSize: 50, total: 2, totalPages: 1 });
   });
 
-  it("rejects an unknown sortBy with 400, not a silent fallback", async () => {
+  it("an unknown sortBy is silently ignored — 200, not 400 (sortBy no longer exists as a param)", async () => {
+    await insertAnalysis(db, { username: "a" });
     const response = await listRoute.GET(makeGetRequest("?sortBy=notARealField"));
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(200);
   });
 
   it("rejects a non-integer page with 400", async () => {

@@ -73,51 +73,9 @@ export const ANALYSES_PAGE_SIZE = 50;
  */
 export const ANALYSES_MAX_PAGE_SIZE = 5000;
 
-/**
- * Ticket #144 — the sortable fields (TDD §9.6): creator, posted, reach,
- * content score, performance score, multiplier, and each engagement
- * column separately (reach-denominated / follower-denominated Tier 1
- * ratio, DESIGN-3C §9.1 columns 8/9).
- */
-export type AnalysesSortField =
-  | "creator"
-  | "posted"
-  | "reach"
-  | "contentScore"
-  | "performanceScore"
-  | "multiplier"
-  | "engagementReach"
-  | "engagementFollowers";
-
-export type SortDirection = "asc" | "desc";
-
-/**
- * SQL expression per sortable field. `contentScore` reads `overallScore`
- * out of `result_content` via `json_extract` — a SERVER-side SQL sort, not
- * the client-side `json_extract` sort the ticket rules out; `performanceScore`
- * is the promoted column (#139) specifically because THAT sort could not be
- * done this way at 3A's row volume. The two engagement columns select the
- * Tier 1 ratio only when its stored denominator matches — the other
- * denominator's rows sort as absent (R-S1), never as a mismatched value.
- */
-const SORT_COLUMN_EXPRESSIONS: Record<AnalysesSortField, string> = {
-  creator: "a.username",
-  posted: "a.post_date",
-  reach: "a.perf_reach_value",
-  contentScore: "json_extract(a.result_content, '$.overallScore')",
-  performanceScore: "a.performance_score",
-  multiplier: "a.perf_multiplier",
-  engagementReach: "(CASE WHEN a.perf_tier1_denominator = 'REACH' THEN a.perf_tier1_ratio END)",
-  engagementFollowers: "(CASE WHEN a.perf_tier1_denominator = 'FOLLOWERS' THEN a.perf_tier1_ratio END)",
-};
-
 export interface GetAnalysesListParams {
   /** 1-based. Defaults to 1, clamped to >= 1. */
   page?: number;
-  /** Defaults to `"posted"` — OR-8: newest first, never performance by default. */
-  sortBy?: AnalysesSortField;
-  /** Defaults to `"desc"`. */
-  sortDir?: SortDirection;
   /**
    * Defaults to `ANALYSES_PAGE_SIZE` (50). B4 bridge — an explicit override,
    * clamped to `[1, ANALYSES_MAX_PAGE_SIZE]`, lets a caller request a
@@ -128,33 +86,8 @@ export interface GetAnalysesListParams {
   pageSize?: number;
 }
 
-/**
- * R-S1/AC-14: absent values in the sort column ALWAYS sink to the bottom,
- * in BOTH directions — an unscored/unmeasured row must never be ordered as
- * if it were `0`. The standard SQLite idiom: a leading `col IS NULL`
- * ascending key groups every non-null row first regardless of the
- * requested direction (0 sorts before 1), then the requested direction
- * only orders WITHIN the non-null group. `a.id` is a final tiebreaker so
- * ordering (and therefore pagination) is stable across pages even when the
- * sort column has duplicate values.
- */
-function buildOrderByClause(sortBy: AnalysesSortField, sortDir: SortDirection): string {
-  // Runtime guard (PR #196 review, N1): the route already allow-lists `sortBy` against
-  // `SORT_FIELDS` and 400s on anything else, but this DB layer must not depend on that —
-  // a future caller that bypasses the route, or an `as`-widened value, must not reach an
-  // unchecked property lookup. `hasOwnProperty`, not `in`, so `"constructor"` cannot pass.
-  if (!Object.prototype.hasOwnProperty.call(SORT_COLUMN_EXPRESSIONS, sortBy)) {
-    throw new Error(`Invalid sort field: ${String(sortBy)}`);
-  }
-  const column = SORT_COLUMN_EXPRESSIONS[sortBy];
-  const direction = sortDir === "asc" ? "ASC" : "DESC";
-  return `ORDER BY ${column} IS NULL ASC, ${column} ${direction}, a.id ASC`;
-}
-
 export async function getAnalysesList(params: GetAnalysesListParams = {}) {
   const page = params.page != null && params.page >= 1 ? Math.floor(params.page) : 1;
-  const sortBy = params.sortBy ?? "posted";
-  const sortDir = params.sortDir ?? "desc";
   const pageSize =
     params.pageSize != null && params.pageSize >= 1
       ? Math.min(Math.floor(params.pageSize), ANALYSES_MAX_PAGE_SIZE)
@@ -206,7 +139,14 @@ export async function getAnalysesList(params: GetAnalysesListParams = {}) {
           a.performance_score,
           a.profile_id
         FROM analyses a
-        ${buildOrderByClause(sortBy, sortDir)}
+        -- Order is fixed at a.updated_at DESC — most recently analysed first — by owner
+        -- ruling on 2026-08-20, see #266. A secondary sort key (e.g. a.id ASC) was
+        -- deliberately declined by that ruling. updated_at is TEXT with one-second
+        -- granularity and no UNIQUE constraint, so two rows finishing in the same second
+        -- can tie; the resulting pagination non-determinism was reviewed and accepted at
+        -- current scale, and tied-row order is explicitly undefined. Do not add a
+        -- tiebreak without asking the owner.
+        ORDER BY a.updated_at DESC
         LIMIT ? OFFSET ?
       `,
       args: [pageSize, offset],

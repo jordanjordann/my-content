@@ -582,25 +582,10 @@ describe("AnalysisDataTable — default render (OR-1, OR-7, OR-8)", () => {
     expect(within(subHeaderRow).getByRole("columnheader", { name: /^performance/i })).toBeInTheDocument();
   });
 
-  it("defaults sort to Posted descending — aria-sort correct on the active header, absent elsewhere", async () => {
-    renderTable();
-    const postedHeader = await screen.findByRole("columnheader", { name: /posted/i });
-    expect(postedHeader).toHaveAttribute("aria-sort", "descending");
-
-    const creatorHeader = screen.getByRole("columnheader", { name: /creator/i });
-    expect(creatorHeader).not.toHaveAttribute("aria-sort");
-  });
-
-  it("moving the sort to another column moves aria-sort with it", async () => {
+  it("no header carries aria-sort — sorting was removed entirely (#266, DESIGN-3C amendment A10)", async () => {
     renderTable();
     await screen.findByRole("columnheader", { name: /posted/i });
-
-    fireEvent.click(screen.getByRole("button", { name: /sort by creator/i }));
-
-    const creatorHeader = screen.getByRole("columnheader", { name: /creator/i });
-    expect(creatorHeader).toHaveAttribute("aria-sort", "ascending");
-    const postedHeader = screen.getByRole("columnheader", { name: /posted/i });
-    expect(postedHeader).not.toHaveAttribute("aria-sort");
+    expect(document.querySelector("[aria-sort]")).toBeNull();
   });
 });
 

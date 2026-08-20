@@ -1,4 +1,3 @@
-import type { AnalysesSortField } from "@/lib/api/analyses/types";
 import type { AnalysisTableColumnDef } from "@/app/app/analyses/components/grids/AnalysisDataTable/types";
 
 /**
@@ -14,46 +13,36 @@ import type { AnalysisTableColumnDef } from "@/app/app/analyses/components/grids
  */
 export const ANALYSES_TABLE_COLUMNS: AnalysisTableColumnDef[] = [
   { id: "content", label: "Content", width: 300 },
-  { id: "creator", label: "Creator", width: 140, sortField: "creator", defaultSortDir: "asc" },
-  { id: "posted", label: "Posted", width: 108, sortField: "posted", defaultSortDir: "desc" },
-  { id: "counts", label: "Counts", width: 132, sortField: "reach", defaultSortDir: "desc" },
+  { id: "creator", label: "Creator", width: 140 },
+  { id: "posted", label: "Posted", width: 108 },
+  { id: "counts", label: "Counts", width: 132 },
   {
     id: "contentScore",
     label: "Content",
     width: 84,
-    sortField: "contentScore",
-    defaultSortDir: "desc",
     group: "scores",
   },
   {
     id: "performance",
     label: "Performance",
     width: 156,
-    sortField: "performanceScore",
-    defaultSortDir: "desc",
     group: "scores",
   },
   {
     id: "multiplier",
     label: "vs their usual",
     width: 128,
-    sortField: "multiplier",
-    defaultSortDir: "desc",
   },
   {
     id: "engagementReach",
     label: "Eng. / reach",
     width: 116,
-    sortField: "engagementReach",
-    defaultSortDir: "desc",
     headerColorClassName: "text-accent",
   },
   {
     id: "engagementFollowers",
     label: "Eng. / followers",
     width: 124,
-    sortField: "engagementFollowers",
-    defaultSortDir: "desc",
     headerColorClassName: "text-teal",
   },
 ];
@@ -94,10 +83,3 @@ export const ANALYSES_TABLE_PAGE_SIZE = 50;
 
 /** DESIGN-3C §7 — 8 skeleton rows in the exact column grid while the first page loads. */
 export const SKELETON_ROW_COUNT = 8;
-
-/**
- * TDD §9.6 / DESIGN-3C §6.1 default sort — `Posted` descending, newest analysis first.
- * Performance is user-selectable and is never the default (OR-8).
- */
-export const DEFAULT_SORT_FIELD: AnalysesSortField = "posted";
-export const DEFAULT_SORT_DIR = "desc" as const;
