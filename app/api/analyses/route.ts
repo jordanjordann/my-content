@@ -5,8 +5,6 @@ import {
   getUniqueAccounts,
   deleteAnalysis,
   ANALYSES_MAX_PAGE_SIZE,
-  type AnalysesSortField,
-  type SortDirection,
 } from "@/lib/server/db";
 import { isAuthenticated } from "@/lib/server/auth";
 import {
@@ -21,32 +19,6 @@ import {
 import type { AnalysisPerformance, ContentAnalysis } from "@/lib/api/analyses/types";
 
 export const runtime = "nodejs";
-
-const SORT_FIELDS: readonly AnalysesSortField[] = [
-  "creator",
-  "posted",
-  "reach",
-  "contentScore",
-  "performanceScore",
-  "multiplier",
-  "engagementReach",
-  "engagementFollowers",
-];
-
-/** Strict input validation at the API boundary (role standard) — an invalid explicit value is rejected, never silently coerced to a default. */
-function parseSortBy(raw: string | null): AnalysesSortField | null {
-  if (raw == null) {
-    return "posted";
-  }
-  return (SORT_FIELDS as readonly string[]).includes(raw) ? (raw as AnalysesSortField) : null;
-}
-
-function parseSortDir(raw: string | null): SortDirection | null {
-  if (raw == null) {
-    return "desc";
-  }
-  return raw === "asc" || raw === "desc" ? raw : null;
-}
 
 function parsePage(raw: string | null): number | null {
   if (raw == null) {
@@ -121,18 +93,10 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const page = parsePage(searchParams.get("page"));
-    const sortBy = parseSortBy(searchParams.get("sortBy"));
-    const sortDir = parseSortDir(searchParams.get("sortDir"));
     const pageSize = parsePageSize(searchParams.get("pageSize"));
 
     if (page == null) {
       return NextResponse.json({ error: "Invalid 'page' query parameter." }, { status: 400 });
-    }
-    if (sortBy == null) {
-      return NextResponse.json({ error: "Invalid 'sortBy' query parameter." }, { status: 400 });
-    }
-    if (sortDir == null) {
-      return NextResponse.json({ error: "Invalid 'sortDir' query parameter." }, { status: 400 });
     }
     if (pageSize === null) {
       return NextResponse.json(
@@ -141,8 +105,11 @@ export async function GET(request: Request) {
       );
     }
 
+    // Sorting was removed by owner ruling (#266, 2026-08-20) — the order is always
+    // `a.updated_at DESC` (see `lib/server/db.ts`'s `getAnalysesList`). Any `sortBy`/
+    // `sortDir` query params a caller still sends are simply ignored, not rejected.
     const [{ analyses, pagination }, accounts] = await Promise.all([
-      getAnalysesList({ page, sortBy, sortDir, pageSize }),
+      getAnalysesList({ page, pageSize }),
       getUniqueAccounts(),
     ]);
 

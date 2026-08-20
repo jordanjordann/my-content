@@ -5,10 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Client } from "@libsql/client";
 
 /**
- * Ticket #144 (TDD §9.6, OR-8, R-S1/AC-14) — `getAnalysesList()`'s
- * server-side pagination and sort. Same fresh-`:memory:`-libsql-per-test
- * technique as `tests/server/fingerprint/service.test.ts` /
+ * Ticket #144 (TDD §9.6, OR-8) — `getAnalysesList()`'s server-side pagination. Same
+ * fresh-`:memory:`-libsql-per-test technique as `tests/server/fingerprint/service.test.ts` /
  * `tests/api/profiles/fingerprint.route.test.ts`.
+ *
+ * #266 (2026-08-20 owner ruling, DESIGN-3C amendment A10) removed sorting entirely. The order is
+ * now fixed at `updated_at DESC` with NO tiebreak — the owner considered `, a.id ASC` and
+ * declined it. See `lib/server/db.ts`'s `getAnalysesList` for the required declined-tiebreak
+ * comment. Every test below that asserted the OLD 8-field sort (R-S1/AC-14 sinks, the
+ * `a.id ASC` tiebreaker, the runtime sort-column guard) is deleted, not re-pointed — those rules
+ * bound a feature that no longer exists.
  */
 
 async function runMigrations(db: Client): Promise<void> {
@@ -26,12 +32,13 @@ async function insertAnalysis(
   opts: {
     username: string;
     postDate?: string | null;
-    perfReachValue?: number | null;
-    performanceScore?: number | null;
-    perfMultiplier?: number | null;
-    perfTier1Ratio?: number | null;
-    perfTier1Denominator?: "REACH" | "FOLLOWERS" | null;
-    perfTierUsed?: string | null;
+    /**
+     * #266 — the fixed order key. Left unset, every row takes the column default
+     * `datetime('now')` and lands within the same second as every other row in the same test,
+     * making an ordering assertion vacuous (it would pass regardless of the actual order).
+     * Every test below that asserts an order sets this explicitly.
+     */
+    updatedAt?: string | null;
   },
 ): Promise<string> {
   const id = randomUUID();
@@ -39,21 +46,15 @@ async function insertAnalysis(
     sql: `
       INSERT INTO analyses (
         id, prompt, url, platform, media_type, username, status,
-        post_date, perf_reach_value, performance_score, perf_multiplier,
-        perf_tier1_ratio, perf_tier1_denominator, perf_tier_used
-      ) VALUES (?, 'p', 'https://instagram.com/reel/x', 'instagram', 'reel', ?, 'completed', ?, ?, ?, ?, ?, ?, ?)
+        post_date${opts.updatedAt !== undefined ? ", updated_at" : ""}
+      ) VALUES (?, 'p', 'https://instagram.com/reel/x', 'instagram', 'reel', ?, 'completed', ?${
+        opts.updatedAt !== undefined ? ", ?" : ""
+      })
     `,
-    args: [
-      id,
-      opts.username,
-      opts.postDate ?? null,
-      opts.perfReachValue ?? null,
-      opts.performanceScore ?? null,
-      opts.perfMultiplier ?? null,
-      opts.perfTier1Ratio ?? null,
-      opts.perfTier1Denominator ?? null,
-      opts.perfTierUsed ?? null,
-    ],
+    args:
+      opts.updatedAt !== undefined
+        ? [id, opts.username, opts.postDate ?? null, opts.updatedAt]
+        : [id, opts.username, opts.postDate ?? null],
   });
   return id;
 }
@@ -80,11 +81,19 @@ describe("getAnalysesList — pagination (50/page)", () => {
   it("returns a stable total count and 50 rows on page 1, remainder on page 2, no overlap/gaps", async () => {
     const ids: string[] = [];
     for (let i = 0; i < 63; i++) {
-      ids.push(await insertAnalysis(db, { username: `creator-${i}`, postDate: `2026-01-${String((i % 27) + 1).padStart(2, "0")}` }));
+      ids.push(
+        await insertAnalysis(db, {
+          username: `creator-${i}`,
+          // Distinct updated_at per row (one second apart) so LIMIT/OFFSET is a total order
+          // regardless of any tiebreak — the real-world case per #266 (production: 12 of 12
+          // rows distinct today).
+          updatedAt: `2026-01-01 00:${String(Math.floor(i / 60)).padStart(2, "0")}:${String(i % 60).padStart(2, "0")}`,
+        }),
+      );
     }
 
-    const page1 = await dbModule.getAnalysesList({ page: 1, sortBy: "creator", sortDir: "asc" });
-    const page2 = await dbModule.getAnalysesList({ page: 2, sortBy: "creator", sortDir: "asc" });
+    const page1 = await dbModule.getAnalysesList({ page: 1 });
+    const page2 = await dbModule.getAnalysesList({ page: 2 });
 
     expect(page1.pagination.total).toBe(63);
     expect(page2.pagination.total).toBe(63);
@@ -98,61 +107,16 @@ describe("getAnalysesList — pagination (50/page)", () => {
     expect(page1Ids.some((id: string) => page2Ids.includes(id))).toBe(false);
   });
 
-  /**
-   * B1 (code review on #196): the test above cannot prove the `a.id ASC` tiebreaker matters,
-   * because every one of its 63 rows gets a DISTINCT sort key (`creator-${i}`) — with no ties,
-   * `LIMIT`/`OFFSET` is already a total order regardless of the tiebreaker, so deleting
-   * `, a.id ASC` from `buildOrderByClause` left this suite green for the wrong reason.
-   *
-   * This fixture gives all 63 rows an IDENTICAL sort key (`postDate` sorted by `posted`), so
-   * `a.id ASC` is the ONLY thing capable of producing a total order across the two pages. It
-   * asserts both duplication AND omission explicitly (not just an id-set union match), by
-   * checking the exact expected id set on each page against the full, ascending-by-id ordering.
-   *
-   * Mutation-verified: with `, a.id ASC` removed from `buildOrderByClause`, this test FAILED
-   * (union size dropped below 63 due to duplicate ids landing on both pages, with SQLite's
-   * tie-scan order non-deterministic across the two separate `LIMIT/OFFSET` queries). Restored
-   * immediately after with the Edit tool; `git diff` confirmed clean.
-   */
-  it("with every row sharing an IDENTICAL sort key, the `a.id ASC` tiebreaker alone prevents duplication/omission across pages", async () => {
-    const ids: string[] = [];
-    for (let i = 0; i < 63; i++) {
-      ids.push(
-        await insertAnalysis(db, {
-          username: `creator-${i}`,
-          // Same value on every row — the `posted` sort key cannot break any tie by itself.
-          postDate: "2026-01-01T00:00:00.000Z",
-        }),
-      );
-    }
-    // `a.id ASC` is the deterministic total order once `posted` is constant across all rows.
-    const expectedOrder = [...ids].sort();
-
-    const page1 = await dbModule.getAnalysesList({ page: 1, sortBy: "posted", sortDir: "asc" });
-    const page2 = await dbModule.getAnalysesList({ page: 2, sortBy: "posted", sortDir: "asc" });
-
-    expect(page1.analyses).toHaveLength(50);
-    expect(page2.analyses).toHaveLength(13);
-
-    const page1Ids = page1.analyses.map((a: { id: string }) => a.id);
-    const page2Ids = page2.analyses.map((a: { id: string }) => a.id);
-
-    // Exact expected id set per page (catches BOTH a duplicated id landing on both pages AND a
-    // dropped id missing from both) — not merely a union-size check.
-    expect(page1Ids).toEqual(expectedOrder.slice(0, 50));
-    expect(page2Ids).toEqual(expectedOrder.slice(50, 63));
-
-    const union = new Set([...page1Ids, ...page2Ids]);
-    expect(union.size).toBe(63);
-  });
-
-  it("ordering is stable across repeated reads of the same page (same sort key ties broken by id)", async () => {
+  it("ordering is stable across repeated reads of the same page when updated_at values are distinct", async () => {
     for (let i = 0; i < 5; i++) {
-      await insertAnalysis(db, { username: "same-creator", perfReachValue: 100 });
+      await insertAnalysis(db, {
+        username: "same-creator",
+        updatedAt: `2026-01-01 00:00:0${i}`,
+      });
     }
 
-    const first = await dbModule.getAnalysesList({ page: 1, sortBy: "creator", sortDir: "asc" });
-    const second = await dbModule.getAnalysesList({ page: 1, sortBy: "creator", sortDir: "asc" });
+    const first = await dbModule.getAnalysesList({ page: 1 });
+    const second = await dbModule.getAnalysesList({ page: 1 });
 
     expect(first.analyses.map((a: { id: string }) => a.id)).toEqual(
       second.analyses.map((a: { id: string }) => a.id),
@@ -160,85 +124,48 @@ describe("getAnalysesList — pagination (50/page)", () => {
   });
 });
 
-describe("getAnalysesList — runtime sort-column guard (N1, PR #196 review)", () => {
-  it("throws on a sortBy value not present in SORT_COLUMN_EXPRESSIONS, e.g. a widened/bypassed 'constructor'", async () => {
-    await insertAnalysis(db, { username: "a" });
-
-    await expect(
-      dbModule.getAnalysesList({
-        // Simulates a caller that bypasses the route's own allow-list check.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        sortBy: "constructor" as any,
-      }),
-    ).rejects.toThrow(/Invalid sort field/);
-  });
-});
-
-describe("getAnalysesList — default sort (OR-8)", () => {
-  it("defaults to posted descending — newest first — when no params given", async () => {
-    const older = await insertAnalysis(db, { username: "a", postDate: "2026-01-01T00:00:00.000Z" });
-    const newer = await insertAnalysis(db, { username: "b", postDate: "2026-06-01T00:00:00.000Z" });
+describe("getAnalysesList — default and only order (#266, 2026-08-20 owner ruling)", () => {
+  it("orders by updated_at DESC — most recently analysed first, regardless of post_date", async () => {
+    const older = await insertAnalysis(db, {
+      username: "a",
+      // post_date is DELIBERATELY the inverse of updated_at here — proves the order key is
+      // updated_at, not post_date (OR-8 is superseded).
+      postDate: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-01-01 00:00:00",
+    });
+    const newer = await insertAnalysis(db, {
+      username: "b",
+      postDate: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-06-01 00:00:00",
+    });
 
     const result = await dbModule.getAnalysesList();
 
     expect(result.analyses.map((a: { id: string }) => a.id)).toEqual([newer, older]);
   });
-});
 
-describe("getAnalysesList — R-S1/AC-14: absent values sink to the bottom in BOTH directions", () => {
-  it("performanceScore ASC: unscored rows sink to the bottom (never sort as if they were 0)", async () => {
-    const scored1 = await insertAnalysis(db, { username: "a", performanceScore: 1 });
-    const scored5 = await insertAnalysis(db, { username: "b", performanceScore: 5 });
-    const unscored = await insertAnalysis(db, { username: "c", performanceScore: null });
-
-    const result = await dbModule.getAnalysesList({ sortBy: "performanceScore", sortDir: "asc" });
-
-    expect(result.analyses.map((a: { id: string }) => a.id)).toEqual([scored1, scored5, unscored]);
-  });
-
-  it("performanceScore DESC: unscored rows STILL sink to the bottom, not to the top", async () => {
-    const scored1 = await insertAnalysis(db, { username: "a", performanceScore: 1 });
-    const scored5 = await insertAnalysis(db, { username: "b", performanceScore: 5 });
-    const unscored = await insertAnalysis(db, { username: "c", performanceScore: null });
-
-    const result = await dbModule.getAnalysesList({ sortBy: "performanceScore", sortDir: "desc" });
-
-    // If the unscored row were treated as 0, DESC would still put it last —
-    // the real regression this guards is an unscored row sorting as if it
-    // were the WORST real score, i.e. always dead last, in BOTH directions,
-    // never appearing between two scored rows.
-    expect(result.analyses.map((a: { id: string }) => a.id)).toEqual([scored5, scored1, unscored]);
-  });
-
-  it("reach ASC and DESC: rows with no reach figure sink to the bottom both times", async () => {
-    const reachLow = await insertAnalysis(db, { username: "a", perfReachValue: 10 });
-    const reachHigh = await insertAnalysis(db, { username: "b", perfReachValue: 1000 });
-    const noReach = await insertAnalysis(db, { username: "c", perfReachValue: null });
-
-    const asc = await dbModule.getAnalysesList({ sortBy: "reach", sortDir: "asc" });
-    const desc = await dbModule.getAnalysesList({ sortBy: "reach", sortDir: "desc" });
-
-    expect(asc.analyses.map((a: { id: string }) => a.id)).toEqual([reachLow, reachHigh, noReach]);
-    expect(desc.analyses.map((a: { id: string }) => a.id)).toEqual([reachHigh, reachLow, noReach]);
-  });
-
-  it("engagementReach sort only orders REACH-denominated rows; a FOLLOWERS-denominated row sorts as absent, never a mismatched value", async () => {
-    const reachRow = await insertAnalysis(db, {
+  it("a re-analysed row (updated_at bumped) moves to position 1 while its post_date is unchanged — the reason the key is updated_at, not created_at", async () => {
+    const originallyNewer = await insertAnalysis(db, {
       username: "a",
-      perfTier1Ratio: 0.05,
-      perfTier1Denominator: "REACH",
+      postDate: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-01-10 00:00:00",
     });
-    const followerRow = await insertAnalysis(db, {
+    const reanalysed = await insertAnalysis(db, {
       username: "b",
-      perfTier1Ratio: 0.9,
-      perfTier1Denominator: "FOLLOWERS",
+      postDate: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-05 00:00:00",
     });
 
-    const result = await dbModule.getAnalysesList({ sortBy: "engagementReach", sortDir: "desc" });
+    const before = await dbModule.getAnalysesList();
+    expect(before.analyses.map((a: { id: string }) => a.id)).toEqual([originallyNewer, reanalysed]);
 
-    // followerRow's ratio (0.9) is the larger raw number, but it is not a
-    // REACH-denominated figure, so it must sink to the bottom of the
-    // `engagementReach` sort rather than appearing first.
-    expect(result.analyses.map((a: { id: string }) => a.id)).toEqual([reachRow, followerRow]);
+    // Simulate a re-analyze: bumps updated_at, leaves post_date untouched.
+    await db.execute({
+      sql: "UPDATE analyses SET updated_at = ? WHERE id = ?",
+      args: ["2026-08-20 00:00:00", reanalysed],
+    });
+
+    const after = await dbModule.getAnalysesList();
+    expect(after.analyses.map((a: { id: string }) => a.id)).toEqual([reanalysed, originallyNewer]);
   });
 });

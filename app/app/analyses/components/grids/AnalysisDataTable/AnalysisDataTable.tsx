@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnalysesQuery } from "@/lib/api/analyses";
 import { ANALYSES_FETCH_ALL_PAGE_SIZE } from "@/lib/api/analyses/constants";
-import type { AnalysesSortField, AnalysisListItemIndexed, SortDirection } from "@/lib/api/analyses/types";
+import type { AnalysisListItemIndexed } from "@/lib/api/analyses/types";
 import { AnalysisTableColumnHeaders } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/headers/AnalysisTableColumnHeaders";
 import { AnalysisTableRow } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/rows/AnalysisTableRow";
 import { AnalysisTableSkeletonRow } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/rows/AnalysisTableSkeletonRow";
@@ -17,8 +17,6 @@ import type { AnalysisColumnsMenuColumn } from "@/app/app/analyses/components/gr
 import {
   ANALYSES_TABLE_COLUMNS,
   ANALYSES_TABLE_PAGE_SIZE,
-  DEFAULT_SORT_DIR,
-  DEFAULT_SORT_FIELD,
   DEFAULT_VISIBLE_COLUMN_IDS,
   LOCKED_COLUMN_IDS,
   SKELETON_ROW_COUNT,
@@ -37,32 +35,33 @@ const ALL_COLUMNS = [...ANALYSES_TABLE_COLUMNS, STYLE_COLUMN];
 /**
  * Ticket #145 (skeleton) / #149 (filters, column menu) — the analyses table: 9 default columns
  * plus the optional Style column (OR-1, OR-5), the shared `Scores` group header, two density
- * modes (OR-7), the sink group (R-S2), the four render states (design §7), full table/
- * `aria-sort`/keyboard semantics (design §8-§10) — and now real client-visible filtering and
- * per-column visibility.
+ * modes (OR-7), the sink group (R-S2), the four render states (design §7), full table
+ * semantics (design §8-§10) — and now real client-visible filtering and per-column visibility.
+ * Sorting was removed entirely by owner ruling (#266, 2026-08-20, DESIGN-3C amendment A10) — no
+ * sort control, no `aria-sort`, no query params; the server's order is fixed at `updated_at DESC`.
  *
  * **Fetch strategy (ticket #149).** #145 self-fetched one server-paginated page at a time
- * (`page`/`sortBy`/`sortDir`). Filtering changes that: the #144 API has no filter query params
- * (this ticket's own Files Affected list does not touch `app/api/analyses/route.ts`'s query
- * surface, and inventing filter params there is out of scope), so a filtered "Showing 24 of 118"
- * count and a correctly filtered page can only be computed from the FULL corpus. This table now
- * requests `ANALYSES_FETCH_ALL_PAGE_SIZE` rows — the same bridge `useAllAnalysesQuery` already
- * uses for the OLD page — with `sortBy`/`sortDir` still forwarded, so the **server** still does
- * the sort (identical null-sink behaviour, R-S1) over the *whole* corpus in one response; this
- * component then filters that already-correctly-sorted array client-side and paginates the
- * *filtered* result at `ANALYSES_TABLE_PAGE_SIZE` locally. That keeps sort order, the filtered
- * count, and the true unfiltered total (`data.pagination.total`) all honest — the trade is one
- * larger fetch instead of N small ones, acceptable for this dataset size and explicitly
- * preferred over a filter bar that looks wired but silently only searches page 1 (the
- * "confident-looking wrong number" the ticket's reliability rule warns against).
+ * (`page`). Filtering changes that: the #144 API has no filter query params (this ticket's own
+ * Files Affected list does not touch `app/api/analyses/route.ts`'s query surface, and inventing
+ * filter params there is out of scope), so a filtered "Showing 24 of 118" count and a correctly
+ * filtered page can only be computed from the FULL corpus. This table requests
+ * `ANALYSES_FETCH_ALL_PAGE_SIZE` rows — the same bridge `useAllAnalysesQuery` already uses for
+ * the OLD page — over the *whole* corpus in one response, already in the server's fixed
+ * `updated_at DESC` order (#266, 2026-08-20 owner ruling — sorting was removed entirely); this
+ * component then filters that already-ordered array client-side and paginates the *filtered*
+ * result at `ANALYSES_TABLE_PAGE_SIZE` locally. That keeps the filtered count and the true
+ * unfiltered total (`data.pagination.total`) both honest — the trade is one larger fetch instead
+ * of N small ones, acceptable for this dataset size and explicitly preferred over a filter bar
+ * that looks wired but silently only searches page 1 (the "confident-looking wrong number" the
+ * ticket's reliability rule warns against).
  *
  * PR #203 review, blocker 1 — `AnalysesContent` (this table's real-page caller) ALSO needs the
  * full corpus for its own filter-bar counts, and independently called `useAllAnalysesQuery`
  * with a different query key, so the page fired two 5000-row fetches on every load. Fixed by
- * making `sortBy`/`sortDir` controllable (see `AnalysisDataTableProps`) — `AnalysesContent` now
- * owns the single source of truth for those two values and builds its own `useAnalysesQuery`
- * call with the exact same `{ sortBy, sortDir, pageSize }` shape this table builds below, so
- * TanStack Query's key hashing dedupes the two hook calls into one network request.
+ * both call sites building the exact same `{ pageSize }` params object (see
+ * `AnalysesContent.tsx`), so TanStack Query's key hashing dedupes the two hook calls into one
+ * network request. #266 removed `sortBy`/`sortDir` from that shared shape entirely — both call
+ * sites had to drop them together, or the dedupe would have re-broken.
  */
 export function AnalysisDataTable({
   onAnalysisClick,
@@ -70,20 +69,8 @@ export function AnalysisDataTable({
   openAnalysisId,
   onClearFilters,
   filters = EMPTY_ANALYSIS_FILTERS,
-  sortBy: controlledSortBy,
-  sortDir: controlledSortDir,
-  onSortChange: controlledOnSortChange,
 }: AnalysisDataTableProps) {
   const [page, setPage] = useState(1);
-  // PR #203 review, blocker 1 — local fallback state, only used when the caller doesn't
-  // control sort (see this component's own `AnalysisDataTableProps.sortBy` doc comment). When
-  // controlled, `sortBy`/`sortDir` below always resolve to the caller's values so this table's
-  // `useAnalysesQuery` call builds the EXACT same params object `AnalysesContent` builds for its
-  // own full-corpus fetch, letting TanStack Query dedupe the two into one network request.
-  const [localSortBy, setLocalSortBy] = useState<AnalysesSortField>(DEFAULT_SORT_FIELD);
-  const [localSortDir, setLocalSortDir] = useState<SortDirection>(DEFAULT_SORT_DIR);
-  const sortBy = controlledSortBy ?? localSortBy;
-  const sortDir = controlledSortDir ?? localSortDir;
   // OR-5 / DESIGN-3C §6.3 (superseded 2026-08-09) — plain React state, no persistence of
   // any kind. Comfortable is the owner-ruled default (OR-7).
   const [density, setDensity] = useState<AnalysisTableDensity>("comfortable");
@@ -96,8 +83,6 @@ export function AnalysisDataTable({
   );
 
   const { data, isPending, isError, error, refetch } = useAnalysesQuery({
-    sortBy,
-    sortDir,
     pageSize: ANALYSES_FETCH_ALL_PAGE_SIZE,
   });
 
@@ -116,23 +101,6 @@ export function AnalysisDataTable({
       lastOpenedIdRef.current = null;
     }
   }, [openAnalysisId]);
-
-  const handleSortChange = (field: AnalysesSortField) => {
-    const nextDir: SortDirection =
-      field === sortBy
-        ? sortDir === "asc"
-          ? "desc"
-          : "asc"
-        : (ANALYSES_TABLE_COLUMNS.find((c) => c.sortField === field)?.defaultSortDir ?? "desc");
-
-    if (controlledOnSortChange) {
-      controlledOnSortChange(field, nextDir);
-    } else {
-      setLocalSortBy(field);
-      setLocalSortDir(nextDir);
-    }
-    setPage(1);
-  };
 
   const toggleColumn = (id: string) => {
     // PR #203 review, blocker 3 — only `Style` is genuinely interactive (see
@@ -298,12 +266,7 @@ export function AnalysisDataTable({
             Analyses — every analysed post, its content and performance scores, and how it
             compares against the creator&apos;s own past posts.
           </caption>
-          <AnalysisTableColumnHeaders
-            columns={displayColumns}
-            sortBy={sortBy}
-            sortDir={sortDir}
-            onSortChange={handleSortChange}
-          />
+          <AnalysisTableColumnHeaders columns={displayColumns} />
           <tbody>{bodyContent}</tbody>
         </table>
       </div>

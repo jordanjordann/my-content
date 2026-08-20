@@ -78,9 +78,10 @@ function selectProxiedAnalysisDetail(data: AnalysisDetail): AnalysisDetailClassi
 }
 
 /**
- * Ticket #144 — `params` (page/sortBy/sortDir) is part of the query key so
- * each page/sort combination caches independently, matching server-side
- * pagination's stable-per-page contract.
+ * Ticket #144 — `params` (page/pageSize) is part of the query key so each
+ * page/page-size combination caches independently, matching server-side
+ * pagination's stable-per-page contract. Sorting was removed by owner
+ * ruling (#266, 2026-08-20) — the server's order is fixed.
  */
 export function useAnalysesQuery(params: GetAnalysesParams = {}) {
   return useQuery({

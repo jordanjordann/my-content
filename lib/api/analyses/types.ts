@@ -267,19 +267,6 @@ export type AnalysisTableDerivedPerformance = {
   analysisMode: AnalysisMode | null;
 };
 
-/** Ticket #144 (TDD §9.6) — server-side sortable fields. */
-export type AnalysesSortField =
-  | "creator"
-  | "posted"
-  | "reach"
-  | "contentScore"
-  | "performanceScore"
-  | "multiplier"
-  | "engagementReach"
-  | "engagementFollowers";
-
-export type SortDirection = "asc" | "desc";
-
 export type AnalysesPagination = {
   page: number;
   pageSize: number;
@@ -435,8 +422,6 @@ export type AnalysesListResponse = {
 
 export type GetAnalysesParams = {
   page?: number;
-  sortBy?: AnalysesSortField;
-  sortDir?: SortDirection;
   /**
    * B4 (PR #196 review) — optional override of the server's default page
    * size (50). The OLD `/app/analyses` page's `useAllAnalysesQuery` (see
