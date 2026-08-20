@@ -230,20 +230,21 @@ describe("buildComputedPerformanceBlock — #206 carve-out, D8's actual boundary
 
 describe("buildComputedPerformanceBlock — ticket #251, a NOT_COMPARABLE row must not be classified as cold start", () => {
   it("a full-baseline, unresolved-own-metric row (median present, multiplier null) ignores the injected live pool — its sampleSize stays the FROZEN stored column, not live; median is null (own-metric-unresolved has no median, #263 review Finding 1: a stored perfBaselineMedian no longer short-circuits/freezes this row)", () => {
-    // Shape of production row 391b7615-339c-4007-9d37-6e8d48b66d21 (verified
-    // against Turso, 2026-08-19): perf_baseline_median 7698,
-    // perf_baseline_sample_size 5, perf_multiplier NULL, perf_reach_value
-    // NULL — a full baseline exists, this post's own reach never resolved.
+    // Synthetic reconstruction of a production row shape (anonymised,
+    // #264): perf_baseline_median 6100, perf_baseline_sample_size 5,
+    // perf_multiplier NULL, perf_reach_value NULL — a full baseline exists,
+    // this post's own reach never resolved.
     // Pre-#251, `isColdStart = row.perfMultiplier == null` misclassified
     // this exact shape as cold start and let the injected live value
     // clobber sampleSize. Post-#263-review-Finding-1, this row is no longer
     // routed through a frozen-reuse branch keyed on `perfBaselineMedian` —
     // it reaches step 2 (own metric unresolved) same as any other
     // `perfMultiplier == null` row, so `median` is `null` (no median exists
-    // for this state), not the stale stored `7698`.
+    // for this state), not the stale stored `6100`.
     const row = baseRow({
+      id: "not-comparable-row-synth-1",
       perfMultiplier: null,
-      perfBaselineMedian: 7_698,
+      perfBaselineMedian: 6_100,
       perfBaselineSampleSize: 5,
       perfReachValue: null,
     });
@@ -315,70 +316,70 @@ describe("buildComputedPerformanceBlock — ticket #260, tier2.minSample carries
  * (median must be taken over comparators EXCLUDING the row's own id).
  */
 describe("buildComputedPerformanceBlock — ticket #252, the live routing rule (DESIGN-3C §3)", () => {
-  it("D8 regression fixture: a stored multiplier (8.220446869316705) stays byte-identical even though live recomputation over the SAME shape of pool would give a different number (7.82x, not 8.2x)", () => {
-    // Shape of production row 3b495116-fad3-4ca0-a9fe-00e233fed936 (verified
-    // against Turso, 2026-08-19): perf_multiplier 8.220446869316705,
-    // perf_baseline_median 7698 (frozen, computed over a SMALLER pool at
-    // write time). Its live median today, over the CURRENT 6 comparators in
-    // its bucket, is 8092 (verified against production) — which would give
-    // 63281 / 8092 = 7.82x if the frozen multiplier were ever recomputed.
+  it("D8 regression fixture: a stored multiplier (7.976190476190476) stays byte-identical even though live recomputation over the SAME shape of pool would give a different number (4.1875x, not 7.98x)", () => {
+    // Synthetic reconstruction of a production row shape (anonymised, #264):
+    // perf_multiplier 7.976190476190476, perf_baseline_median 4200 (frozen,
+    // computed over a SMALLER pool at write time). Its live median, over a
+    // CURRENT 6 comparators in its bucket, is 8000 — which would give
+    // 33500 / 8000 = 4.1875x if the frozen multiplier were ever recomputed.
     const row = baseRow({
-      id: "3b495116-fad3-4ca0-a9fe-00e233fed936",
-      perfReachValue: 63_281,
-      perfMultiplier: 8.220446869316705,
-      perfBaselineMedian: 7_698,
+      id: "d8-frozen-row-synth-1",
+      perfReachValue: 33_500,
+      perfMultiplier: 7.976190476190476,
+      perfBaselineMedian: 4_200,
       perfBaselineSampleSize: 5,
     });
 
     // The live pool a caller would have batched for this row today — 6
-    // comparators whose median is 8092, deliberately NOT 7698, so this test
+    // comparators whose median is 8000, deliberately NOT 4200, so this test
     // fails loudly if the live path ever engages on a MEASURED row.
     const livePoolToday: LiveComparator[] = [
-      { id: "dea20a90-82c4-4ec1-a3a9-8269cb3b9ce1", value: 740_570 },
-      { id: "66143a31-cfc3-4dc9-b398-50217a8a5d79", value: 5_492 },
-      { id: "ac3b449e-b3ff-4fbb-9a5d-bb94dec105b7", value: 169_050 },
-      { id: "5eddbdce-6276-4673-b939-6e743542b081", value: 7_698 },
-      { id: "adb00cf0-d744-4f8b-8333-7552108fbfb5", value: 7_229 },
-      { id: "7b6948fe-fbec-4be6-a229-9054fecc73ce", value: 8_486 },
+      { id: "live-comparator-a", value: 900 },
+      { id: "live-comparator-b", value: 3_000 },
+      { id: "live-comparator-c", value: 5_000 },
+      { id: "live-comparator-d", value: 11_000 },
+      { id: "live-comparator-e", value: 60_000 },
+      { id: "live-comparator-f", value: 95_000 },
     ];
 
     const result = buildComputedPerformanceBlock(row, livePoolToday);
 
     expect(result!.tier2!.state).toBe("MEASURED");
     expect(result!.tier2!.reason).toBeNull();
-    expect(result!.tier2!.multiplier).toBe(8.220446869316705);
-    expect(result!.tier2!.multiplier).not.toBeCloseTo(7.82, 1);
-    expect(result!.tier2!.median).toBe(7_698);
-    expect(result!.tier2!.median).not.toBe(8_092);
+    expect(result!.tier2!.multiplier).toBe(7.976190476190476);
+    expect(result!.tier2!.multiplier).not.toBeCloseTo(4.1875, 1);
+    expect(result!.tier2!.median).toBe(4_200);
+    expect(result!.tier2!.median).not.toBe(8_000);
   });
 
-  it("production shape: dea20a90 (own reach 740570) gets a live 91.5x multiplier off a median that excludes every other giorrando reel, itself included", () => {
-    // Verified against production Turso, 2026-08-19 — the full 8-row
-    // giorrando `instagram:reel:full_video` pool, 7 of which resolve reach.
+  it("production shape: own reach 620000 gets a live ~82.7x multiplier off a median that excludes every other reel in the pool, itself included", () => {
+    // Synthetic reconstruction of a production row shape (anonymised, #264)
+    // — an 8-row `instagram:reel:full_video` pool, 7 of which resolve reach.
     const row = baseRow({
-      id: "dea20a90-82c4-4ec1-a3a9-8269cb3b9ce1",
-      perfReachValue: 740_570,
+      id: "self-row-synth-1",
+      perfReachValue: 620_000,
       perfMultiplier: null,
       perfBaselineMedian: null,
       perfBaselineSampleSize: 0,
     });
     const livePool: LiveComparator[] = [
-      { id: "dea20a90-82c4-4ec1-a3a9-8269cb3b9ce1", value: 740_570 }, // self — must be excluded.
-      { id: "66143a31-cfc3-4dc9-b398-50217a8a5d79", value: 5_492 },
-      { id: "ac3b449e-b3ff-4fbb-9a5d-bb94dec105b7", value: 169_050 },
-      { id: "5eddbdce-6276-4673-b939-6e743542b081", value: 7_698 },
-      { id: "adb00cf0-d744-4f8b-8333-7552108fbfb5", value: 7_229 },
-      { id: "3b495116-fad3-4ca0-a9fe-00e233fed936", value: 63_281 },
-      { id: "7b6948fe-fbec-4be6-a229-9054fecc73ce", value: 8_486 },
+      { id: "self-row-synth-1", value: 620_000 }, // self — must be excluded.
+      { id: "live-comparator-a", value: 4_100 },
+      { id: "live-comparator-b", value: 118_000 },
+      { id: "live-comparator-c", value: 7_100 },
+      { id: "live-comparator-d", value: 7_900 },
+      { id: "live-comparator-e", value: 52_000 },
+      { id: "live-comparator-f", value: 6_300 },
     ];
 
     const result = buildComputedPerformanceBlock(row, livePool);
 
-    // median of the 6 OTHER reels (own excluded): 5492,7229,7698,8486,63281,169050 -> (7698+8486)/2 = 8092.
-    expect(result!.tier2!.median).toBe(8_092);
+    // median of the 6 OTHER reels (own excluded): 4100,6300,7100,7900,52000,118000 -> (7100+7900)/2 = 7500.
+    expect(result!.tier2!.median).toBe(7_500);
     expect(result!.tier2!.sampleSize).toBe(6);
     expect(result!.tier2!.state).toBe("MEASURED");
-    expect(result!.tier2!.multiplier).toBeCloseTo(91.5, 1);
+    // 620000 / 7500 = 82.666...
+    expect(result!.tier2!.multiplier).toBeCloseTo(82.7, 1);
   });
 
   it("self-exclusion applies to the MEDIAN, not just the count — a pool where including self would change the median", () => {

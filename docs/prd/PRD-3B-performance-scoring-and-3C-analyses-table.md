@@ -621,7 +621,7 @@ The first draft flagged that all-image carousels have no reach data on either pl
 
 ### 12.1 What I actually verified — no assumptions, no credits spent
 
-Everything below comes from the **committed** fixture `.claude/context/fixtures/scrapecreators-instagram/ig_carousel_all_images_10_slides.json` (captured under prior owner authorisation, `RUNBOOK.md` §6; source post `/p/DVtNQtmCQnO/`, 10 slides, every child `XDTGraphImage`) cross-checked against `.claude/context/verified-facts.md`. **Zero live API calls were made.** Field paths are given in full, from the response root.
+Everything below comes from the **committed** fixture `.claude/context/fixtures/scrapecreators-instagram/ig_carousel_all_images_10_slides.json` (captured under prior owner authorisation, `RUNBOOK.md` §6; source post `/p/uSFa7tlyLbw/`, 10 slides, every child `XDTGraphImage`) cross-checked against `.claude/context/verified-facts.md`. **Zero live API calls were made.** Field paths are given in full, from the response root.
 
 **Present and usable — the finding the resolution rests on:**
 

@@ -1126,7 +1126,7 @@ describe("AnalysisDataTable — Style column, off by default, toggled on, never 
  */
 describe("AnalysisDataTable — ticket #260, cold-start progress is clamped to its own threshold", () => {
   /** A cold-start row whose live `sampleSize` (6) has already overtaken `minSample` (5) — the
-   * exact shape production served on five real `giorrando` reel rows. */
+   * exact shape production served on five real reel rows (anonymised, #264). */
   const ROW_OVER_THRESHOLD = baseRow({
     id: "row-over-threshold",
     mediaType: "reel",

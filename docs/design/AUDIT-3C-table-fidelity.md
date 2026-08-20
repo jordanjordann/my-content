@@ -11,7 +11,7 @@
 
 | | |
 |---|---|
-| Shipped UI | `~/Desktop/table.png` — desktop width, 6 analyses, one creator (`@giorrando`), left edge of the Content column cropped out of frame. **Superseded for the Content column by `~/Desktop/wider table.png`** (same 6 analyses, wider frame, Content column and the `Showing N of M` line included) — see the addendum. |
+| Shipped UI | `~/Desktop/table.png` — desktop width, 6 analyses, one creator (the primary test creator), left edge of the Content column cropped out of frame. **Superseded for the Content column by `~/Desktop/wider table.png`** (same 6 analyses, wider frame, Content column and the `Showing N of M` line included) — see the addendum. |
 | Mockup | [`3c-analyses-table-mockup.html`](./3c-analyses-table-mockup.html) at `f0ac16f` |
 | Spec | [`DESIGN-3C-analyses-table.md`](./DESIGN-3C-analyses-table.md) — **§2.2 is the layout authority, not §5** — and [`DESIGN-3B-score-explainability.md`](./DESIGN-3B-score-explainability.md) (B5–B8, §4.6, §5.5) |
 | Implementation | `app/app/analyses/components/grids/AnalysisDataTable/**`, plus `lib/api/analyses/helpers.ts` where the copy is selected |

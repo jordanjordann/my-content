@@ -402,7 +402,7 @@ describe("GET /api/analyses — #206: tier2.sampleSize is LIVE (moves when the l
     const bucketKey = "instagram:reel:full_video";
 
     const observedId = await insertAnalysis(db, {
-      username: "creator-giorrando",
+      username: "creator-primary_test_creator",
       resultContent: { overallScore: 3, scorecard: {}, performance: { performanceScore: null, verdict: "", drivers: [] } },
       perfReachValue: 1_000,
       perfReachKind: "VIEWS",
@@ -429,7 +429,7 @@ describe("GET /api/analyses — #206: tier2.sampleSize is LIVE (moves when the l
 
     // Write a NEW qualifying analysis into the SAME pool, between the two reads.
     await insertAnalysis(db, {
-      username: "creator-giorrando",
+      username: "creator-primary_test_creator",
       perfReachValue: 2_000,
       perfBucketKey: bucketKey,
       perfPostAgeHours: 100,
@@ -621,12 +621,17 @@ describe("GET /api/analyses — D3: one grouped query per page, never per row", 
 
 /**
  * Ticket #252 — end-to-end through the real route + DB, mirroring
- * production's giorrando `instagram:reel:full_video` pool (verified against
- * Turso, 2026-08-19: 8 rows, 7 resolving reach, each excludes itself ->
- * 6 comparators, >= BASELINE_MIN_SAMPLE (5)). Proves the whole wire —
+ * production's primary-test-creator `instagram:reel:full_video` pool (8
+ * rows, 7 resolving reach, each excludes itself -> 6 comparators, >=
+ * BASELINE_MIN_SAMPLE (5)). Proves the whole wire —
  * `fetchLiveEligibleComparatorIds` -> route batching -> `buildTier2`'s
  * self-exclusion -> the response body — not just the pure function in
  * isolation (`readModel.test.ts` pins the arithmetic).
+ *
+ * Reach values are synthetic (anonymised, #264) but constructed to preserve
+ * the same shape as the original production data: 7 pool entries, a self
+ * value large enough to be the outlier, and the two middle values straddling
+ * the median so self-exclusion is still a real, provable assertion.
  */
 describe("GET /api/analyses — ticket #252: the live multiplier end to end", () => {
   it("a null-multiplier row whose live pool clears the threshold gets a real live multiplier, and no extra query beyond the existing D3 batch", async () => {
@@ -634,12 +639,12 @@ describe("GET /api/analyses — ticket #252: the live multiplier end to end", ()
     await insertProfile(db, profileId);
     const bucketKey = "instagram:reel:full_video";
 
-    // The observed row — 740570 reach, no stored baseline yet (cold start
-    // at write time), matching production's dea20a90.
+    // The observed row — 620000 reach, no stored baseline yet (cold start
+    // at write time).
     const observedId = await insertAnalysis(db, {
-      username: "creator-giorrando",
+      username: "creator-primary_test_creator",
       resultContent: { overallScore: 3, scorecard: {}, performance: { performanceScore: null, verdict: "", drivers: [] } },
-      perfReachValue: 740_570,
+      perfReachValue: 620_000,
       perfReachKind: "VIEWS",
       perfReachDerivedFrom: "TOP_LEVEL",
       perfBucketKey: bucketKey,
@@ -653,11 +658,10 @@ describe("GET /api/analyses — ticket #252: the live multiplier end to end", ()
       schemaVersion: SCHEMA_VERSION,
     });
 
-    // 6 more comparators in the SAME pool, matching production's other
-    // reach-bearing giorrando reels.
-    for (const reach of [5_492, 169_050, 7_698, 7_229, 63_281, 8_486]) {
+    // 6 more comparators in the SAME pool.
+    for (const reach of [4_100, 118_000, 7_100, 7_900, 52_000, 6_300]) {
       await insertAnalysis(db, {
-        username: "creator-giorrando",
+        username: "creator-primary_test_creator",
         perfReachValue: reach,
         perfBucketKey: bucketKey,
         perfPostAgeHours: 200,
@@ -675,10 +679,11 @@ describe("GET /api/analyses — ticket #252: the live multiplier end to end", ()
     expect(row).toBeDefined();
     expect(row.performance.computed.tier2.state).toBe("MEASURED");
     expect(row.performance.computed.tier2.reason).toBeNull();
-    // median of the 6 OTHER reels (own reach excluded): 5492,7229,7698,8486,63281,169050 -> (7698+8486)/2 = 8092.
-    expect(row.performance.computed.tier2.median).toBe(8_092);
+    // median of the 6 OTHER reels (own reach excluded): 4100,6300,7100,7900,52000,118000 -> (7100+7900)/2 = 7500.
+    expect(row.performance.computed.tier2.median).toBe(7_500);
     expect(row.performance.computed.tier2.sampleSize).toBe(6);
-    expect(row.performance.computed.tier2.multiplier).toBeCloseTo(91.5, 1);
+    // 620000 / 7500 = 82.666...
+    expect(row.performance.computed.tier2.multiplier).toBeCloseTo(82.7, 1);
 
     // getAnalysesList (2: list + count) + getUniqueAccounts (1) + exactly
     // ONE batched live-comparator query for all 7 null-multiplier rows —

@@ -1150,7 +1150,7 @@ case**: a fabricated bare `4,1%` must throw, and `4.1%` (dot separator) must thr
 > — written before V3 ran. Retained so the reasoning is auditable; the gate it describes is discharged.
 
 **Measured, 2026-08-06, through the real production pipeline** (`runAnalysis()` end to end on
-`/p/DZCPPJTjKVy/` — a 10-slide, 7-video + 3-image carousel; real fetch, real File API uploads, real
+`/p/zGKPVUdG_7U/` — a 10-slide, 7-video + 3-image carousel; real fetch, real File API uploads, real
 `temperature: 0` / `maxOutputTokens: 32768` config, real parse, real row written):
 
 | | 10-slide carousel (V3) | Single 61s reel (2026-08-05 baseline) |
@@ -1905,7 +1905,7 @@ The PRD is **wrong on `main`**. These edits are applied in the same PR as this T
 
 **Owner ruling, 2026-08-13, on #206, verbatim:** *"i think it is better for the counter to update as we analyze more no? that way the data is the most accurate as it can be."* The owner additionally approved narrowing the "nothing changes after it's saved" rule so that it covers measurements and judgements but **not** library-progress indicators.
 
-**Empirical evidence that forced the ruling** (owner's live data, creator `@giorrando`, 6 analyses — 5 reels + 1 carousel, observed simultaneously on one screen):
+**Empirical evidence that forced the ruling** (owner's live data, the primary test creator, 6 analyses — 5 reels + 1 carousel, observed simultaneously on one screen):
 
 | Post | Age at time of observation | Counter rendered |
 |---|---|---|
@@ -2047,7 +2047,7 @@ Applied:
 > the code does, not of what it must be changed to do. The distinction the section insists on is preserved in the
 > shipped code: the post's own `perf_post_age_hours`, `perf_provisional` and the `Early` badge remain **frozen**, and
 > a row can legitimately render `Early` while serving as a mature comparator for its siblings.
-> **The empirical paragraph below is now HISTORY, not a current reading.** *"three of the five `@giorrando` reels …
+> **The empirical paragraph below is now HISTORY, not a current reading.** *"three of the five primary-test-creator reels …
 > permanently ineligible as comparators, forever"* and *"the counter is capped at 2 and can never reach 5"* described
 > the dataset **under the defective frozen-age filter**. Under `LIVE_AGE_PREDICATE` those reels become eligible as
 > real-world time passes, and the cap no longer exists. The wording is preserved rather than rewritten, per this
@@ -2057,7 +2057,7 @@ Applied:
 
 `computeBaseline()`'s candidate filter (`lib/server/analysis/performance/baseline.ts:291`) reads `AND perf_post_age_hours >= ?`. `perf_post_age_hours` is computed **once**, at analysis time (`computeBlock.ts:148-153` / `:212`), and is never recomputed. So the filter compares a **frozen** age against a floor that is meant to express "is this post old enough *now* to be a trustworthy comparator".
 
-**Consequence, confirmed empirically in the owner's only real dataset:** three of the five `@giorrando` reels were analysed while under the 72h floor (frozen at 20h / 24h / 48h). All three are **permanently ineligible as comparators, forever** — two of them are now genuinely mature in real-world time and still do not count. The counter is capped at 2 and can never reach 5 unless three further reels are analysed that are *already* over 72h old at analysis time.
+**Consequence, confirmed empirically in the owner's only real dataset:** three of the five primary-test-creator reels were analysed while under the 72h floor (frozen at 20h / 24h / 48h). All three are **permanently ineligible as comparators, forever** — two of them are now genuinely mature in real-world time and still do not count. The counter is capped at 2 and can never reach 5 unless three further reels are analysed that are *already* over 72h old at analysis time.
 
 This makes the single most natural user behaviour — analyse a post right after publishing, to see how it did — **permanently poison that post as future baseline material**. That is not an acceptable trade; it is recorded here as a **defect**, so the ambiguity stops.
 

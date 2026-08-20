@@ -354,7 +354,7 @@ function coldStartPerformanceWith(score: number | null, sampleSize = 3, minSampl
  * "COLD_START"`. Mirrors the server's actual output (`readModel.ts`'s `buildTier2`, PR #263):
  * `POST_METRIC_UNRESOLVED` carries `median: null` (regardless of pool size — DESIGN-3C §3
  * step 2 precedes the threshold check), `MEDIAN_ZERO` carries `median: 0`. Production row
- * `391b7615-339c-4007-9d37-6e8d48b66d21` is exactly the `POST_METRIC_UNRESOLVED` shape.
+ * `not-comparable-row-synth-1` is exactly the `POST_METRIC_UNRESOLVED` shape.
  */
 function notComparablePerformanceWith(
   reason: "POST_METRIC_UNRESOLVED" | "MEDIAN_ZERO",
@@ -411,7 +411,7 @@ describe("deriveAnalysisTablePerformance — multiplierCell, ticket #251's three
   });
 
   /**
-   * PR #263 review (blocker) — production row `391b7615-339c-4007-9d37-6e8d48b66d21`
+   * PR #263 review (blocker) — a production row (anonymised as `not-comparable-row-synth-1`, #264)
    * (`perf_multiplier NULL`, `perf_reach_value NULL`, a full live pool). Before this fix,
    * `deriveMultiplierCell` inferred state from `tier2.median != null`. The #263 BE follow-up
    * (`7ac8bde`) correctly stops passing a stale write-time median through for
@@ -422,7 +422,7 @@ describe("deriveAnalysisTablePerformance — multiplierCell, ticket #251's three
    * instead fixes it without depending on `median`'s nullness at all — this is that row's
    * exact shape, proven end to end through the real `deriveAnalysisTablePerformance`.
    */
-  it("391b7615 shape — perf_multiplier NULL, perf_reach_value NULL, full live pool -> renders the not-comparable statement, never cold-start", () => {
+  it("not-comparable-row-synth-1 shape — perf_multiplier NULL, perf_reach_value NULL, full live pool -> renders the not-comparable statement, never cold-start", () => {
     const derived = deriveAnalysisTablePerformance(
       notComparablePerformanceWith("POST_METRIC_UNRESOLVED"),
       "reel",
