@@ -103,10 +103,19 @@ of this clause no longer holds. The grouping half stands unchanged.**
 >
 > **Reasoning, as stated by the owner:** the shipped sort *lies*. It claims to order by multiplier but
 > orders by the **stored** multiplier, and since [#263](https://github.com/jordanjordann/my-content/pull/263)
-> made the displayed multiplier live-derived, the 2026-08-20 production census shows **5 of the 7 rows
-> that display a number have none stored**. Removing the sort replaces a wrong answer with **no
-> answer**, which is honest. The owner explicitly accepted the trade-off that the two
-> currently-correct rows (`3b495116`, `7b6948fe`) also lose their correct ordering.
+> made the displayed multiplier live-derived, the 2026-08-20 production census shows the **majority of
+> the rows that display a number have none stored**. Removing the sort replaces a wrong answer with
+> **no answer**, which is honest. The owner explicitly accepted the trade-off that the two
+> currently-correct rows (`3b495116`, `7b6948fe`) also lose their correct ordering, and he chose full
+> removal over the alternative of keeping a single date-column sort toggle.
+>
+> **The order clause is exactly `ORDER BY a.created_at DESC` — no secondary sort key.** A tiebreak
+> (`, a.id ASC`) was proposed and **declined by the owner on 2026-08-20**. `created_at` has
+> one-second granularity with no `UNIQUE` constraint and no index, so two *concurrent* inserts can
+> tie and paginated reads could then duplicate or drop a row; the owner was told this plainly and
+> **accepted it as low-risk at current scale**. See `DESIGN-3C-analyses-table.md` §6.1 / amendment
+> A10 for the full evidence. Do not re-argue it, and do not propose an index or `UNIQUE` constraint —
+> that is a prohibited migration.
 >
 > **The owner was told this section declined to change sort semantics and approved the override
 > anyway.** It is not a drift, an oversight or a re-reading — it is a decision that overrules this
