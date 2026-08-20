@@ -81,12 +81,26 @@ export type UnavailableReason =
   | "INSUFFICIENT_HISTORY"
   | "CAUSE_NOT_DETERMINABLE";
 
+/**
+ * Ticket #252 (DESIGN-3C §3, PR #263 review) — mirrors the server's
+ * `lib/server/analysis/performance/readModel.ts`'s `PerformanceTier2State`. The discriminator
+ * every `PerformanceTier2` consumer must switch on — never re-derive from `(multiplier,
+ * median)` nullness. That inference is exactly what broke down: a `NOT_COMPARABLE` row's own
+ * metric unresolved can have `median` `null` (regardless of pool size, DESIGN-3C §3 step 2)
+ * yet is not cold start, and a live-measured row can have a stored `multiplier` operand that
+ * isn't the frozen column.
+ */
+export type PerformanceTier2State = "MEASURED" | "NOT_COMPARABLE" | "COLD_START";
+
+/** Mirrors the server's `PerformanceTier2Reason` — always present on `NOT_COMPARABLE`, always `null` elsewhere. */
+export type PerformanceTier2Reason = "POST_METRIC_UNRESOLVED" | "MEDIAN_ZERO";
+
 export type PerformanceTier2 = {
-  /** `null` at Tier 2 cold start — no baseline exists yet. */
+  /** `null` at Tier 2 cold start, or `NOT_COMPARABLE`/`POST_METRIC_UNRESOLVED` (no median exists yet either way, regardless of pool size). */
   median: number | null;
   sampleSize: number;
   bucketKey: string;
-  /** `null` at cold start, or when a full baseline exists but this post's own metric didn't resolve against it. */
+  /** `null` unless `state === "MEASURED"`. */
   multiplier: number | null;
   /**
    * Ticket #260 — the server's `BASELINE_MIN_SAMPLE` threshold, carried per row (mirrors
@@ -94,6 +108,10 @@ export type PerformanceTier2 = {
    * of truth the cold-start progress cell clamps and renders its denominator against.
    */
   minSample: number;
+  /** Ticket #252 — see `PerformanceTier2State`'s doc. The single field every consumer switches on. */
+  state: PerformanceTier2State;
+  /** Non-null iff `state === "NOT_COMPARABLE"`. */
+  reason: PerformanceTier2Reason | null;
 };
 
 export type PerformanceComputed = {
