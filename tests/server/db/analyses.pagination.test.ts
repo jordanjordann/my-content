@@ -102,9 +102,17 @@ describe("getAnalysesList — pagination (50/page)", () => {
 
     const page1Ids = page1.analyses.map((a: { id: string }) => a.id);
     const page2Ids = page2.analyses.map((a: { id: string }) => a.id);
+
+    // Pin the actual order, not just counts/membership: `ids` was built oldest-first (ascending
+    // updated_at), so `updated_at DESC` must return the exact reverse — page 1 is the 50 MOST
+    // recent rows in that exact order, page 2 is the 13 oldest in that exact order. This fails
+    // under any other ORDER BY (or none), which pure length/union assertions would not catch.
+    const expectedDescOrder = [...ids].reverse();
+    expect(page1Ids).toEqual(expectedDescOrder.slice(0, 50));
+    expect(page2Ids).toEqual(expectedDescOrder.slice(50));
+
     const union = new Set([...page1Ids, ...page2Ids]);
     expect(union.size).toBe(63); // no duplicate, no dropped row across pages
-    expect(page1Ids.some((id: string) => page2Ids.includes(id))).toBe(false);
   });
 
   it("ordering is stable across repeated reads of the same page when updated_at values are distinct", async () => {

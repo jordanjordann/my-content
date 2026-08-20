@@ -76,6 +76,52 @@ describe("AnalysisTableColumnHeaders — ticket #221", () => {
     }
   });
 
+  it("(M3, DESIGN-3C amendment A10 R-D18) HOVER state — the engagement header colour carries no hover:text-foreground (or any hover: override) to compete with it", () => {
+    const { container } = render(
+      <table>
+        <AnalysisTableColumnHeaders columns={ANALYSES_TABLE_COLUMNS} />
+      </table>,
+    );
+
+    const reachHeader = container.querySelector('th[data-column-id="engagementReach"]');
+    const followersHeader = container.querySelector('th[data-column-id="engagementFollowers"]');
+
+    // jsdom applies no stylesheet, so real `:hover` cannot be triggered or observed — this pins
+    // the STATIC class list, which is what determines the rendered colour in a browser. A
+    // regression that reintroduces a `hover:text-foreground` swap on either `<th>` (the only way
+    // R-D18's "unconditional in all states" guarantee could break now that sorting is gone) must
+    // fail this test.
+    expect(reachHeader).toHaveClass("text-accent");
+    expect(reachHeader).not.toHaveClass("hover:text-foreground");
+    expect(reachHeader?.className).not.toMatch(/(?:^|\s)hover:/);
+
+    expect(followersHeader).toHaveClass("text-teal");
+    expect(followersHeader).not.toHaveClass("hover:text-foreground");
+    expect(followersHeader?.className).not.toMatch(/(?:^|\s)hover:/);
+  });
+
+  it("(M3, DESIGN-3C amendment A10 R-D18) FOCUS-VISIBLE state — no header is focusable, so no focus-visible override exists to compete with its colour", () => {
+    const { container } = render(
+      <table>
+        <AnalysisTableColumnHeaders columns={ANALYSES_TABLE_COLUMNS} />
+      </table>,
+    );
+
+    const reachHeader = container.querySelector('th[data-column-id="engagementReach"]');
+    const followersHeader = container.querySelector('th[data-column-id="engagementFollowers"]');
+
+    // Neither header carries a `tabindex`, so it can never enter `:focus-visible` in the first
+    // place; a regression adding a `focus-visible:*` colour override (or making the label
+    // focusable) is what would break R-D18's "unconditional in all states" guarantee here.
+    expect(reachHeader).not.toHaveAttribute("tabindex");
+    expect(reachHeader?.className).not.toMatch(/focus-visible:/);
+    expect(reachHeader).toHaveClass("text-accent");
+
+    expect(followersHeader).not.toHaveAttribute("tabindex");
+    expect(followersHeader?.className).not.toMatch(/focus-visible:/);
+    expect(followersHeader).toHaveClass("text-teal");
+  });
+
   it("(M3, DESIGN-3C amendment A10) no header is interactive — no <button> exists for a column label, no aria-sort anywhere", () => {
     render(
       <table>
