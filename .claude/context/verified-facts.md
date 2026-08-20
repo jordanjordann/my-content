@@ -422,11 +422,11 @@ no successor class. Everything moves onto the unified client.
 
 | Fixture | Source URL | `__typename` | Notes |
 |---|---|---|---|
-| `ig_carousel_all_images_10_slides.json` | `/p/DVtNQtmCQnO/` | `XDTGraphSidecar` | 10 children, **ALL `XDTGraphImage`** |
-| `ig_reel_1_zero_view_count.json` | `/reel/Da4TFq_pKvM/` | `XDTGraphVideo` | `video_view_count: 0` but `video_play_count: 116333` |
-| `ig_reel_2.json` | `/reel/DEC1qiWsmYm/` | `XDTGraphVideo` | `video_view_count: 305044`, `has_audio: true` |
-| `ig_reel_3.json` | `/reel/DWgcxq2CaCZ/` | `XDTGraphVideo` | `video_view_count: 150780` |
-| `ig_single_image_post.json` | `/p/Da7oY2ep3Qr/` | `XDTGraphImage` | **single image, NOT a carousel** — no `edge_sidecar_to_children` |
+| `ig_carousel_all_images_10_slides.json` | `/p/uSFa7tlyLbw/` | `XDTGraphSidecar` | 10 children, **ALL `XDTGraphImage`** |
+| `ig_reel_1_zero_view_count.json` | `/reel/c6JYux8YmyY/` | `XDTGraphVideo` | `video_view_count: 0` but `video_play_count: 116333` |
+| `ig_reel_2.json` | `/reel/my0UdbJfZ8O/` | `XDTGraphVideo` | `video_view_count: 305044`, `has_audio: true` |
+| `ig_reel_3.json` | `/reel/wgkBvXRiusH/` | `XDTGraphVideo` | `video_view_count: 150780` |
+| `ig_single_image_post.json` | `/p/ORKM2Ob4nyB/` | `XDTGraphImage` | **single image, NOT a carousel** — no `edge_sidecar_to_children` |
 
 All five posts belong to the same creator (the primary test creator).
 
@@ -494,7 +494,7 @@ keys and no others**:
 ```
 __typename: "XDTGraphImage"
 id: string                  // e.g. "POLARIS_3849791073308725783" — POLARIS_-prefixed
-shortcode: string           // per-slide shortcode, e.g. "DVtNJWICVIX"
+shortcode: string           // per-slide shortcode, e.g. "r2XmiZO8THA"
 display_url: string
 video_url: null             // *** key PRESENT but null on image children ***
 is_video: false
@@ -610,11 +610,11 @@ Balance is **~32,000, not ~25,000** — the account was topped up since the
 | Call | URL | credits_remaining after |
 |---|---|---|
 | (before) | — | 32000 |
-| 1 | `/p/DVtNQtmCQnO/` | 31999 |
-| 2 | `/reel/Da4TFq_pKvM/` | 31998 |
-| 3 | `/reel/DEC1qiWsmYm/` | 31997 |
-| 4 | `/reel/DWgcxq2CaCZ/` | 31996 |
-| 5 | `/p/Da7oY2ep3Qr/` | 31995 |
+| 1 | `/p/uSFa7tlyLbw/` | 31999 |
+| 2 | `/reel/c6JYux8YmyY/` | 31998 |
+| 3 | `/reel/my0UdbJfZ8O/` | 31997 |
+| 4 | `/reel/wgkBvXRiusH/` | 31996 |
+| 5 | `/p/ORKM2Ob4nyB/` | 31995 |
 
 **Total spend: 5 credits** — 1 per call, `trim=false`, all HTTP 200, no
 retries, no exploratory calls.
@@ -625,7 +625,7 @@ retries, no exploratory calls.
 
 - **Authorisation:** one-time owner-approved live capture, exactly 1 URL, 1 credit. This is a
   follow-up to the 5-fixture session above — it closes the gap that session explicitly left open.
-- **Tested URL:** `https://www.instagram.com/p/DZCPPJTjKVy/` (`utm_source`/`igsh` stripped before
+- **Tested URL:** `https://www.instagram.com/p/zGKPVUdG_7U/` (`utm_source`/`igsh` stripped before
   the call, per instruction).
 - **Request:** identical to production —
   `GET /v1/instagram/post?url=<url>&trim=false`, header `x-api-key`, `Accept: application/json`.
@@ -807,7 +807,7 @@ In addition to the 10 divergences already on record from the first 5 fixtures:
 
 | Call | credits_remaining before | credits_remaining after |
 |---|---|---|
-| `/p/DZCPPJTjKVy/` (the video-bearing carousel) | 31995 | 31994 |
+| `/p/zGKPVUdG_7U/` (the video-bearing carousel) | 31995 | 31994 |
 
 **Total spend: 1 credit.** Exactly the one call authorised, no retries needed (HTTP 200 on the
 first attempt), no exploratory calls.
@@ -1247,13 +1247,15 @@ entry; it documents real, separate findings about the SDK (`response.text` gette
 
 ### The real reel
 
-- `https://www.instagram.com/reel/DEC1qiWsmYm/` (the primary test creator) — the same reel captured
+- `https://www.instagram.com/reel/my0UdbJfZ8O/` (the primary test creator) — the same reel captured
   live in `.claude/context/fixtures/scrapecreators-instagram/ig_reel_2.json` (2026-07-22 Instagram
-  capture session). 61.133s, 750x1333, real caption, real engagement numbers at capture time (scrubbed
-  from the fixture as of #264; see git history before #264 if the exact figures are ever needed again).
+  capture session). 61.133s, 750x1333. Identity fields (handle, caption text, CDN URLs) were
+  anonymised in #264; every numeric engagement/metric field in the fixture (view/play/like/comment
+  counts, follower count, dimensions) was deliberately left UNTOUCHED — #264's own diff confirms
+  zero numeric value changes across all fixtures.
 - **Media source: reused an already-uploaded Gemini File API asset, not a fresh download.** The
   `analyses` table (`my-content.db`) had a prior **production run of this exact reel** from
-  2026-08-03 (`id=c93914d2-6db1-4cd0-81b1-acc04df25574`, `status='completed'`), whose
+  2026-08-03 (`id=gemini-file-reuse-row-synth-1`, `status='completed'`), whose
   `gemini_file_uri` (`https://generativelanguage.googleapis.com/v1beta/files/svx16crcvmc5`) was
   **still ACTIVE** at call time (expiry `2026-08-05T06:55:46.119268334Z`, called ~3h before
   expiry). Verified via a free `ai.files.get({ name: "files/svx16crcvmc5" })` call before spending
@@ -1462,13 +1464,13 @@ per this file's supersede convention.
   `"{N} likes, {M} comments - {username} on {date}: "{caption}""` for an ordinary post. A batch of
   ~15 candidate post URLs (gathered via web search, zero API cost) were probed with a plain `curl`
   against that meta tag before any ScrapeCreators call was made. One candidate's `og:description`
-  had **no like/comment count prefix at all** — `"manda.socially on September 9, 2025: "✨ Did you
+  had **no like/comment count prefix at all** — `"commenter_030 on September 9, 2025: "✨ Did you
   know you can hide like counts..."` — which is the public-page signature of a counts-hidden post.
   The post's own caption confirms it explicitly: *"PS. This post has likes removed. 😊"* — a
   creator demonstrating the feature on their own post while writing a tutorial about it, the same
   self-referential pattern that made V1 discoverable at all (guessing blind did not converge; this
   did, on the first live-spend attempt).
-- **Tested URL:** `https://www.instagram.com/p/DOZNyVdEk4y/` (`@manda.socially`, single image post,
+- **Tested URL:** `https://www.instagram.com/p/cgwUkjyq7TO/` (`@commenter_030`, single image post,
   `XDTGraphImage`).
 - **Raw capture (committed, byte-unmodified):**
   `.claude/context/fixtures/scrapecreators-instagram/ig_post_counts_disabled.json`
@@ -1549,7 +1551,7 @@ viewCount: null            (no reach field exists on an image post regardless of
 
 | Call | credits_remaining after |
 |---|---|
-| `/p/DOZNyVdEk4y/` (the counts-disabled post, via the real fetcher) | 31986 |
+| `/p/cgwUkjyq7TO/` (the counts-disabled post, via the real fetcher) | 31986 |
 
 **Total spend: 1 credit.** Exactly the one call authorised. Discovery (curl probing of `og:description`
 on ~15 public post pages, and several rounds of web search) cost zero ScrapeCreators credits — see
@@ -1618,12 +1620,12 @@ one that would actually stress `MAX_TOKENS`.
 - **Free-reuse check performed first, per instruction, before any spend:** the local `analyses`
   table was queried for any `analysis_mode` involving a carousel with a still-populated
   `gemini_file_uri`. **None existed.** The one prior all-image-carousel analysis in the DB
-  (`ffc14e85-...`, `/p/DVtNQtmCQnO/`, `analysis_mode: images_only`) has `gemini_file_uri: NULL` —
+  (`images-only-carousel-row-synth-1`, `/p/uSFa7tlyLbw/`, `analysis_mode: images_only`) has `gemini_file_uri: NULL` —
   expected and correct, not a gap: `prepareParts.ts` only routes **video** parts through the Gemini
   File API (images are inlined as base64, see that file's own doc comment), and an all-image
   carousel has no video parts to upload, so it never had a File API asset to reuse in the first
   place. The one video-bearing carousel this codebase has ever captured
-  (`ig_carousel_mixed_video_and_image_10_slides.json`, `/p/DZCPPJTjKVy/`) was **never actually
+  (`ig_carousel_mixed_video_and_image_10_slides.json`, `/p/zGKPVUdG_7U/`) was **never actually
   analysed** (no `analyses` row references it), so there was no prior File API asset for it either.
   **Conclusion: unlike V3's single-video-reel predecessor, no zero-cost reuse path existed for a
   carousel** — the "check first" step correctly found nothing to reuse, rather than being skipped.
@@ -1639,7 +1641,7 @@ one that would actually stress `MAX_TOKENS`.
 Unlike the 2026-08-05 reel entry (which called `analyzeContent()` directly with a manually
 reconstructed `MediaMetadata`), this capture invoked **`runAnalysis()`** itself — the literal
 function `app/api/analyze/route.ts` calls for every real user-submitted URL — via `tsx`, against
-`https://www.instagram.com/p/DZCPPJTjKVy/` with an empty custom-prompt string (same default the API
+`https://www.instagram.com/p/zGKPVUdG_7U/` with an empty custom-prompt string (same default the API
 route uses for an unset `prompt`). This is the single highest-fidelity capture in this file to date:
 `classifyUrl()` → `fetchMetadata()` → `resolveProfile()` → `prepareParts()` (real download + Gemini
 File API upload for the 7 video slides, real base64 inlining for the 3 image slides) →
@@ -1647,7 +1649,7 @@ File API upload for the 7 video slides, real base64 inlining for the 3 image sli
 real row written to (and left in) the app's own `analyses` table — end to end, nothing mocked,
 nothing hand-rolled.
 
-- **The carousel:** `@businesssecretsclub`, 10 slides (7 video + 3 image, matching the `__typename`
+- **The carousel:** `@commenter_018`, 10 slides (7 video + 3 image, matching the `__typename`
   mix already on record for this post), `carouselItemCount: 10`, `likeCount: 14192`,
   `commentCount: 1639`.
 - **Media sent to Gemini:** all 10 slides — 7 videos uploaded to the Gemini File API (one
@@ -1684,7 +1686,7 @@ usageMetadata: {
   serviceTier: "standard"
 }
 JSON.parse succeeded with zero repair/fallback logic (parseContentAnalysis did not throw); the
-analysis completed and a real row (id 237d9ceb-e0c7-482a-8f55-b045c817a0f3) was written with
+analysis completed and a real row (id verification-run-row-synth-1) was written with
 status='completed'.
 ```
 
@@ -1723,7 +1725,7 @@ plainly per instruction rather than rounded down to "1, as budgeted."** The Gemi
 exactly the 1 call authorised; the first attempt's DB failure occurred strictly before that call, so
 no Gemini billing was wasted.
 
-The local `analyses` row this run wrote (`237d9ceb-e0c7-482a-8f55-b045c817a0f3`) and the local
+The local `analyses` row this run wrote (`verification-run-row-synth-1`) and the local
 `my-content.db` migration state are both artifacts of running the real pipeline in this worktree —
 consistent with the precedent set by the 2026-08-05 `/v1/instagram/profile` capture, which also left
 a real cache-write behind. The `analyses` row is **not** included in this PR's diff (a local SQLite
@@ -1753,13 +1755,13 @@ guarantee.
 
 Per the cost-control instructions, `ai.files.get({ name: "files/runp6fexdjou" })` was checked
 **first, free**, before any spend. It is the video-carousel-slide asset uploaded during the V3
-capture above (`/p/DZCPPJTjKVy/`, `@businesssecretsclub`), and was confirmed still `state: "ACTIVE"`,
+capture above (`/p/zGKPVUdG_7U/`, `@commenter_018`), and was confirmed still `state: "ACTIVE"`,
 `mimeType: "video/mp4"`, `expirationTime: "2026-08-08T03:29:21.711776182Z"` — comfortably alive.
 Reused as the sole media part (`{ fileData: { fileUri, mimeType: "video/mp4" } }`). **No video was
 re-downloaded or re-uploaded, and no ScrapeCreators call was made.**
 
 `MediaMetadata` was built from the real, already-recorded facts for this post (V3 section above:
-`url`, `username: "businesssecretsclub"`, `mediaType: "carousel"`, `carouselItemCount: 10`,
+`url`, `username: "commenter_018"`, `mediaType: "carousel"`, `carouselItemCount: 10`,
 `likeCount: 14192`, `commentCount: 1639`) — **this worktree's local `my-content.db` is isolated and
 empty (a fresh worktree DB, migrated but with no `analyses` rows), so the historical row from the
 V3 session was not queryable here.** Fields not already on record (caption, follower count, exact
@@ -1881,9 +1883,9 @@ a deliberate 4-call design.
 |---|---|
 | (before, last known 2026-08-05) | 31989 |
 | ~2 untracked calls elsewhere between 2026-08-05 and this session (inferred, not directly observed) | ~31987 |
-| V1 — `/p/DOZNyVdEk4y/` (counts-disabled post) | 31986 |
-| V3 attempt 1 — `/p/DZCPPJTjKVy/` (failed before Gemini call, local DB migration gap) | ~31985 |
-| V3 attempt 2 — `/p/DZCPPJTjKVy/` (succeeded) | ~31984 |
+| V1 — `/p/cgwUkjyq7TO/` (counts-disabled post) | 31986 |
+| V3 attempt 1 — `/p/zGKPVUdG_7U/` (failed before Gemini call, local DB migration gap) | ~31985 |
+| V3 attempt 2 — `/p/zGKPVUdG_7U/` (succeeded) | ~31984 |
 | V2 | **not attempted — 0 credits spent, see checkpoint above** |
 | V4 | **0 ScrapeCreators credits — reused an existing ACTIVE Gemini File API asset and already-recorded metadata, no live ScrapeCreators call made** |
 

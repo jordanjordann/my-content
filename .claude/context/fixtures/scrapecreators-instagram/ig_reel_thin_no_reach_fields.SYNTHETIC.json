@@ -63,7 +63,7 @@
           {
             "node": {
               "created_at": "1735222156",
-              "text": "Synthetic placeholder comment for test fixture purposes.",
+              "text": "Synthetic placeholder caption for test fixture purposes.",
               "id": "0000000000000000002"
             }
           }
@@ -82,11 +82,11 @@
           {
             "node": {
               "id": "18426021004133401",
-              "text": "Synthetic placeholder comment for test fixture purposes.",
+              "text": "Synthetic placeholder comment for test fixture purposes.\nSecond line of this comment.",
               "created_at": 1784312045,
               "did_report_as_spam": false,
               "owner": {
-                "id": "10688909907160998",
+                "id": "438923278529",
                 "is_verified": false,
                 "profile_pic_url": "https://example.invalid/media/9191ee29a4f2e2b2.jpg",
                 "username": "commenter_112"
@@ -109,11 +109,11 @@
           {
             "node": {
               "id": "18343854424173457",
-              "text": "Synthetic placeholder comment for test fixture purposes.",
+              "text": "Synthetic placeholder comment for test fixture purposes 😂🔥",
               "created_at": 1781993806,
               "did_report_as_spam": false,
               "owner": {
-                "id": "93782543513099145",
+                "id": "658107656",
                 "is_verified": false,
                 "profile_pic_url": "https://example.invalid/media/b665df29d30b4984.jpg",
                 "username": "commenter_113"
@@ -136,11 +136,11 @@
           {
             "node": {
               "id": "18089643959366164",
-              "text": "Synthetic placeholder comment for test fixture purposes.",
+              "text": "Another synthetic placeholder comment for fixture coverage.",
               "created_at": 1780491706,
               "did_report_as_spam": false,
               "owner": {
-                "id": "29973645839990306",
+                "id": "96765210723",
                 "is_verified": false,
                 "profile_pic_url": "https://example.invalid/media/58c865614cad4af4.jpg",
                 "username": "commenter_114"
@@ -167,7 +167,7 @@
               "created_at": 1780192269,
               "did_report_as_spam": false,
               "owner": {
-                "id": "50921721578187810",
+                "id": "585434767032",
                 "is_verified": false,
                 "profile_pic_url": "https://example.invalid/media/ba4409514902ef59.jpg",
                 "username": "commenter_115"
@@ -190,11 +190,11 @@
           {
             "node": {
               "id": "18063406013442339",
-              "text": "Synthetic placeholder comment for test fixture purposes.",
+              "text": "Synthetic placeholder comment for test fixture purposes.\nSecond line of this comment.",
               "created_at": 1778957578,
               "did_report_as_spam": false,
               "owner": {
-                "id": "41968554288509840",
+                "id": "727432749218",
                 "is_verified": false,
                 "profile_pic_url": "https://example.invalid/media/f2b87d672930ba5b.jpg",
                 "username": "commenter_116"
@@ -217,11 +217,11 @@
           {
             "node": {
               "id": "18099823484107659",
-              "text": "Synthetic placeholder comment for test fixture purposes.",
+              "text": "Synthetic placeholder comment for test fixture purposes 😂🔥",
               "created_at": 1778843364,
               "did_report_as_spam": false,
               "owner": {
-                "id": "58707955845590647",
+                "id": "709216789432",
                 "is_verified": false,
                 "profile_pic_url": "https://example.invalid/media/9191ee29a4f2e2b2.jpg",
                 "username": "commenter_117"
@@ -244,11 +244,11 @@
           {
             "node": {
               "id": "18216961729320634",
-              "text": "Synthetic placeholder comment for test fixture purposes.",
+              "text": "Another synthetic placeholder comment for fixture coverage.",
               "created_at": 1778738081,
               "did_report_as_spam": false,
               "owner": {
-                "id": "51231490760107843",
+                "id": "196703074921",
                 "is_verified": false,
                 "profile_pic_url": "https://example.invalid/media/601709750e554294.jpg",
                 "username": "commenter_118"
@@ -275,7 +275,7 @@
               "created_at": 1778162049,
               "did_report_as_spam": false,
               "owner": {
-                "id": "27302508993913455",
+                "id": "1703214921",
                 "is_verified": false,
                 "profile_pic_url": "https://example.invalid/media/06e4b37d0fd83c0d.jpg",
                 "username": "commenter_119"
@@ -298,11 +298,11 @@
           {
             "node": {
               "id": "18095429162330502",
-              "text": "Synthetic placeholder comment for test fixture purposes.",
+              "text": "Synthetic placeholder comment for test fixture purposes.\nSecond line of this comment.",
               "created_at": 1775569309,
               "did_report_as_spam": false,
               "owner": {
-                "id": "90101457142428576",
+                "id": "15434727416",
                 "is_verified": false,
                 "profile_pic_url": "https://example.invalid/media/ca66b2744ad64dc6.jpg",
                 "username": "commenter_120"
@@ -325,11 +325,11 @@
           {
             "node": {
               "id": "18121207612625294",
-              "text": "Synthetic placeholder comment for test fixture purposes.",
+              "text": "Synthetic placeholder comment for test fixture purposes 😂🔥",
               "created_at": 1775469440,
               "did_report_as_spam": false,
               "owner": {
-                "id": "81414729862225310",
+                "id": "456525258",
                 "is_verified": false,
                 "profile_pic_url": "https://example.invalid/media/73a7a203a6909b47.jpg",
                 "username": "commenter_121"
@@ -360,11 +360,11 @@
           {
             "node": {
               "id": "18343854424173457",
-              "text": "Synthetic placeholder comment for test fixture purposes.",
+              "text": "Another synthetic placeholder comment for fixture coverage.",
               "created_at": 1781993806,
               "did_report_as_spam": false,
               "owner": {
-                "id": "93782543513099145",
+                "id": "658107656",
                 "is_verified": false,
                 "profile_pic_url": "https://example.invalid/media/b665df29d30b4984.jpg",
                 "username": "commenter_113"
@@ -383,7 +383,7 @@
               "created_at": 1784312045,
               "did_report_as_spam": false,
               "owner": {
-                "id": "10688909907160998",
+                "id": "438923278529",
                 "is_verified": false,
                 "profile_pic_url": "https://example.invalid/media/9191ee29a4f2e2b2.jpg",
                 "username": "commenter_112"
@@ -426,7 +426,7 @@
         "edges": [
           {
             "node": {
-              "id": "96394452473401656",
+              "id": "90129852761",
               "full_name": "Commenter 105",
               "is_private": false,
               "is_verified": true,
@@ -442,7 +442,7 @@
                     "node": {
                       "__typename": "XDTGraphImage",
                       "id": "3757688426716923842",
-                      "shortcode": "DQl_bcLDwfC",
+                      "shortcode": "MzoMIshEqBq",
                       "edge_media_preview_like": {
                         "count": 115677
                       },
@@ -451,7 +451,7 @@
                       },
                       "thumbnail_src": "https://example.invalid/media/490100344fd43e1b.jpg",
                       "owner": {
-                        "id": "96394452473401656",
+                        "id": "90129852761",
                         "username": "commenter_105"
                       },
                       "gating_info": null,
@@ -468,7 +468,7 @@
                     "node": {
                       "__typename": "XDTGraphSidecar",
                       "id": "3819359031085965673",
-                      "shortcode": "DUBFs2NjyFp",
+                      "shortcode": "TdsxpSgntrH",
                       "edge_media_preview_like": {
                         "count": 6194
                       },
@@ -477,7 +477,7 @@
                       },
                       "thumbnail_src": "https://example.invalid/media/76bf7de52bea381f.jpg",
                       "owner": {
-                        "id": "96394452473401656",
+                        "id": "90129852761",
                         "username": "commenter_105"
                       },
                       "gating_info": null,
@@ -494,7 +494,7 @@
                     "node": {
                       "__typename": "XDTGraphImage",
                       "id": "3746742809147804878",
-                      "shortcode": "DP_GrvcAQzO",
+                      "shortcode": "aJtzhrnVlhB",
                       "edge_media_preview_like": {
                         "count": 10139
                       },
@@ -503,7 +503,7 @@
                       },
                       "thumbnail_src": "https://example.invalid/media/467b9dc95717dc2c.jpg",
                       "owner": {
-                        "id": "96394452473401656",
+                        "id": "90129852761",
                         "username": "commenter_105"
                       },
                       "gating_info": null,
@@ -522,7 +522,7 @@
           },
           {
             "node": {
-              "id": "67734054510687537",
+              "id": "58905094725",
               "full_name": "Commenter 106",
               "is_private": false,
               "is_verified": true,
@@ -538,7 +538,7 @@
                     "node": {
                       "__typename": "XDTGraphSidecar",
                       "id": "3894617781916842989",
-                      "shortcode": "DYMdjzzErvt",
+                      "shortcode": "9dkrknT9xNR",
                       "edge_media_preview_like": {
                         "count": 446
                       },
@@ -547,7 +547,7 @@
                       },
                       "thumbnail_src": "https://example.invalid/media/55ed90eb6971f368.jpg",
                       "owner": {
-                        "id": "67734054510687537",
+                        "id": "58905094725",
                         "username": "commenter_106"
                       },
                       "gating_info": null,
@@ -564,7 +564,7 @@
                     "node": {
                       "__typename": "XDTGraphSidecar",
                       "id": "3893900746312326426",
-                      "shortcode": "DYJ6hkWkx0a",
+                      "shortcode": "v-gsLGnnSP5",
                       "edge_media_preview_like": {
                         "count": 108
                       },
@@ -573,7 +573,7 @@
                       },
                       "thumbnail_src": "https://example.invalid/media/805afad6599a9583.jpg",
                       "owner": {
-                        "id": "10818145205964476",
+                        "id": "25478561454",
                         "username": "commenter_107"
                       },
                       "gating_info": null,
@@ -590,7 +590,7 @@
                     "node": {
                       "__typename": "XDTGraphVideo",
                       "id": "3882329927794779086",
-                      "shortcode": "DXgzn_3E2PO",
+                      "shortcode": "fC_8a_Hq3Tj",
                       "edge_media_preview_like": {
                         "count": 69096
                       },
@@ -599,7 +599,7 @@
                       },
                       "thumbnail_src": "https://example.invalid/media/3151a03fdcb23555.jpg",
                       "owner": {
-                        "id": "25053018030027975",
+                        "id": "89258901010",
                         "username": "commenter_108"
                       },
                       "gating_info": null,
@@ -618,7 +618,7 @@
           },
           {
             "node": {
-              "id": "57917991575318232",
+              "id": "4569092363",
               "full_name": "Commenter 109",
               "is_private": false,
               "is_verified": true,
@@ -634,7 +634,7 @@
                     "node": {
                       "__typename": "XDTGraphVideo",
                       "id": "3946075138994901946",
-                      "shortcode": "DbDRm6EypO6",
+                      "shortcode": "NHALSVdVhv2",
                       "edge_media_preview_like": {
                         "count": 882
                       },
@@ -643,7 +643,7 @@
                       },
                       "thumbnail_src": "https://example.invalid/media/75ef29f87eed3bcd.jpg",
                       "owner": {
-                        "id": "57917991575318232",
+                        "id": "4569092363",
                         "username": "commenter_109"
                       },
                       "gating_info": null,
@@ -660,7 +660,7 @@
                     "node": {
                       "__typename": "XDTGraphSidecar",
                       "id": "3945361051429684623",
-                      "shortcode": "DbAvPkNIMWP",
+                      "shortcode": "pSV_7lDbkRQ",
                       "edge_media_preview_like": {
                         "count": 1179
                       },
@@ -669,7 +669,7 @@
                       },
                       "thumbnail_src": "https://example.invalid/media/7bc7f2a4a2f24533.jpg",
                       "owner": {
-                        "id": "10927801180432771",
+                        "id": "50763436",
                         "username": "commenter_110"
                       },
                       "gating_info": null,
@@ -686,7 +686,7 @@
                     "node": {
                       "__typename": "XDTGraphVideo",
                       "id": "3945349354348905273",
-                      "shortcode": "DbAslWcyIM5",
+                      "shortcode": "XFFeZBLswXu",
                       "edge_media_preview_like": {
                         "count": 11550
                       },
@@ -695,7 +695,7 @@
                       },
                       "thumbnail_src": "https://example.invalid/media/30d0c487d06d0bb3.jpg",
                       "owner": {
-                        "id": "57917991575318232",
+                        "id": "4569092363",
                         "username": "commenter_109"
                       },
                       "gating_info": null,
@@ -714,7 +714,7 @@
           },
           {
             "node": {
-              "id": "10876527808024149",
+              "id": "9690945812",
               "full_name": "Commenter 111",
               "is_private": false,
               "is_verified": false,
@@ -730,7 +730,7 @@
                     "node": {
                       "__typename": "XDTGraphVideo",
                       "id": "3554092944368105066",
-                      "shortcode": "DFSrLPXyHZq",
+                      "shortcode": "U9AjrdN_Hsa",
                       "edge_media_preview_like": {
                         "count": 1574945
                       },
@@ -739,7 +739,7 @@
                       },
                       "thumbnail_src": "https://example.invalid/media/d635c89160ca9609.jpg",
                       "owner": {
-                        "id": "10876527808024149",
+                        "id": "9690945812",
                         "username": "commenter_111"
                       },
                       "gating_info": null,
@@ -756,7 +756,7 @@
                     "node": {
                       "__typename": "XDTGraphVideo",
                       "id": "3946167921738982134",
-                      "shortcode": "DbDmtEvSyL2",
+                      "shortcode": "XdKfU7c2v-a",
                       "edge_media_preview_like": {
                         "count": 2767
                       },
@@ -765,7 +765,7 @@
                       },
                       "thumbnail_src": "https://example.invalid/media/5f373438aa1d21dc.jpg",
                       "owner": {
-                        "id": "10876527808024149",
+                        "id": "9690945812",
                         "username": "commenter_111"
                       },
                       "gating_info": null,
@@ -782,7 +782,7 @@
                     "node": {
                       "__typename": "XDTGraphVideo",
                       "id": "3944768279028859524",
-                      "shortcode": "Da-odl4voKE",
+                      "shortcode": "VEqtYNqpR41",
                       "edge_media_preview_like": {
                         "count": 6420
                       },
@@ -791,7 +791,7 @@
                       },
                       "thumbnail_src": "https://example.invalid/media/5a8ff9eba82aa26b.jpg",
                       "owner": {
-                        "id": "10876527808024149",
+                        "id": "9690945812",
                         "username": "commenter_111"
                       },
                       "gating_info": null,

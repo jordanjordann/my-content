@@ -175,7 +175,8 @@ export interface ScrapeCreatorsMedia {
 
   /**
    * C9 (ticket #71): present on 6/6 fixtures, non-empty on 2/6
-   * (ig_reel_3.json: sandiuno; ig_single_image_post.json: masterfulofc).
+   * (ig_reel_3.json: coauthor_test_account; ig_single_image_post.json:
+   * commenter_123 — handles anonymised in #264, see verified-facts.md).
    * Absent on all carousel children — post-level only. Owner decision
    * (2026-07-22, verbatim): "i think just store the data for now, but keep
    * it away from analysis" — model/carry/persist this field, but it must

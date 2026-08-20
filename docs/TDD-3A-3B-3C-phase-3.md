@@ -1150,7 +1150,7 @@ case**: a fabricated bare `4,1%` must throw, and `4.1%` (dot separator) must thr
 > — written before V3 ran. Retained so the reasoning is auditable; the gate it describes is discharged.
 
 **Measured, 2026-08-06, through the real production pipeline** (`runAnalysis()` end to end on
-`/p/DZCPPJTjKVy/` — a 10-slide, 7-video + 3-image carousel; real fetch, real File API uploads, real
+`/p/zGKPVUdG_7U/` — a 10-slide, 7-video + 3-image carousel; real fetch, real File API uploads, real
 `temperature: 0` / `maxOutputTokens: 32768` config, real parse, real row written):
 
 | | 10-slide carousel (V3) | Single 61s reel (2026-08-05 baseline) |

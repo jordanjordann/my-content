@@ -248,7 +248,11 @@ describe("recomputeFingerprint — co-authored posts count at equal weight (owne
       await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION });
     }
     // 2 co-authored posts, same as the primary test creator's sample in the ticket body.
-    await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION, coauthorProducers: ["sandiuno"] });
+    await insertAnalysis(db, {
+      profileId,
+      schemaVersion: ANALYSIS_SCHEMA_VERSION,
+      coauthorProducers: ["coauthor_test_account"],
+    });
     await insertAnalysis(db, { profileId, schemaVersion: ANALYSIS_SCHEMA_VERSION, coauthorProducers: ["someoneElse"] });
 
     const result = await recomputeFingerprint(profileId);

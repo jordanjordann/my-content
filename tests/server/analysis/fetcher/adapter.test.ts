@@ -564,7 +564,7 @@ describe("adaptPostResponse — real fixtures (ticket #71)", () => {
 
   it("C4 branch (a) — a top-level reel: viewCount stays the RAW (known-bad-0) video_view_count, playCount holds the trustworthy video_play_count, and the fallback is RECORDED via displayedCountIsPlayCount rather than silently swapped", () => {
     const media = loadMedia("ig_reel_1_zero_view_count.json");
-    const result = adaptPostResponse(media, "https://www.instagram.com/reel/Da4TFq_pKvM/");
+    const result = adaptPostResponse(media, "https://www.instagram.com/reel/c6JYux8YmyY/");
 
     expect(result.playCount).toBe(116_333);
     expect(result.viewCount).toBe(0);
@@ -583,7 +583,7 @@ describe("adaptPostResponse — real fixtures (ticket #71)", () => {
       234_050, 163_868, 133_813, 117_523, 102_061, 60_537, 42_947,
     ]);
 
-    const result = adaptPostResponse(media, "https://www.instagram.com/p/DZCPPJTjKVy/");
+    const result = adaptPostResponse(media, "https://www.instagram.com/p/zGKPVUdG_7U/");
     expect(result.playCount).toBeNull();
     expect(result.viewCount).toBe(234_050);
     expect(result.displayedCountIsPlayCount).toBe(false);
@@ -591,7 +591,7 @@ describe("adaptPostResponse — real fixtures (ticket #71)", () => {
 
   it("Q4 — both counts are persisted, never discarded, and materially diverge on a reel (ig_reel_2)", () => {
     const media = loadMedia("ig_reel_2.json");
-    const result = adaptPostResponse(media, "https://www.instagram.com/reel/DEC1qiWsmYm/");
+    const result = adaptPostResponse(media, "https://www.instagram.com/reel/my0UdbJfZ8O/");
 
     expect(result.playCount).toBe(721_558);
     expect(result.viewCount).toBe(305_044);
@@ -600,7 +600,7 @@ describe("adaptPostResponse — real fixtures (ticket #71)", () => {
 
   it("Q4 — both counts are persisted on a second reel (ig_reel_3)", () => {
     const media = loadMedia("ig_reel_3.json");
-    const result = adaptPostResponse(media, "https://www.instagram.com/reel/DWgcxq2CaCZ/");
+    const result = adaptPostResponse(media, "https://www.instagram.com/reel/wgkBvXRiusH/");
 
     expect(result.playCount).toBe(279_641);
     expect(result.viewCount).toBe(150_780);
@@ -608,7 +608,7 @@ describe("adaptPostResponse — real fixtures (ticket #71)", () => {
 
   it("C7 — discriminates by __typename/is_video, not video_url presence: the all-image carousel yields 0 video parts, 10 image parts", () => {
     const media = loadMedia("ig_carousel_all_images_10_slides.json");
-    const result = adaptPostResponse(media, "https://www.instagram.com/p/DVtNQtmCQnO/");
+    const result = adaptPostResponse(media, "https://www.instagram.com/p/uSFa7tlyLbw/");
 
     expect(result.mediaParts).toHaveLength(10);
     expect(result.mediaParts?.every((p) => p.kind === "image")).toBe(true);
@@ -618,7 +618,7 @@ describe("adaptPostResponse — real fixtures (ticket #71)", () => {
 
   it("a 10-slide mixed carousel produces all 10 media parts (7 video + 3 image), uncapped at MAX_MEDIA_PARTS=20", () => {
     const media = loadMedia("ig_carousel_mixed_video_and_image_10_slides.json");
-    const result = adaptPostResponse(media, "https://www.instagram.com/p/DZCPPJTjKVy/");
+    const result = adaptPostResponse(media, "https://www.instagram.com/p/zGKPVUdG_7U/");
 
     expect(result.mediaParts).toHaveLength(10);
     expect(result.mediaParts?.filter((p) => p.kind === "video")).toHaveLength(7);
@@ -632,14 +632,14 @@ describe("adaptPostResponse — real fixtures (ticket #71)", () => {
     // unwrapped xdt_shortcode_media and never reads success/errors at all,
     // so simply succeeding here (no throw) is the assertion.
     const media = loadMedia("ig_carousel_mixed_video_and_image_10_slides.json");
-    expect(() => adaptPostResponse(media, "https://www.instagram.com/p/DZCPPJTjKVy/")).not.toThrow();
+    expect(() => adaptPostResponse(media, "https://www.instagram.com/p/zGKPVUdG_7U/")).not.toThrow();
   });
 
   it("C8 — like_and_view_counts_disabled ABSENT (the all-image carousel) is not coerced to false", () => {
     const media = loadMedia("ig_carousel_all_images_10_slides.json");
     expect(media.like_and_view_counts_disabled).toBeUndefined();
 
-    const result = adaptPostResponse(media, "https://www.instagram.com/p/DVtNQtmCQnO/");
+    const result = adaptPostResponse(media, "https://www.instagram.com/p/uSFa7tlyLbw/");
     expect(result.likeAndViewCountsDisabled).toBeUndefined();
     expect(result.likeAndViewCountsDisabled).not.toBe(false);
   });
@@ -647,7 +647,7 @@ describe("adaptPostResponse — real fixtures (ticket #71)", () => {
   it("C8 — a genuine 0 (flag false/absent) still persists as 0, not NULL", () => {
     const media = loadMedia("ig_reel_1_zero_view_count.json");
     // This fixture's flag is false; its comment_count/like_count are genuine values.
-    const result = adaptPostResponse(media, "https://www.instagram.com/reel/Da4TFq_pKvM/");
+    const result = adaptPostResponse(media, "https://www.instagram.com/reel/c6JYux8YmyY/");
     expect(result.likeCount).not.toBeNull();
   });
 
@@ -655,7 +655,7 @@ describe("adaptPostResponse — real fixtures (ticket #71)", () => {
     const media = loadMedia("ig_reel_1_zero_view_count.json");
     const synthetic: ScrapeCreatorsMedia = { ...media, like_and_view_counts_disabled: true };
 
-    const result = adaptPostResponse(synthetic, "https://www.instagram.com/reel/Da4TFq_pKvM/");
+    const result = adaptPostResponse(synthetic, "https://www.instagram.com/reel/c6JYux8YmyY/");
     expect(result.viewCount).toBeNull();
     expect(result.likeCount).toBeNull();
     expect(result.likeAndViewCountsDisabled).toBe(true);
@@ -663,7 +663,7 @@ describe("adaptPostResponse — real fixtures (ticket #71)", () => {
 
   it("C9 — coauthor_producers is persisted for a co-authored post (ig_reel_3), owner is unchanged", () => {
     const media = loadMedia("ig_reel_3.json");
-    const result = adaptPostResponse(media, "https://www.instagram.com/reel/DWgcxq2CaCZ/");
+    const result = adaptPostResponse(media, "https://www.instagram.com/reel/wgkBvXRiusH/");
 
     expect(result.coauthorUsernames).toEqual(["coauthor_test_account"]);
     expect(result.username).toBe("primary_test_creator");
@@ -672,12 +672,12 @@ describe("adaptPostResponse — real fixtures (ticket #71)", () => {
   it("C9 — absent and empty coauthor_producers are handled identically ([])", () => {
     const withEmpty = loadMedia("ig_reel_2.json");
     expect(withEmpty.coauthor_producers).toEqual([]);
-    const resultEmpty = adaptPostResponse(withEmpty, "https://www.instagram.com/reel/DEC1qiWsmYm/");
+    const resultEmpty = adaptPostResponse(withEmpty, "https://www.instagram.com/reel/my0UdbJfZ8O/");
     expect(resultEmpty.coauthorUsernames).toEqual([]);
 
     const withoutKey: ScrapeCreatorsMedia = { ...withEmpty };
     delete withoutKey.coauthor_producers;
-    const resultAbsent = adaptPostResponse(withoutKey, "https://www.instagram.com/reel/DEC1qiWsmYm/");
+    const resultAbsent = adaptPostResponse(withoutKey, "https://www.instagram.com/reel/my0UdbJfZ8O/");
     expect(resultAbsent.coauthorUsernames).toEqual([]);
   });
 
@@ -702,7 +702,7 @@ describe("adaptPostResponse — real fixtures (ticket #71)", () => {
       video_view_count: undefined,
     };
 
-    const result = adaptPostResponse(synthetic, "https://www.instagram.com/reel/Da4TFq_pKvM/");
+    const result = adaptPostResponse(synthetic, "https://www.instagram.com/reel/c6JYux8YmyY/");
 
     expect(result.playCount).toBe(116_333);
     expect(result.viewCount).toBeNull();
