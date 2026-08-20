@@ -95,10 +95,38 @@ table — but any surface that reads `sampleSize` (popover, future export, a11y 
 say `based on 4 reels` on a row that has no comparison at all. **Gate the live count on
 `state === COLD_START`, not on `median == null`.**
 
-**4.4 — Sorting and grouping.** These rows must sort and group with the other **not-comparable** rows,
-not with cold start. They have no progress value, so any ordering that ranks cold-start rows by
-progress has no key for them. No new sort semantics are requested — only: do not treat them as
-cold start with progress `0`.
+**4.4 — Sorting and grouping.** ⚠️ **SUPERSEDED IN PART — owner ruling, 2026-08-20. The sorting half
+of this clause no longer holds. The grouping half stands unchanged.**
+
+> **Owner ruling, 2026-08-20 (approved override of this section):** *Drop the sorting entirely. The
+> default and only order is `created_at DESC` — newest analysis first.*
+>
+> **Reasoning, as stated by the owner:** the shipped sort *lies*. It claims to order by multiplier but
+> orders by the **stored** multiplier, and since [#263](https://github.com/jordanjordann/my-content/pull/263)
+> made the displayed multiplier live-derived, the 2026-08-20 production census shows **5 of the 7 rows
+> that display a number have none stored**. Removing the sort replaces a wrong answer with **no
+> answer**, which is honest. The owner explicitly accepted the trade-off that the two
+> currently-correct rows (`3b495116`, `7b6948fe`) also lose their correct ordering.
+>
+> **The owner was told this section declined to change sort semantics and approved the override
+> anyway.** It is not a drift, an oversight or a re-reading — it is a decision that overrules this
+> paragraph. It also supersedes **§6.1 of `DESIGN-3C-analyses-table.md`** (the sortable-column list,
+> the `Posted, descending` default, and rules **R-S1 / R-S2 / R-S3**) and **OR-8**, whose default sort
+> key was `post_date`; the new key is `created_at`, a different column with a visibly different order.
+> Ticketed as [#266](https://github.com/jordanjordann/my-content/issues/266).
+
+**What still holds from the original clause:** **grouping**. These rows must still group with the
+other **not-comparable** rows, not with cold start, and must not be treated as cold start with
+progress `0`. Grouping is a separate axis from ordering — `groupAnalysisRows` splits the page by
+score presence and never reads a sort key — so removing the sort leaves grouping untouched.
+
+**What is withdrawn:** every sorting statement here. There is no sortable column left, so "these rows
+must **sort** with the other not-comparable rows" has nothing to bind, and the observation that
+progress-ranked orderings have no key for these rows is moot. **Original text, preserved so it is not
+rebuilt:** *"These rows must sort and group with the other not-comparable rows, not with cold start.
+They have no progress value, so any ordering that ranks cold-start rows by progress has no key for
+them. No new sort semantics are requested — only: do not treat them as cold start with progress
+`0`."*
 
 **4.5 — Screen reader.** The cell announces as the single statement, in full, in one phrase. No
 counter, no numeral, nothing to announce as `0 of 5`. Contrast, size and muted treatment are
