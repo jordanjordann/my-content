@@ -428,7 +428,7 @@ no successor class. Everything moves onto the unified client.
 | `ig_reel_3.json` | `/reel/DWgcxq2CaCZ/` | `XDTGraphVideo` | `video_view_count: 150780` |
 | `ig_single_image_post.json` | `/p/Da7oY2ep3Qr/` | `XDTGraphImage` | **single image, NOT a carousel** — no `edge_sidecar_to_children` |
 
-All five posts belong to the same creator (`@giorrando`).
+All five posts belong to the same creator (the primary test creator).
 
 ### ⚠️ STILL UNVERIFIED: a carousel containing a VIDEO slide
 
@@ -1247,10 +1247,10 @@ entry; it documents real, separate findings about the SDK (`response.text` gette
 
 ### The real reel
 
-- `https://www.instagram.com/reel/DEC1qiWsmYm/` (`@giorrando`) — the same reel captured live in
-  `.claude/context/fixtures/scrapecreators-instagram/ig_reel_2.json` (2026-07-22 Instagram capture
-  session). 61.133s, 750x1333, real caption, real engagement numbers (306,949 views, 35,726 likes,
-  369 comments, 250,506 followers).
+- `https://www.instagram.com/reel/DEC1qiWsmYm/` (the primary test creator) — the same reel captured
+  live in `.claude/context/fixtures/scrapecreators-instagram/ig_reel_2.json` (2026-07-22 Instagram
+  capture session). 61.133s, 750x1333, real caption, real engagement numbers at capture time (scrubbed
+  from the fixture as of #264; see git history before #264 if the exact figures are ever needed again).
 - **Media source: reused an already-uploaded Gemini File API asset, not a fresh download.** The
   `analyses` table (`my-content.db`) had a prior **production run of this exact reel** from
   2026-08-03 (`id=c93914d2-6db1-4cd0-81b1-acc04df25574`, `status='completed'`), whose

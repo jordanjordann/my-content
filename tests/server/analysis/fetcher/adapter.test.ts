@@ -665,8 +665,8 @@ describe("adaptPostResponse — real fixtures (ticket #71)", () => {
     const media = loadMedia("ig_reel_3.json");
     const result = adaptPostResponse(media, "https://www.instagram.com/reel/DWgcxq2CaCZ/");
 
-    expect(result.coauthorUsernames).toEqual(["sandiuno"]);
-    expect(result.username).toBe("giorrando");
+    expect(result.coauthorUsernames).toEqual(["coauthor_test_account"]);
+    expect(result.username).toBe("primary_test_creator");
   });
 
   it("C9 — absent and empty coauthor_producers are handled identically ([])", () => {

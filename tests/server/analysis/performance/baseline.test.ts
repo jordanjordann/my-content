@@ -772,7 +772,7 @@ describe("computeBaseline — D2 (TDD §14.8b): candidate eligibility uses LIVE 
     }
     // Analysed at 20h old (frozen, well under the 72h floor) but posted
     // long ago in wall-clock time — the Part 2 regression this ticket
-    // fixes. Empirically the exact @giorrando shape (TDD §14.8b).
+    // fixes. Empirically the exact shape of the primary test creator's data (TDD §14.8b).
     await insertAnalysis(client, {
       profileId,
       bucketKey,
