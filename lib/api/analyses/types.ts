@@ -92,8 +92,15 @@ export type UnavailableReason =
  */
 export type PerformanceTier2State = "MEASURED" | "NOT_COMPARABLE" | "COLD_START";
 
-/** Mirrors the server's `PerformanceTier2Reason` — always present on `NOT_COMPARABLE`, always `null` elsewhere. */
-export type PerformanceTier2Reason = "POST_METRIC_UNRESOLVED" | "MEDIAN_ZERO";
+/**
+ * Mirrors the server's `PerformanceTier2Reason` — always present on `NOT_COMPARABLE`, always
+ * `null` elsewhere. `POST_METRIC_UNRESOLVED_NO_BASELINE` (ticket #262) is the below-threshold
+ * variant: own metric unresolved AND the creator has no live baseline for this bucket yet.
+ */
+export type PerformanceTier2Reason =
+  | "POST_METRIC_UNRESOLVED"
+  | "POST_METRIC_UNRESOLVED_NO_BASELINE"
+  | "MEDIAN_ZERO";
 
 export type PerformanceTier2 = {
   /** `null` at Tier 2 cold start, or `NOT_COMPARABLE`/`POST_METRIC_UNRESOLVED` (no median exists yet either way, regardless of pool size). */
@@ -200,7 +207,10 @@ export type AnalysisTablePerformanceCell =
 export type AnalysisTableMultiplierCell =
   | { kind: "measured"; multiplier: number; sampleSize: number; bucketNoun: string }
   | { kind: "cold-start"; sampleSize: number; minSample: number; bucketNoun: string }
-  | { kind: "not-comparable"; reason: "POST_METRIC_UNRESOLVED" | "MEDIAN_ZERO" }
+  | {
+      kind: "not-comparable";
+      reason: "POST_METRIC_UNRESOLVED" | "POST_METRIC_UNRESOLVED_NO_BASELINE" | "MEDIAN_ZERO";
+    }
   | { kind: "reason"; text: string | null }
   | { kind: "dash" };
 

@@ -131,6 +131,29 @@ const MEASURED_CAROUSEL_PERFORMANCE: AnalysisPerformance = {
   },
 };
 
+/**
+ * Ticket #262 (DESIGN-3C §2) — the below-threshold `NOT_COMPARABLE` shape (own metric
+ * unresolved, live pool below `minSample`). `state` is `NOT_COMPARABLE`, not `COLD_START`, so
+ * the popover's F2 carve-out — which guards on `multiplierCell.kind`, itself derived from
+ * `tier2.state` — must never engage here, with zero edits to any popover file.
+ */
+const BELOW_THRESHOLD_NOT_COMPARABLE_PERFORMANCE: AnalysisPerformance = {
+  ...AGREEING_PERFORMANCE,
+  computed: {
+    ...AGREEING_PERFORMANCE.computed,
+    tier2: {
+      median: null,
+      sampleSize: 1,
+      bucketKey: "instagram:carousel:full_video",
+      multiplier: null,
+      minSample: 5,
+      state: "NOT_COMPARABLE",
+      reason: "POST_METRIC_UNRESOLVED_NO_BASELINE",
+    },
+  },
+  judgement: { performanceScore: 4, verdict: "Strong hook.", drivers: ["Hook kuat sejak detik pertama."] },
+};
+
 /** Row 8 (DESIGN-3B §5.5, amendment B8) — `unavailableReason` is `null` and
  * `performanceScore` is `null`: the judgement returned no 1–5 over an intact computed block. */
 const NO_JUDGEMENT_PERFORMANCE: AnalysisPerformance = {
@@ -224,6 +247,21 @@ describe("AnalysisScoreExplainPopover — the footer, F1 default (DESIGN-3B §4.
       "Measured 12 Jul 2026. These numbers are frozen at the time of analysis and don't update.",
     );
     expect(text).not.toContain("except the count of");
+  });
+
+  /**
+   * Ticket #262 — the below-threshold `NOT_COMPARABLE` state must render the default F1
+   * footer, never F2, and must omit the L2 "has N of N … analysed so far" sentence — asserted
+   * against the REAL, unmodified popover component (this test edits no popover file).
+   */
+  it("a below-threshold NOT_COMPARABLE row (own metric unresolved, no live baseline yet) renders F1, never F2, and omits the cold-start progress sentence", () => {
+    const popup = openPopover(buildRow(BELOW_THRESHOLD_NOT_COMPARABLE_PERFORMANCE));
+    const text = popup.textContent ?? "";
+    expect(text).toContain(
+      "Measured 12 Jul 2026. These numbers are frozen at the time of analysis and don't update.",
+    );
+    expect(text).not.toContain("except the count of");
+    expect(text).not.toMatch(/of\s+5\s+carousels\s+analysed so far/i);
   });
 });
 

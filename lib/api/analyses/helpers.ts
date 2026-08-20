@@ -357,13 +357,12 @@ function derivePerformanceCell(
  * build — the exact #251 defect. `state` is the single fact every consumer must read; it is
  * never re-derived from other fields.
  *
- * DESIGN-3C §2's below-threshold `POST_METRIC_UNRESOLVED` short-form string (pool < threshold:
- * `this post's own count wasn't published`, dropping the now-false `this creator's usual is
- * set` clause) is #262's approved deliverable, not this ticket's. `tier2` carries no signal
- * here for "did the live pool clear the threshold", so the existing long-form
- * `NOT_COMPARABLE_MULTIPLIER_CELL_COPY` string renders unconditionally for `reason:
- * "POST_METRIC_UNRESOLVED"` until #262 lands — 0 production rows are in the below-threshold
- * shape today (PR #263), so this is not a visible regression, only a pending copy gap.
+ * DESIGN-3C §2's below-threshold short-form string (pool < threshold, or the live pool was
+ * never fetched: `this post's own count wasn't published`, dropping the now-false `this
+ * creator's usual is set` clause) is ticket #262 — shipped here. `tier2.reason` now carries
+ * `POST_METRIC_UNRESOLVED_NO_BASELINE` as its own discriminator (`readModel.ts`'s `buildTier2`
+ * step 2), so this function still just passes `tier2.reason` straight through — no new
+ * branching needed here, only the wider reason union.
  */
 function deriveMultiplierCell(computed: PerformanceComputed): AnalysisTableMultiplierCell {
   const { tier2, unavailableReason } = computed;
@@ -393,8 +392,11 @@ function deriveMultiplierCell(computed: PerformanceComputed): AnalysisTableMulti
     // the cold-start "N of {minSample}" framing here.
     return {
       kind: "not-comparable",
-      // Invariant: `reason` is non-null iff `state === "NOT_COMPARABLE"`. Defensive fallback only.
-      reason: tier2.reason ?? "POST_METRIC_UNRESOLVED",
+      // Invariant: `reason` is non-null iff `state === "NOT_COMPARABLE"`. Defensive fallback
+      // only — never reachable off a genuine `readModel.ts` row. Ticket #262: the safe default
+      // under the wider union is the short form (`POST_METRIC_UNRESOLVED_NO_BASELINE`), not
+      // `POST_METRIC_UNRESOLVED` — asserting a baseline exists is the stronger, less safe claim.
+      reason: tier2.reason ?? "POST_METRIC_UNRESOLVED_NO_BASELINE",
     };
   }
 

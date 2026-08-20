@@ -731,10 +731,13 @@ describe("GET /api/analyses — ticket #252: the live multiplier end to end", ()
     const row = body.analyses.find((a: { id: string }) => a.id === observedId);
 
     expect(row.performance.computed.tier2.state).toBe("NOT_COMPARABLE");
-    expect(row.performance.computed.tier2.reason).toBe("POST_METRIC_UNRESOLVED");
+    // Ticket #262 — the live pool (3 comparators) is below BASELINE_MIN_SAMPLE (5): no
+    // creator baseline exists for this bucket, so the reason is the below-threshold short
+    // form, not `POST_METRIC_UNRESOLVED` (which would claim a baseline exists).
+    expect(row.performance.computed.tier2.reason).toBe("POST_METRIC_UNRESOLVED_NO_BASELINE");
     expect(row.performance.computed.tier2.multiplier).toBeNull();
     // The live pool has 3 eligible comparators, but that number must NOT
-    // leak onto this row — it stays the frozen write-time column.
+    // leak onto this row's sampleSize — it stays the frozen write-time column.
     expect(row.performance.computed.tier2.sampleSize).toBe(1);
   });
 
