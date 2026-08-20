@@ -299,7 +299,15 @@ function performanceWith(score: number | null, multiplier: number | null): Analy
       tier2:
         multiplier == null
           ? null
-          : { median: 151_000, sampleSize: 7, bucketKey: "instagram:reel:full_video", multiplier, minSample: 5 },
+          : {
+              median: 151_000,
+              sampleSize: 7,
+              bucketKey: "instagram:reel:full_video",
+              multiplier,
+              minSample: 5,
+              state: "MEASURED",
+              reason: null,
+            },
       tier3: null,
       tierUsed: "CREATOR_BASELINE",
       confidence: "HIGH",
@@ -327,16 +335,30 @@ function coldStartPerformanceWith(score: number | null, sampleSize = 3, minSampl
     ...base,
     computed: {
       ...base.computed,
-      tier2: { median: null, sampleSize, bucketKey: "instagram:reel:full_video", multiplier: null, minSample },
+      tier2: {
+        median: null,
+        sampleSize,
+        bucketKey: "instagram:reel:full_video",
+        multiplier: null,
+        minSample,
+        state: "COLD_START",
+        reason: null,
+      },
     },
   };
 }
 
 /**
- * Ticket #251 — a NOT_COMPARABLE row (`tier2` present, `median` present, `multiplier`
- * null). Distinct from `coldStartPerformanceWith` above, which sets `median: null` too.
+ * Ticket #251/#252 — a NOT_COMPARABLE row (`tier2` present, `state: "NOT_COMPARABLE"`,
+ * `multiplier` null). Distinct from `coldStartPerformanceWith` above, which is `state:
+ * "COLD_START"`. Mirrors the server's actual output (`readModel.ts`'s `buildTier2`, PR #263):
+ * `POST_METRIC_UNRESOLVED` carries `median: null` (regardless of pool size — DESIGN-3C §3
+ * step 2 precedes the threshold check), `MEDIAN_ZERO` carries `median: 0`. Production row
+ * `391b7615-339c-4007-9d37-6e8d48b66d21` is exactly the `POST_METRIC_UNRESOLVED` shape.
  */
-function notComparablePerformanceWith(median: number): AnalysisPerformance {
+function notComparablePerformanceWith(
+  reason: "POST_METRIC_UNRESOLVED" | "MEDIAN_ZERO",
+): AnalysisPerformance {
   const base = performanceWith(4, 3.2);
   if (base == null) {
     throw new Error("performanceWith never returns null in this fixture");
@@ -345,7 +367,15 @@ function notComparablePerformanceWith(median: number): AnalysisPerformance {
     ...base,
     computed: {
       ...base.computed,
-      tier2: { median, sampleSize: 5, bucketKey: "instagram:reel:full_video", multiplier: null, minSample: 5 },
+      tier2: {
+        median: reason === "MEDIAN_ZERO" ? 0 : null,
+        sampleSize: 5,
+        bucketKey: "instagram:reel:full_video",
+        multiplier: null,
+        minSample: 5,
+        state: "NOT_COMPARABLE",
+        reason,
+      },
     },
   };
 }
@@ -366,14 +396,40 @@ describe("deriveAnalysisTablePerformance — multiplierCell, ticket #251's three
     expect(derived?.multiplierCell).toEqual({ kind: "cold-start", sampleSize: 3, minSample: 5, bucketNoun: "reels" });
   });
 
-  it("NOT_COMPARABLE / POST_METRIC_UNRESOLVED — median present (non-zero), multiplier null, must NOT render 'cold-start' (the #251 bug: '5 of 5 reels')", () => {
-    const derived = deriveAnalysisTablePerformance(notComparablePerformanceWith(7_698), "reel", null);
+  it("NOT_COMPARABLE / POST_METRIC_UNRESOLVED — state carries the fact, median null, multiplier null, must NOT render 'cold-start' (the #251 bug: '5 of 5 reels')", () => {
+    const derived = deriveAnalysisTablePerformance(
+      notComparablePerformanceWith("POST_METRIC_UNRESOLVED"),
+      "reel",
+      null,
+    );
     expect(derived?.multiplierCell).toEqual({ kind: "not-comparable", reason: "POST_METRIC_UNRESOLVED" });
   });
 
   it("NOT_COMPARABLE / MEDIAN_ZERO — median exactly 0 (not absent), multiplier null, takes the not-comparable branch, not cold start", () => {
-    const derived = deriveAnalysisTablePerformance(notComparablePerformanceWith(0), "reel", null);
+    const derived = deriveAnalysisTablePerformance(notComparablePerformanceWith("MEDIAN_ZERO"), "reel", null);
     expect(derived?.multiplierCell).toEqual({ kind: "not-comparable", reason: "MEDIAN_ZERO" });
+  });
+
+  /**
+   * PR #263 review (blocker) — production row `391b7615-339c-4007-9d37-6e8d48b66d21`
+   * (`perf_multiplier NULL`, `perf_reach_value NULL`, a full live pool). Before this fix,
+   * `deriveMultiplierCell` inferred state from `tier2.median != null`. The #263 BE follow-up
+   * (`7ac8bde`) correctly stops passing a stale write-time median through for
+   * `POST_METRIC_UNRESOLVED` — it is `null` regardless of pool size, DESIGN-3C §3 step 2 — so
+   * the old nullness inference could no longer tell this row apart from a genuine cold start
+   * and fell through to the "5 of 5 reels" / "builds as you analyse more" progress cell,
+   * reintroducing the exact #251 defect on a live production row. Routing on `tier2.state`
+   * instead fixes it without depending on `median`'s nullness at all — this is that row's
+   * exact shape, proven end to end through the real `deriveAnalysisTablePerformance`.
+   */
+  it("391b7615 shape — perf_multiplier NULL, perf_reach_value NULL, full live pool -> renders the not-comparable statement, never cold-start", () => {
+    const derived = deriveAnalysisTablePerformance(
+      notComparablePerformanceWith("POST_METRIC_UNRESOLVED"),
+      "reel",
+      null,
+    );
+    expect(derived?.multiplierCell).toEqual({ kind: "not-comparable", reason: "POST_METRIC_UNRESOLVED" });
+    expect(derived?.multiplierCell.kind).not.toBe("cold-start");
   });
 });
 

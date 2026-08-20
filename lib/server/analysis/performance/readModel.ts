@@ -5,6 +5,8 @@ import {
   resolveYoutubeCommentAvailability,
   resolveYoutubeLikeAvailability,
 } from "./availability";
+import { denominatorForBucket, median as computeMedian, metricFor } from "./baseline";
+import type { LiveComparator } from "./baseline";
 import { BASELINE_MIN_SAMPLE } from "./constants";
 import { computeReachPerFollower } from "./ratios";
 import type {
@@ -32,19 +34,28 @@ import type {
  *
  * **Ticket #206 (TDD §14.8a) — this function itself is still pure; the
  * response it feeds is not, on exactly one field.** `buildComputedPerformanceBlock`
- * gains an INJECTED `liveColdStartSampleSize` parameter, never an I/O call
- * of its own. It is applied to `tier2.sampleSize` only when `tier2` exists
- * (`perfBucketKey != null`) AND the row is cold start (`perfMultiplier ==
- * null`) — every other field, and a `MEASURED` row's `tier2.sampleSize` in
- * particular, is still read verbatim off the row and stays exactly as
- * frozen as D8 always described. The live value itself is computed once
- * per request, batched across the whole page (D3), by the caller —
- * `baseline.ts`'s `fetchLiveEligibleComparatorIds` — and handed in here as
- * a plain number. Do not infer from this file alone that the RESPONSE is
- * byte-stable across two reads of an unchanged row: for a cold-start row it
- * is not, by design (§14.8a), because the caller may pass a different
- * `liveColdStartSampleSize` on the second call even though `row` itself
- * hasn't changed.
+ * gains an INJECTED `livePool` parameter, never an I/O call of its own. A
+ * `MEASURED` row (stored `perf_multiplier` present) ignores it entirely and
+ * is read verbatim off the row, frozen, exactly as D8 always described. The
+ * live pool itself is fetched once per request, batched across the whole
+ * page (D3), by the caller — `baseline.ts`'s `fetchLiveEligibleComparatorIds`
+ * — and handed in here as a plain array of `{ id, value }` pairs. Do not
+ * infer from this file alone that the RESPONSE is byte-stable across two
+ * reads of an unchanged row: for a `perf_multiplier IS NULL` row it is not,
+ * by design (§14.8a / ticket #252), because the caller may pass a
+ * different `livePool` on the second call even though `row` itself hasn't
+ * changed.
+ *
+ * **Ticket #252 (TDD §14.8a's LIVE extension) — the multiplier itself, not
+ * just the cold-start count, is now derived live for any row whose stored
+ * `perf_multiplier IS NULL`.** `buildTier2()` below emits an explicit
+ * `state`/`reason` discriminator on `PerformanceTier2` so every consumer
+ * (`deriveMultiplierCell`, the popover) reads ONE source of truth instead
+ * of inferring state from `(multiplier, median)` nullness — a below-
+ * threshold row with an unresolved own metric has both `null` yet is not
+ * cold start, and a live-measured row has stored `multiplier == null` yet
+ * is measured. See DESIGN-3C (`docs/design/DESIGN-3C-vs-their-usual-state-routing.md`)
+ * §3 for the routing rule this function implements.
  *
  * Two fields are genuinely RECONSTRUCTED rather than stored, because
  * storing them would have required a migration this ticket is not allowed
@@ -69,6 +80,13 @@ import type {
  */
 
 export interface PerformanceBlockRow {
+  /**
+   * Ticket #252 — needed to self-exclude this row from its own live
+   * comparator pool (`livePool` may legitimately contain this row's own
+   * id — the batched query has no notion of "self" across many pools,
+   * D3) before a median is taken. Not used for anything else in this file.
+   */
+  id: string;
   platform: Platform;
   likeCount: number | null;
   commentCount: number | null;
@@ -94,13 +112,26 @@ export interface PerformanceBlockRow {
   perfUnavailableReason: UnavailableReason | null;
 }
 
+/**
+ * Ticket #252 (DESIGN-3C §3). The discriminator every `PerformanceTier2`
+ * consumer must switch on — never re-derive from `(multiplier, median)`
+ * nullness (that inference is exactly what broke down: a below-threshold
+ * row with an unresolved own metric has both `null` yet is not cold start,
+ * and a live-measured row has a stored `multiplier == null` yet is
+ * measured).
+ */
+export type PerformanceTier2State = "MEASURED" | "NOT_COMPARABLE" | "COLD_START";
+
+/** Mirrors `BaselineResult`'s `NOT_COMPARABLE` reasons (`types.ts`) — always present on that state, always `null` elsewhere. */
+export type PerformanceTier2Reason = "POST_METRIC_UNRESOLVED" | "MEDIAN_ZERO";
+
 export interface PerformanceTier2 {
-  /** `null` at Tier 2 cold start (`BaselineResult.state === "COLD_START"`) — no baseline exists yet. */
+  /** `null` at Tier 2 cold start, or `NOT_COMPARABLE`/`POST_METRIC_UNRESOLVED` below the live threshold — no median exists yet either way. */
   median: number | null;
   /** Never null in practice — `computeBaseline` always resolves a count, even `0` (R-8.4.4/R-13.3.4). */
   sampleSize: number;
   bucketKey: string;
-  /** `null` at cold start, or `NOT_COMPARABLE` (a full baseline exists but this post's own metric didn't resolve against it). */
+  /** `null` unless `state === "MEASURED"`. */
   multiplier: number | null;
   /**
    * Ticket #260 — the server's own `BASELINE_MIN_SAMPLE` (`constants.ts`, default `5`,
@@ -110,6 +141,10 @@ export interface PerformanceTier2 {
    * cold-start progress cell clamps its live `sampleSize` against.
    */
   minSample: number;
+  /** Ticket #252 — see `PerformanceTier2State`'s doc. The single field every consumer switches on. */
+  state: PerformanceTier2State;
+  /** Non-null iff `state === "NOT_COMPARABLE"`. */
+  reason: PerformanceTier2Reason | null;
 }
 
 export interface PerformanceComputed {
@@ -178,45 +213,155 @@ function buildTier1Ratio(row: PerformanceBlockRow): Tier1Ratio | null {
   return { denominator: "REACH", ratio: row.perfTier1Ratio, reachKind: row.perfReachKind ?? "UNKNOWN" };
 }
 
+/** `?? 0` is defence-in-depth only (never null in practice, R-8.4.4/R-13.3.4) — matches the posture the performance module already takes elsewhere for facts that are "true by construction upstream, guarded again here anyway". */
+function frozenSampleSize(row: PerformanceBlockRow): number {
+  return row.perfBaselineSampleSize ?? 0;
+}
+
+/** Ticket #252 — this row's id may legitimately be present in its own batched pool (D3 has no per-row notion of "self"); drop it before anything downstream counts or medians the pool. */
+function excludeSelf(livePool: LiveComparator[] | null | undefined, id: string): LiveComparator[] {
+  return (livePool ?? []).filter((comparator) => comparator.id !== id);
+}
+
 /**
- * `liveColdStartSampleSize` — ticket #206 (TDD §14.8a). Applied ONLY when
- * this row is a GENUINE cold start — no baseline exists yet
- * (`perfMultiplier == null AND perfBaselineMedian == null`). A `MEASURED`
- * row's `sampleSize` is an operand of a stored multiplier and stays
- * frozen, unconditionally, regardless of what the caller passes in.
- * `undefined` (not injected by the caller) falls back to the stored
- * column, exactly the pre-#206 behaviour — this keeps every existing call
- * site that doesn't pass the new parameter unaffected.
+ * Ticket #252 (DESIGN-3C §3) — the routing rule, implemented in the exact
+ * order specified there (an extension of `computeBaseline()`'s own
+ * precedence, own-metric-unresolved moved one step earlier, ahead of the
+ * pool-size/cold-start check):
  *
- * Ticket #251 — `perfMultiplier == null` ALONE used to be treated as cold
- * start here too, which meant a `NOT_COMPARABLE` row (a full baseline
- * exists — `perfBaselineMedian` is non-null — but this post's own metric
- * never resolved against it) had its FROZEN `perfBaselineSampleSize`
- * silently overwritten with a live comparator count, the same
- * `multiplier === null` conflation `BaselineResult` (types.ts) already
- * closed off server-side. `perfBaselineMedian` is only ever written when a
- * full baseline existed (see the discriminator table on `BaselineResult`),
- * so requiring it to ALSO be null is what actually narrows this to cold
- * start, not "cold start or not-comparable".
+ *   1. Stored multiplier present → `MEASURED`, frozen, untouched. The live
+ *      pool is never even inspected.
+ *   2. Own metric unresolved → `NOT_COMPARABLE` / `POST_METRIC_UNRESOLVED`,
+ *      regardless of pool size.
+ *   3. Pool ≥ threshold and median `=== 0` → `NOT_COMPARABLE` / `MEDIAN_ZERO`.
+ *   4. Pool ≥ threshold → `MEASURED`, live multiplier.
+ *   5. Else → `COLD_START`.
+ *
+ * A stored `perfBaselineMedian` (ticket #251's write-time NOT_COMPARABLE
+ * carve-out) does NOT short-circuit this — it gates on the stored
+ * **multiplier only** (step 1). A row that was `MEDIAN_ZERO` at write time
+ * MAY acquire a live multiplier later, once its pool's live median becomes
+ * non-zero (owner ruling, #263 review). `livePool` is consulted whenever
+ * `perfMultiplier == null`, and the live count is injected into
+ * `tier2.sampleSize` ONLY when the DERIVED state resolves to `COLD_START`
+ * (DESIGN-3C §4.3), never on a `NOT_COMPARABLE` row (own metric unresolved,
+ * live pool below threshold) — that row "has no comparison at all", so no
+ * surface (popover, future export, a11y label) should read a live-looking
+ * count off it. Per constraint #4, no mixed-denominator `throw` is ported
+ * here — this read path degrades to "no live multiplier" instead of 500ing
+ * the list, because every candidate a pool can contain was already
+ * classified against the bucket-derived denominator by
+ * `fetchLiveEligibleComparatorIds()` (TR-1), so a mixed set cannot occur
+ * through a correct call path in the first place.
  */
-function buildTier2(row: PerformanceBlockRow, liveColdStartSampleSize?: number | null): PerformanceTier2 | null {
+function buildTier2(row: PerformanceBlockRow, livePool?: LiveComparator[] | null): PerformanceTier2 | null {
   if (row.perfBucketKey == null) {
     return null;
   }
-  const isColdStart = row.perfMultiplier == null && row.perfBaselineMedian == null;
-  const sampleSize =
-    isColdStart && liveColdStartSampleSize != null
-      ? liveColdStartSampleSize
-      : // Never null in practice (see PerformanceTier2's doc) — `?? 0` is
-        // defence-in-depth only, matching the posture the performance module
-        // already takes elsewhere for facts that are "true by construction
-        // upstream, guarded again here anyway".
-        (row.perfBaselineSampleSize ?? 0);
+
+  // Step 1 — a stored multiplier is MEASURED forever. The live pool is
+  // irrelevant; nothing below this branch may run for this row.
+  if (row.perfMultiplier != null) {
+    return {
+      state: "MEASURED",
+      reason: null,
+      median: row.perfBaselineMedian,
+      sampleSize: frozenSampleSize(row),
+      bucketKey: row.perfBucketKey,
+      multiplier: row.perfMultiplier,
+      minSample: BASELINE_MIN_SAMPLE,
+    };
+  }
+
+  const denominator = denominatorForBucket(row.perfBucketKey);
+  const ownMetric = metricFor(denominator, {
+    reachValue: row.perfReachValue,
+    likeCount: row.likeCount,
+    commentCount: row.commentCount,
+  });
+
+  // From here: no stored multiplier (`perfMultiplier == null`). Its CURRENT
+  // state depends on `ownMetric` and the live pool — a row that already had
+  // a stored `perfBaselineMedian` (write-time NOT_COMPARABLE) is NOT
+  // short-circuited here; it re-enters the live routing below like any
+  // other `perfMultiplier == null` row (DESIGN-3C §3, owner ruling #263).
+
+  // Step 2 — own metric unresolved wins regardless of pool size. No live
+  // comparator count is injected here (DESIGN-3C §4.3): this row has no
+  // comparison at all, so `sampleSize` stays the frozen (small/write-time)
+  // column rather than a live-looking number.
+  if (ownMetric == null) {
+    return {
+      state: "NOT_COMPARABLE",
+      reason: "POST_METRIC_UNRESOLVED",
+      median: null,
+      sampleSize: frozenSampleSize(row),
+      bucketKey: row.perfBucketKey,
+      multiplier: null,
+      minSample: BASELINE_MIN_SAMPLE,
+    };
+  }
+
+  // No live pool was supplied at all (`undefined`/`null`, as opposed to a
+  // genuinely fetched empty array) — degrade to the pre-#252/#206 default:
+  // treat as cold start off the frozen (write-time) count. Every OTHER
+  // outcome above needed no live pool; this is the only branch that
+  // depends on a caller having actually fetched one.
+  if (livePool == null) {
+    return {
+      state: "COLD_START",
+      reason: null,
+      median: null,
+      sampleSize: frozenSampleSize(row),
+      bucketKey: row.perfBucketKey,
+      multiplier: null,
+      minSample: BASELINE_MIN_SAMPLE,
+    };
+  }
+
+  const comparators = excludeSelf(livePool, row.id);
+  const poolSize = comparators.length;
+
+  // Step 5 — below threshold, own metric resolved: unchanged cold start,
+  // still the only state where the progress counter is honest. The live
+  // count IS injected here — this is the pre-existing #206 mechanic,
+  // unaffected by this ticket.
+  if (poolSize < BASELINE_MIN_SAMPLE) {
+    return {
+      state: "COLD_START",
+      reason: null,
+      median: null,
+      sampleSize: poolSize,
+      bucketKey: row.perfBucketKey,
+      multiplier: null,
+      minSample: BASELINE_MIN_SAMPLE,
+    };
+  }
+
+  const medianValue = computeMedian(comparators.map((comparator) => comparator.value));
+
+  // Step 3 — pool ≥ threshold, median exactly zero: division is undefined,
+  // not a fabricated 1x/0x.
+  if (medianValue === 0) {
+    return {
+      state: "NOT_COMPARABLE",
+      reason: "MEDIAN_ZERO",
+      median: 0,
+      sampleSize: poolSize,
+      bucketKey: row.perfBucketKey,
+      multiplier: null,
+      minSample: BASELINE_MIN_SAMPLE,
+    };
+  }
+
+  // Step 4 — a real live multiplier.
   return {
-    median: row.perfBaselineMedian,
-    sampleSize,
+    state: "MEASURED",
+    reason: null,
+    median: medianValue,
+    sampleSize: poolSize,
     bucketKey: row.perfBucketKey,
-    multiplier: row.perfMultiplier,
+    multiplier: ownMetric.value / medianValue,
     minSample: BASELINE_MIN_SAMPLE,
   };
 }
@@ -230,7 +375,7 @@ function buildTier2(row: PerformanceBlockRow, liveColdStartSampleSize?: number |
  */
 export function buildComputedPerformanceBlock(
   row: PerformanceBlockRow,
-  liveColdStartSampleSize?: number | null,
+  livePool?: LiveComparator[] | null,
 ): PerformanceComputed | null {
   if (row.perfTierUsed == null) {
     return null;
@@ -255,7 +400,7 @@ export function buildComputedPerformanceBlock(
     },
     postAgeHours: row.perfPostAgeHours,
     tier1: buildTier1Ratio(row),
-    tier2: buildTier2(row, liveColdStartSampleSize),
+    tier2: buildTier2(row, livePool),
     tier3,
     tierUsed: row.perfTierUsed,
     confidence: row.perfConfidence ?? "NONE",

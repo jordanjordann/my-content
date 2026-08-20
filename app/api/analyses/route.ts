@@ -15,6 +15,7 @@ import {
   fetchLiveEligibleComparatorIds,
   MATURITY_FLOOR_HOURS,
   type CandidatePoolKey,
+  type LiveComparator,
   type PerformanceBlockRow,
 } from "@/lib/server/analysis/performance";
 import type { AnalysisPerformance, ContentAnalysis } from "@/lib/api/analyses/types";
@@ -91,9 +92,9 @@ function parseResultContent(resultContent: string | null): Partial<ContentAnalys
 function buildPerformance(
   row: PerformanceBlockRow,
   resultContent: string | null,
-  liveColdStartSampleSize?: number | null,
+  livePool?: LiveComparator[] | null,
 ): AnalysisPerformance {
-  const computed = buildComputedPerformanceBlock(row, liveColdStartSampleSize);
+  const computed = buildComputedPerformanceBlock(row, livePool);
   if (computed == null) {
     return null;
   }
@@ -145,12 +146,16 @@ export async function GET(request: Request) {
       getUniqueAccounts(),
     ]);
 
-    // Ticket #206 (D1/D3) — the server read path computes the live
-    // cold-start progress count, once per request, batched across the
-    // whole page. `readModel.ts` stays pure; the I/O happens here and the
-    // result is injected per row below. D3's second guard: skip the extra
-    // query entirely when the page has no cold-start rows to begin with.
-    const coldStartPools: CandidatePoolKey[] = [];
+    // Ticket #206 (D1/D3), extended live by ticket #252 — the server read
+    // path fetches every eligible live comparator (id + classified metric
+    // value), once per request, batched across the whole page.
+    // `readModel.ts` stays pure; the I/O happens here and the pool is
+    // handed in per row below, where `buildTier2()` decides whether it's
+    // needed at all (a `MEASURED`/frozen row never touches it) and derives
+    // both the live sample size AND, new in #252, the live multiplier/
+    // median from it. D3's second guard: skip the extra query entirely
+    // when the page has no `perf_multiplier IS NULL` rows to begin with.
+    const nullMultiplierPools: CandidatePoolKey[] = [];
     for (const analysis of analyses) {
       if (
         analysis.perfBucketKey != null &&
@@ -158,17 +163,17 @@ export async function GET(request: Request) {
         analysis.profileId != null &&
         analysis.schemaVersion != null
       ) {
-        coldStartPools.push({
+        nullMultiplierPools.push({
           profileId: analysis.profileId,
           bucketKey: analysis.perfBucketKey,
           schemaVersion: analysis.schemaVersion,
         });
       }
     }
-    const liveEligibleIds =
-      coldStartPools.length > 0
-        ? await fetchLiveEligibleComparatorIds(coldStartPools, MATURITY_FLOOR_HOURS)
-        : new Map<string, Set<string>>();
+    const liveComparators =
+      nullMultiplierPools.length > 0
+        ? await fetchLiveEligibleComparatorIds(nullMultiplierPools, MATURITY_FLOOR_HOURS)
+        : new Map<string, LiveComparator[]>();
 
     const analysesWithDetails = analyses.map((analysis) => {
       const parsed = parseResultContent(analysis.resultContent);
@@ -178,26 +183,25 @@ export async function GET(request: Request) {
       // is already fetched and parsed above for those two fields; `style` costs nothing extra.
       const style: ContentAnalysis["style"] | null = parsed.style ?? null;
 
-      // D3 step 4 — exact per-row derivation: the eligible-id set already
-      // excludes nothing per-row, so this row's own id is subtracted off
-      // if (and only if) it is itself a member of its own eligible set.
-      let liveColdStartSampleSize: number | null = null;
+      // This row's own live pool, still including "self" if this row itself
+      // is an eligible comparator for its own pool (D3 has no per-row
+      // notion of "self" across a batched query) — `readModel.ts`'s
+      // `buildTier2()` is the one place self-exclusion happens, ticket #252.
+      let livePool: LiveComparator[] | null = null;
       if (
         analysis.perfBucketKey != null &&
         analysis.perfMultiplier == null &&
         analysis.profileId != null &&
         analysis.schemaVersion != null
       ) {
-        const eligibleIds = liveEligibleIds.get(
-          candidatePoolKey({
-            profileId: analysis.profileId,
-            bucketKey: analysis.perfBucketKey,
-            schemaVersion: analysis.schemaVersion,
-          }),
-        );
-        if (eligibleIds != null) {
-          liveColdStartSampleSize = eligibleIds.size - (eligibleIds.has(analysis.id) ? 1 : 0);
-        }
+        livePool =
+          liveComparators.get(
+            candidatePoolKey({
+              profileId: analysis.profileId,
+              bucketKey: analysis.perfBucketKey,
+              schemaVersion: analysis.schemaVersion,
+            }),
+          ) ?? null;
       }
 
       return {
@@ -228,6 +232,7 @@ export async function GET(request: Request) {
         // Ticket #144 (TDD §7) — purely additive.
         performance: buildPerformance(
           {
+            id: analysis.id,
             platform: analysis.platform as "instagram" | "youtube",
             likeCount: analysis.likeCount,
             commentCount: analysis.commentCount,
@@ -252,7 +257,7 @@ export async function GET(request: Request) {
             perfUnavailableReason: analysis.perfUnavailableReason as PerformanceBlockRow["perfUnavailableReason"],
           },
           analysis.resultContent,
-          liveColdStartSampleSize,
+          livePool,
         ),
       };
     });

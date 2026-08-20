@@ -347,23 +347,23 @@ function derivePerformanceCell(
  * (`5 posts`) never appears un-nouned; R-C3: the count is the bucket's own count, never a
  * creator total — both satisfied because the noun and count come from `tier2` itself.
  *
- * Ticket #251 — three states, not two, mirroring server-side `BaselineResult`
- * (`lib/server/analysis/performance/types.ts`). A consumer MUST switch on the tuple
- * `(tier2.multiplier, tier2.median)`, never on `tier2.multiplier == null` alone — that
- * single test used to collapse `NOT_COMPARABLE` (a full baseline exists; THIS post's own
- * metric didn't resolve against it) into the cold-start branch, rendering the nonsensical
- * `5 of 5 reels` / `builds as you analyse more` on a row with nothing left to build.
- * `tier2.median` is only ever non-null when a full baseline was written (see
- * `BaselineResult`'s own discriminator table), so it is a sound, already-shipped
- * discriminator — no migration, no new field.
+ * Ticket #252 (DESIGN-3C §3, PR #263 review blocker) — switches on `tier2.state` /
+ * `tier2.reason` (the server's own discriminator), never on `(tier2.multiplier, tier2.median)`
+ * nullness. The old tuple inference broke on exactly the shape production row `391b7615`
+ * emits post-#252: `NOT_COMPARABLE`/`POST_METRIC_UNRESOLVED` carries `median: null`
+ * regardless of pool size (DESIGN-3C §3 step 2 precedes the threshold check), so the
+ * nullness test could no longer tell it apart from cold start and fell through to the
+ * nonsensical `5 of 5 reels` / `builds as you analyse more` on a row with nothing left to
+ * build — the exact #251 defect. `state` is the single fact every consumer must read; it is
+ * never re-derived from other fields.
  *
- * The `reason` on the `not-comparable` branch can't be read back verbatim off storage
- * (`BaselineResult`'s `POST_METRIC_UNRESOLVED` / `MEDIAN_ZERO` distinction is computed at
- * write time and not persisted — no migration is in scope for this ticket to add one), so
- * it is re-derived from the one signal that IS stored and is sound for this purpose:
- * `median === 0` can only mean "every comparator scored exactly zero" (see `baseline.ts`'s
- * own non-negative-metric invariant comment), so it is unambiguously `MEDIAN_ZERO`;
- * anything else with a null multiplier is `POST_METRIC_UNRESOLVED`.
+ * DESIGN-3C §2's below-threshold `POST_METRIC_UNRESOLVED` short-form string (pool < threshold:
+ * `this post's own count wasn't published`, dropping the now-false `this creator's usual is
+ * set` clause) is #262's approved deliverable, not this ticket's. `tier2` carries no signal
+ * here for "did the live pool clear the threshold", so the existing long-form
+ * `NOT_COMPARABLE_MULTIPLIER_CELL_COPY` string renders unconditionally for `reason:
+ * "POST_METRIC_UNRESOLVED"` until #262 lands — 0 production rows are in the below-threshold
+ * shape today (PR #263), so this is not a visible regression, only a pending copy gap.
  */
 function deriveMultiplierCell(computed: PerformanceComputed): AnalysisTableMultiplierCell {
   const { tier2, unavailableReason } = computed;
@@ -375,20 +375,27 @@ function deriveMultiplierCell(computed: PerformanceComputed): AnalysisTableMulti
     return { kind: "dash" };
   }
 
-  if (tier2.multiplier != null) {
+  if (tier2.state === "MEASURED") {
     return {
       kind: "measured",
-      multiplier: tier2.multiplier,
+      // Invariant: `multiplier` is non-null iff `state === "MEASURED"` (`PerformanceTier2`'s
+      // doc, `lib/api/analyses/types.ts`). `?? 0` is defence-in-depth only, matching the
+      // posture this module already takes elsewhere for facts guaranteed upstream.
+      multiplier: tier2.multiplier ?? 0,
       sampleSize: tier2.sampleSize,
       bucketNoun: bucketNoun(tier2.bucketKey),
     };
   }
 
-  if (tier2.median != null) {
-    // NOT_COMPARABLE (§5.3, ticket #251) — a full baseline exists but this post's own
-    // metric never resolved against it. There is nothing left to wait for; never render
+  if (tier2.state === "NOT_COMPARABLE") {
+    // A full baseline exists but this post's own metric never resolved against it (or the
+    // live pool's median is exactly zero). There is nothing left to wait for; never render
     // the cold-start "N of {minSample}" framing here.
-    return { kind: "not-comparable", reason: tier2.median === 0 ? "MEDIAN_ZERO" : "POST_METRIC_UNRESOLVED" };
+    return {
+      kind: "not-comparable",
+      // Invariant: `reason` is non-null iff `state === "NOT_COMPARABLE"`. Defensive fallback only.
+      reason: tier2.reason ?? "POST_METRIC_UNRESOLVED",
+    };
   }
 
   // Cold start (§5.3, R-C4 — a partial absence, not an absent score; never sinks).
