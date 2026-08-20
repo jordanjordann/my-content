@@ -1210,3 +1210,76 @@ describe("AnalysisDataTable — ticket #260, cold-start progress is clamped to i
     expect(screen.queryByText("6 of 5 reels")).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Ticket #262 (DESIGN-3C §2) — the below-threshold `NOT_COMPARABLE` state-3 string. Own metric
+ * unresolved, live pool below `minSample` (or never fetched) — `readModel.ts`'s `buildTier2`
+ * step 2 emits `reason: "POST_METRIC_UNRESOLVED_NO_BASELINE"`, and `AnalysisTableRow` renders
+ * it through the SAME generic `NOT_COMPARABLE_MULTIPLIER_CELL_COPY[content.reason]` lookup it
+ * already used for `POST_METRIC_UNRESOLVED` — no new branch in the component (asserted by the
+ * absence of any `AnalysisTableRow.tsx` diff in this PR, not just by this test).
+ */
+describe("AnalysisDataTable — ticket #262, below-threshold NOT_COMPARABLE state-3 string", () => {
+  const ROW_BELOW_THRESHOLD = baseRow({
+    id: "row-below-threshold-262",
+    mediaType: "reel",
+    title: "Own count unresolved, no baseline yet",
+    performance: {
+      computed: {
+        reach: { value: null, kind: null, derivedFrom: "NONE", state: "UNKNOWN" },
+        likes: { value: null, state: "UNKNOWN" },
+        comments: { value: null, state: "UNKNOWN" },
+        audience: { value: 50_000, capturedAt: "2026-08-01T00:00:00.000Z", sourceFetchedAt: null },
+        postAgeHours: 40,
+        tier1: null,
+        tier2: {
+          median: null,
+          sampleSize: 1,
+          bucketKey: "instagram:reel:full_video",
+          multiplier: null,
+          minSample: 5,
+          state: "NOT_COMPARABLE",
+          reason: "POST_METRIC_UNRESOLVED_NO_BASELINE",
+        },
+        tier3: null,
+        tierUsed: "UNAVAILABLE",
+        confidence: "NONE",
+        confidenceReason: null,
+        provisional: false,
+        unavailableReason: "REACH_UNKNOWN",
+      },
+      judgement: { performanceScore: null, verdict: null, drivers: [] },
+    },
+  });
+
+  it("renders exactly 'this post's own count wasn't published' — no 'N of N', no denominator, no 'builds as you analyse more'", async () => {
+    renderTable([ROW_BELOW_THRESHOLD]);
+    expect(await screen.findByText("this post's own count wasn't published")).toBeInTheDocument();
+    expect(screen.queryByText(/of\s+\d+\s+reels/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/builds as you analyse more/i)).not.toBeInTheDocument();
+    // The long form's now-false leading clause must never leak onto this row.
+    expect(screen.queryByText(/this creator's usual is set/i)).not.toBeInTheDocument();
+  });
+
+  it("the cell is a plain statement — no button, no link, nothing interactive (OR-25: never a retry)", async () => {
+    renderTable([ROW_BELOW_THRESHOLD]);
+    const statement = await screen.findByText("this post's own count wasn't published");
+    expect(statement.tagName).toBe("P");
+    expect(within(statement).queryByRole("button")).not.toBeInTheDocument();
+    expect(within(statement).queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  /**
+   * Sorting/grouping regression (#262's acceptance criteria) — a below-threshold state-3 row
+   * must not be treated as cold start with progress `0`. Sorting is server-side SQL
+   * (`ORDER BY a.updated_at DESC`, all sorting removed by #266/#268) and grouping has no notion
+   * of cold-start progress at all (DESIGN-3C §3.3) — this pins the client-visible half: no
+   * cold-start progress text renders for this row under any circumstance.
+   */
+  it("never renders cold-start progress framing ('N of minSample', a bare threshold number) for this row", async () => {
+    renderTable([ROW_BELOW_THRESHOLD]);
+    await screen.findByText("this post's own count wasn't published");
+    expect(screen.queryByText("1 of 5 reels")).not.toBeInTheDocument();
+    expect(screen.queryByText("0 of 5 reels")).not.toBeInTheDocument();
+  });
+});

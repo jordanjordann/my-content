@@ -1,21 +1,29 @@
 import type { AbsentCountReason } from "@/lib/api/analyses/types";
 
 /**
- * Ticket #251 / DESIGN-3C §5.3 — the `vs their usual` cell's `not-comparable` copy
- * (`deriveMultiplierCell`, `lib/api/analyses/helpers.ts`). Statement only, never a
- * button or retry (OR-25, settled). Kept here, not inlined, so a copy pass after
- * Jessica's design review is a one-line change, not a re-implementation.
+ * Ticket #251 / DESIGN-3C §5.3, extended by #262 — the `vs their usual` cell's
+ * `not-comparable` copy (`deriveMultiplierCell`, `lib/api/analyses/helpers.ts`). Statement
+ * only, never a button or retry (OR-25, settled). Kept here, not inlined, so a copy pass after
+ * Jessica's design review is a one-line change, not a re-implementation. `Record` over the
+ * full `AnalysisTableMultiplierCell["not-comparable"]["reason"]` union — a missing key here is
+ * a `tsc` error, not a runtime gap.
  *
- * - `POST_METRIC_UNRESOLVED` — a full baseline exists for this creator/bucket, but this
- *   post's own reach/engagement count for the bucket's denominator never resolved.
+ * - `POST_METRIC_UNRESOLVED` — a full baseline exists for this creator/bucket (live pool `>=
+ *   minSample`), but this post's own reach/engagement count for the bucket's denominator never
+ *   resolved.
+ * - `POST_METRIC_UNRESOLVED_NO_BASELINE` (ticket #262, DESIGN-3C §2) — same trigger, but the
+ *   live pool is below `minSample` (or was never fetched): there is no creator baseline to
+ *   reference at all, so `this creator's usual is set` would be a false statement. This string
+ *   is the trailing clause of `POST_METRIC_UNRESOLVED`'s string above, VERBATIM — no new words.
  * - `MEDIAN_ZERO` — this post's own metric DID resolve, but every earlier comparator in
  *   the bucket measured exactly zero, so there is nothing to divide against.
  */
 export const NOT_COMPARABLE_MULTIPLIER_CELL_COPY: Record<
-  "POST_METRIC_UNRESOLVED" | "MEDIAN_ZERO",
+  "POST_METRIC_UNRESOLVED" | "POST_METRIC_UNRESOLVED_NO_BASELINE" | "MEDIAN_ZERO",
   string
 > = {
   POST_METRIC_UNRESOLVED: "this creator's usual is set — this post's own count wasn't published",
+  POST_METRIC_UNRESOLVED_NO_BASELINE: "this post's own count wasn't published",
   MEDIAN_ZERO: "every earlier post measured zero",
 };
 

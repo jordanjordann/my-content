@@ -252,7 +252,22 @@ describe("buildComputedPerformanceBlock — ticket #251, a NOT_COMPARABLE row mu
     const withoutLive = buildComputedPerformanceBlock(row);
     const withLive = buildComputedPerformanceBlock(row, comparators(1, 2, 3, 4, 5, 6, 7, 8, 9));
 
+    // Ticket #262 — `livePool` was never fetched at all for `withoutLive` (the
+    // `undefined` case, distinct from a genuinely fetched empty array), so the reason
+    // degrades to the below-threshold short form (owner ruling: true in every pool
+    // condition).
     expect(withoutLive!.tier2).toEqual({
+      state: "NOT_COMPARABLE",
+      reason: "POST_METRIC_UNRESOLVED_NO_BASELINE",
+      median: null,
+      sampleSize: 5,
+      bucketKey: "instagram:reel:full_video",
+      multiplier: null,
+      minSample: 5,
+    });
+    // `withLive`'s pool of 9 clears `BASELINE_MIN_SAMPLE` — a genuine creator baseline
+    // exists, so the reason is the long form.
+    expect(withLive!.tier2).toEqual({
       state: "NOT_COMPARABLE",
       reason: "POST_METRIC_UNRESOLVED",
       median: null,
@@ -262,9 +277,9 @@ describe("buildComputedPerformanceBlock — ticket #251, a NOT_COMPARABLE row mu
       minSample: 5,
     });
     // The injected live pool must NOT reach a NOT_COMPARABLE row's
-    // sampleSize — there is no progress to report, so nothing here is live.
+    // sampleSize — there is no progress to report, so nothing here is live. Only the
+    // REASON responds to the live pool's size/presence (ticket #262).
     expect(withLive!.tier2!.sampleSize).toBe(5);
-    expect(withLive).toEqual(withoutLive);
   });
 
   it("a genuine cold-start row (median absent too) is unaffected by this fix — still takes the live pool's length", () => {
@@ -418,7 +433,10 @@ describe("buildComputedPerformanceBlock — ticket #252, the live routing rule (
     const result = buildComputedPerformanceBlock(row, comparators(1, 2)); // pool of 2, below threshold 5
 
     expect(result!.tier2!.state).toBe("NOT_COMPARABLE");
-    expect(result!.tier2!.reason).toBe("POST_METRIC_UNRESOLVED");
+    // Ticket #262 — a live pool below `BASELINE_MIN_SAMPLE` means no creator baseline exists
+    // for this bucket, so the reason is the below-threshold short-form variant, not the long
+    // form (which would falsely claim "this creator's usual is set").
+    expect(result!.tier2!.reason).toBe("POST_METRIC_UNRESOLVED_NO_BASELINE");
     expect(result!.tier2!.multiplier).toBeNull();
     expect(result!.tier2!.median).toBeNull();
     // No live count leak (DESIGN-3C §4.3): this row has no comparison at
@@ -489,5 +507,102 @@ describe("buildComputedPerformanceBlock — ticket #252, the live routing rule (
     expect(result!.tier2!.median).toBe(100);
     expect(result!.tier2!.sampleSize).toBe(6);
     expect(result!.tier2!.multiplier).toBeCloseTo(5, 5); // 500 / 100
+  });
+});
+
+/**
+ * Ticket #262 (DESIGN-3C §2) — the below-threshold `NOT_COMPARABLE` reason. Own-metric-unresolved
+ * (step 2) stays ABOVE the pool-size check (DESIGN-3C §3 rule 2, standing owner ruling — the
+ * read path deliberately differs from `computeBaseline()`'s write-path order, never aligned to
+ * it). Step 2 now ALSO consults the already-injected `livePool` (no extra query) purely to pick
+ * between the two `NOT_COMPARABLE` reasons — it never promotes a live count into `sampleSize`
+ * (DESIGN-3C §4.3, unaffected by this ticket).
+ */
+describe("buildComputedPerformanceBlock — ticket #262, the below-threshold NOT_COMPARABLE reason", () => {
+  it("own metric unresolved, live pool at/above threshold -> POST_METRIC_UNRESOLVED (a creator baseline genuinely exists)", () => {
+    const row = baseRow({ perfReachValue: null, perfMultiplier: null, perfBaselineMedian: null });
+    const result = buildComputedPerformanceBlock(row, comparators(1, 2, 3, 4, 5)); // pool of 5 === BASELINE_MIN_SAMPLE
+
+    expect(result!.tier2!.state).toBe("NOT_COMPARABLE");
+    expect(result!.tier2!.reason).toBe("POST_METRIC_UNRESOLVED");
+  });
+
+  it("own metric unresolved, live pool one below threshold -> POST_METRIC_UNRESOLVED_NO_BASELINE (no creator baseline exists)", () => {
+    const row = baseRow({ perfReachValue: null, perfMultiplier: null, perfBaselineMedian: null });
+    const result = buildComputedPerformanceBlock(row, comparators(1, 2, 3, 4)); // pool of 4 < 5
+
+    expect(result!.tier2!.state).toBe("NOT_COMPARABLE");
+    expect(result!.tier2!.reason).toBe("POST_METRIC_UNRESOLVED_NO_BASELINE");
+  });
+
+  it("own metric unresolved, pool of exactly 0 (empty, genuinely fetched) -> POST_METRIC_UNRESOLVED_NO_BASELINE", () => {
+    const row = baseRow({ perfReachValue: null, perfMultiplier: null, perfBaselineMedian: null });
+    const result = buildComputedPerformanceBlock(row, []); // genuinely fetched, empty — distinct from `undefined`
+
+    expect(result!.tier2!.state).toBe("NOT_COMPARABLE");
+    expect(result!.tier2!.reason).toBe("POST_METRIC_UNRESOLVED_NO_BASELINE");
+  });
+
+  /**
+   * Direct unit call, not a reachability claim: this pins that `buildTier2` step 2 defaults
+   * to the SHORT form (`POST_METRIC_UNRESOLVED_NO_BASELINE`) whenever `livePool` is nullish
+   * (`undefined`, i.e. never fetched), same as a genuinely fetched below-threshold pool.
+   *
+   * Whether `livePool === undefined` ever actually happens in production is a separate
+   * question about the route callers and the DB, not about this function — and per the
+   * PR review (#271), it currently does NOT: migration 008 deleted every `schema_version IS
+   * NULL` row, and the live census found 0 rows with NULL `profile_id`/`schema_version`. This
+   * branch is reachable only in principle, because migration 009 recreates both columns
+   * nullable. The owner's short-form ruling holds regardless — the short form is true in
+   * every pool condition — this test just documents that `buildTier2` behaves correctly if a
+   * future write path leaves either column NULL again.
+   */
+  it("own metric unresolved, livePool nullish (never fetched) -> buildTier2 step 2 defaults to POST_METRIC_UNRESOLVED_NO_BASELINE, not the separate livePool == null COLD_START branch below it", () => {
+    const row = baseRow({ perfReachValue: null, perfMultiplier: null, perfBaselineMedian: null });
+    const result = buildComputedPerformanceBlock(row); // no livePool argument at all
+
+    expect(result!.tier2!.state).toBe("NOT_COMPARABLE");
+    expect(result!.tier2!.reason).toBe("POST_METRIC_UNRESOLVED_NO_BASELINE");
+    expect(result!.tier2!.state).not.toBe("COLD_START");
+  });
+
+  it("check-order regression: own-metric-unresolved must win even when the pool is huge — a test that fails if step 2 is ever moved below the pool-size check", () => {
+    const row = baseRow({ perfReachValue: null, perfMultiplier: null, perfBaselineMedian: null });
+    const result = buildComputedPerformanceBlock(row, comparators(1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
+
+    expect(result!.tier2!.state).toBe("NOT_COMPARABLE");
+    expect(result!.tier2!.reason).toBe("POST_METRIC_UNRESOLVED");
+    expect(result!.tier2!.median).toBeNull();
+    expect(result!.tier2!.multiplier).toBeNull();
+  });
+
+  /**
+   * PR #271 review (item 2) — step 2's `poolMeetsThreshold` check (`excludeSelf(livePool,
+   * row.id).length >= BASELINE_MIN_SAMPLE`) is provably a no-op on a genuine
+   * `fetchLiveEligibleComparatorIds()` pool: a step-2 row has `ownMetric == null`, and that
+   * function skips exactly `metric == null` candidates using the SAME `metricFor`/
+   * `denominatorForBucket` pair (`baseline.ts`), so this row's own id can never appear in a
+   * pool it fetched for itself. There is no way to trigger a real difference through the real
+   * caller. This test injects a synthetic `livePool` containing the observed row's own id
+   * directly (the same "hand-built `LiveComparator[]`" pattern every other test in this file
+   * already uses for `buildTier2`, a pure function) purely to pin the `excludeSelf` CALL
+   * itself: without it, a pool of 5 that happens to include the row's own id would wrongly
+   * read as "at threshold" (5 >= 5) and emit the LONG form; with it, self is correctly dropped
+   * first (4 < 5) and the SHORT form is emitted. Fails if `excludeSelf(...)` is replaced with
+   * `livePool` directly.
+   */
+  it("self-exclusion pin: a live pool that (synthetically) contains the row's own id must still drop it before the threshold check", () => {
+    const row = baseRow({ perfReachValue: null, perfMultiplier: null, perfBaselineMedian: null });
+    const poolIncludingSelf: LiveComparator[] = [
+      { id: row.id, value: 1 }, // the observed row's own id, synthetically present
+      { id: "comparator-1", value: 2 },
+      { id: "comparator-2", value: 3 },
+      { id: "comparator-3", value: 4 },
+      { id: "comparator-4", value: 5 },
+    ]; // length 5 (>= BASELINE_MIN_SAMPLE) BEFORE exclusion, 4 (< BASELINE_MIN_SAMPLE) after
+    const result = buildComputedPerformanceBlock(row, poolIncludingSelf);
+
+    expect(result!.tier2!.state).toBe("NOT_COMPARABLE");
+    expect(result!.tier2!.reason).toBe("POST_METRIC_UNRESOLVED_NO_BASELINE");
   });
 });

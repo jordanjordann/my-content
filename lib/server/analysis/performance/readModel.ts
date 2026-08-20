@@ -122,8 +122,22 @@ export interface PerformanceBlockRow {
  */
 export type PerformanceTier2State = "MEASURED" | "NOT_COMPARABLE" | "COLD_START";
 
-/** Mirrors `BaselineResult`'s `NOT_COMPARABLE` reasons (`types.ts`) — always present on that state, always `null` elsewhere. */
-export type PerformanceTier2Reason = "POST_METRIC_UNRESOLVED" | "MEDIAN_ZERO";
+/**
+ * Mirrors `BaselineResult`'s `NOT_COMPARABLE` reasons (`types.ts`) — always present on that
+ * state, always `null` elsewhere.
+ *
+ * `POST_METRIC_UNRESOLVED_NO_BASELINE` — ticket #262 (DESIGN-3C §2). Own metric unresolved
+ * (same trigger as `POST_METRIC_UNRESOLVED`), but the LIVE comparator pool is below
+ * `BASELINE_MIN_SAMPLE` — so unlike `POST_METRIC_UNRESOLVED`, this creator has no baseline for
+ * this bucket to reference at all. Also the default when the live pool was never fetched at all
+ * (`livePool == null` — owner ruling, #262: the short form is true in every pool condition, the
+ * long form is not). `buildTier2`'s step 2 below picks between the two off the already-injected
+ * `livePool`, never a separate query.
+ */
+export type PerformanceTier2Reason =
+  | "POST_METRIC_UNRESOLVED"
+  | "POST_METRIC_UNRESOLVED_NO_BASELINE"
+  | "MEDIAN_ZERO";
 
 export interface PerformanceTier2 {
   /** `null` at Tier 2 cold start, or `NOT_COMPARABLE`/`POST_METRIC_UNRESOLVED` below the live threshold — no median exists yet either way. */
@@ -231,8 +245,11 @@ function excludeSelf(livePool: LiveComparator[] | null | undefined, id: string):
  *
  *   1. Stored multiplier present → `MEASURED`, frozen, untouched. The live
  *      pool is never even inspected.
- *   2. Own metric unresolved → `NOT_COMPARABLE` / `POST_METRIC_UNRESOLVED`,
- *      regardless of pool size.
+ *   2. Own metric unresolved → `NOT_COMPARABLE`, regardless of pool size.
+ *      Reason is `POST_METRIC_UNRESOLVED` if the live pool (already injected,
+ *      no extra query) is `>= BASELINE_MIN_SAMPLE`, else
+ *      `POST_METRIC_UNRESOLVED_NO_BASELINE` (ticket #262 — also the
+ *      `livePool == null` default, owner ruling).
  *   3. Pool ≥ threshold and median `=== 0` → `NOT_COMPARABLE` / `MEDIAN_ZERO`.
  *   4. Pool ≥ threshold → `MEASURED`, live multiplier.
  *   5. Else → `COLD_START`.
@@ -287,13 +304,26 @@ function buildTier2(row: PerformanceBlockRow, livePool?: LiveComparator[] | null
   // other `perfMultiplier == null` row (DESIGN-3C §3, owner ruling #263).
 
   // Step 2 — own metric unresolved wins regardless of pool size. No live
-  // comparator count is injected here (DESIGN-3C §4.3): this row has no
-  // comparison at all, so `sampleSize` stays the frozen (small/write-time)
-  // column rather than a live-looking number.
+  // comparator count is injected into `sampleSize` here (DESIGN-3C §4.3):
+  // this row has no comparison at all, so `sampleSize` stays the frozen
+  // (small/write-time) column rather than a live-looking number.
+  //
+  // Ticket #262 — the live pool IS still consulted here (read-only, already
+  // injected by the caller — no extra query) to pick between the two
+  // `NOT_COMPARABLE` copy variants: whether a creator baseline exists for
+  // this bucket at all is a fact about the LIVE pool, not the frozen
+  // column, and the frozen column is deliberately never promoted to
+  // `sampleSize` on this branch (DESIGN-3C §4.3, unchanged). `livePool ==
+  // null` (never fetched, e.g. a row missing `profileId`/`schemaVersion`)
+  // degrades to the same "no baseline" reason as a genuinely below-
+  // threshold pool — owner ruling, #262: the short form is true in every
+  // pool condition, the long form is not.
   if (ownMetric == null) {
+    const poolMeetsThreshold =
+      livePool != null && excludeSelf(livePool, row.id).length >= BASELINE_MIN_SAMPLE;
     return {
       state: "NOT_COMPARABLE",
-      reason: "POST_METRIC_UNRESOLVED",
+      reason: poolMeetsThreshold ? "POST_METRIC_UNRESOLVED" : "POST_METRIC_UNRESOLVED_NO_BASELINE",
       median: null,
       sampleSize: frozenSampleSize(row),
       bucketKey: row.perfBucketKey,

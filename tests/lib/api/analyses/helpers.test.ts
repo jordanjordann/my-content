@@ -357,7 +357,7 @@ function coldStartPerformanceWith(score: number | null, sampleSize = 3, minSampl
  * `not-comparable-row-synth-1` is exactly the `POST_METRIC_UNRESOLVED` shape.
  */
 function notComparablePerformanceWith(
-  reason: "POST_METRIC_UNRESOLVED" | "MEDIAN_ZERO",
+  reason: "POST_METRIC_UNRESOLVED" | "POST_METRIC_UNRESOLVED_NO_BASELINE" | "MEDIAN_ZERO",
 ): AnalysisPerformance {
   const base = performanceWith(4, 3.2);
   if (base == null) {
@@ -405,6 +405,24 @@ describe("deriveAnalysisTablePerformance — multiplierCell, ticket #251's three
     expect(derived?.multiplierCell).toEqual({ kind: "not-comparable", reason: "POST_METRIC_UNRESOLVED" });
   });
 
+  /**
+   * Ticket #262 (DESIGN-3C §2) — the below-threshold short-form variant. `deriveMultiplierCell`
+   * passes `tier2.reason` straight through (no branching added here, only the wider type) — the
+   * copy selection itself lives entirely in `NOT_COMPARABLE_MULTIPLIER_CELL_COPY`.
+   */
+  it("NOT_COMPARABLE / POST_METRIC_UNRESOLVED_NO_BASELINE — the below-threshold reason passes through unchanged, distinct from POST_METRIC_UNRESOLVED", () => {
+    const derived = deriveAnalysisTablePerformance(
+      notComparablePerformanceWith("POST_METRIC_UNRESOLVED_NO_BASELINE"),
+      "reel",
+      null,
+    );
+    expect(derived?.multiplierCell).toEqual({
+      kind: "not-comparable",
+      reason: "POST_METRIC_UNRESOLVED_NO_BASELINE",
+    });
+    expect(derived?.multiplierCell.kind).not.toBe("cold-start");
+  });
+
   it("NOT_COMPARABLE / MEDIAN_ZERO — median exactly 0 (not absent), multiplier null, takes the not-comparable branch, not cold start", () => {
     const derived = deriveAnalysisTablePerformance(notComparablePerformanceWith("MEDIAN_ZERO"), "reel", null);
     expect(derived?.multiplierCell).toEqual({ kind: "not-comparable", reason: "MEDIAN_ZERO" });
@@ -430,6 +448,38 @@ describe("deriveAnalysisTablePerformance — multiplierCell, ticket #251's three
     );
     expect(derived?.multiplierCell).toEqual({ kind: "not-comparable", reason: "POST_METRIC_UNRESOLVED" });
     expect(derived?.multiplierCell.kind).not.toBe("cold-start");
+  });
+
+  /**
+   * PR #271 review (item 3) — `deriveMultiplierCell`'s `tier2.reason ?? "..."` fallback is
+   * documented as "never reachable off a genuine `readModel.ts` row" (every real `NOT_COMPARABLE`
+   * row carries a non-null `reason`), so this constructs the otherwise-impossible
+   * `state: "NOT_COMPARABLE", reason: null` shape directly to pin the DEFAULT itself: ticket
+   * #262 says the safe default under the wider union is the SHORT form
+   * (`POST_METRIC_UNRESOLVED_NO_BASELINE`), not the long `POST_METRIC_UNRESOLVED` — asserting a
+   * baseline exists is the stronger, less safe claim. Reverting the `??` fallback to the long
+   * form must fail this test.
+   */
+  it("NOT_COMPARABLE with reason: null (defensive-only shape) — fallback defaults to the SHORT form, not POST_METRIC_UNRESOLVED", () => {
+    const base = notComparablePerformanceWith("POST_METRIC_UNRESOLVED");
+    if (base == null) {
+      throw new Error("notComparablePerformanceWith never returns null in this fixture");
+    }
+    const withNullReason: AnalysisPerformance = {
+      ...base,
+      computed: {
+        ...base.computed,
+        tier2: {
+          ...base.computed.tier2!,
+          reason: null,
+        },
+      },
+    };
+    const derived = deriveAnalysisTablePerformance(withNullReason, "reel", null);
+    expect(derived?.multiplierCell).toEqual({
+      kind: "not-comparable",
+      reason: "POST_METRIC_UNRESOLVED_NO_BASELINE",
+    });
   });
 });
 
