@@ -514,6 +514,35 @@ function deriveAnalysisMode(tier2: PerformanceTier2 | null): AnalysisMode | null
 }
 
 /**
+ * Ticket #294 — the detail modal's untrusted-analysis flag. Deliberately reads
+ * `storedAnalysisMode` (the raw `analyses.analysis_mode` column, plumbed through
+ * `lib/server/db.ts` -> the API route -> `AnalysisDetail`) rather than extending
+ * `deriveAnalysisMode` above: that function's input, `computed.tier2`, is `null` whenever no
+ * performance block was computed for the row, which would silently suppress a correctness
+ * warning exactly when the underlying fact ("Gemini never saw the video") is still true. `yt-dlp`
+ * is bot-blocked from the production server (#288); when it fails, the pipeline still calls
+ * Gemini with no video attached and stores `analysis_mode = 'metadata_only'` — the resulting
+ * analysis can describe timestamps, editing and visuals that were never in the video.
+ *
+ * `true` iff `platform === "youtube"` AND `storedAnalysisMode === "metadata_only"`. Every other
+ * combination is `false`, including a non-YouTube `metadata_only` row. That is deliberately
+ * narrower than the underlying fact: `metadata_only` is the pipeline's DEFAULT mode
+ * (`lib/server/analysis/pipeline/index.ts`), upgraded to `images_only` only once
+ * `mediaParts.length > 0` — so an Instagram `metadata_only` row is the exact same "Gemini
+ * never saw the media" case as the YouTube one this flag targets, NOT a genuinely all-image
+ * carousel (`images_only` is the mode that means that). Ticket #294 scopes this banner to the
+ * 3 known YouTube rows only; the Instagram coverage gap is tracked separately under #288 and is
+ * out of scope here. A `null` stored mode (row predates the `analysis_mode` column, or a
+ * healthy row of any other mode) is also `false`.
+ */
+export function isUntrustedYoutubeMetadataOnly(
+  platform: AnalysisPlatform,
+  storedAnalysisMode: AnalysisMode | null,
+): boolean {
+  return platform === "youtube" && storedAnalysisMode === "metadata_only";
+}
+
+/**
  * Ticket #145 (PR #198 review, blocker 8) — the analyses table's per-row cell decisions,
  * computed once per row in `hooks.ts`'s `select` rather than on every render inside
  * `AnalysisTableRow`. `null` iff `performance` is `null` (failed/pending rows never reach this

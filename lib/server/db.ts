@@ -1,5 +1,7 @@
 import { createClient } from "@libsql/client";
 
+import type { AnalysisMode } from "@/lib/api/analyses/types";
+
 const databaseUrl = process.env.TURSO_DATABASE_URL ?? "file:./my-content.db";
 
 export const db = createClient({
@@ -18,6 +20,22 @@ function toNullableBoolean(value: unknown): boolean | null {
     return null;
   }
   return Number(value) === 1;
+}
+
+/**
+ * Ticket #294 — validates the raw `analyses.analysis_mode` column value against the known
+ * `AnalysisMode` literals before it enters the typed surface, the same posture
+ * `deriveAnalysisMode` (`lib/api/analyses/helpers.ts`) already takes for the tier2-derived
+ * value. Without this, `analysisRow.analysis_mode as string` was an unvalidated cast: any
+ * unexpected stored string would flow, unchecked by `tsc`, all the way to
+ * `AnalysisDetail.storedAnalysisMode: AnalysisMode | null` and lie about its own type to every
+ * downstream consumer. `null` for `null`/`undefined` and for any value that isn't one of the
+ * three known modes — never a silent guess.
+ */
+function toAnalysisMode(value: unknown): AnalysisMode | null {
+  return value === "full_video" || value === "images_only" || value === "metadata_only"
+    ? value
+    : null;
 }
 
 export async function getSetting(key: string) {
@@ -230,7 +248,7 @@ export async function getAnalysisDetail(analysisId: string) {
       SELECT id, prompt, status, title, url, platform, media_type, username,
              thumbnail_url, view_count, play_count, like_count, comment_count,
              like_and_view_counts_disabled, post_date, caption, duration_sec,
-             result_content, schema_version, created_at,
+             result_content, schema_version, created_at, analysis_mode,
              follower_count, perf_reach_value, perf_reach_kind,
              perf_reach_derived_from, perf_tier1_ratio, perf_tier1_denominator,
              perf_bucket_key, perf_baseline_median, perf_baseline_sample_size,
@@ -271,6 +289,12 @@ export async function getAnalysisDetail(analysisId: string) {
     resultContent: (analysisRow.result_content as string) ?? null,
     schemaVersion: analysisRow.schema_version == null ? null : Number(analysisRow.schema_version),
     createdAt: analysisRow.created_at as string,
+    // Ticket #294 — the STORED `analyses.analysis_mode` column, as written at analysis time.
+    // Deliberately separate from the derived, tier2-bucket-parsed `AnalysisMode` the table's
+    // chip uses (`deriveAnalysisMode` in `lib/api/analyses/helpers.ts`): that derivation is
+    // fine for a cosmetic label but is absent whenever `tier2` is null, which is exactly the
+    // wrong failure mode for a correctness banner. Read straight off the row instead.
+    storedAnalysisMode: toAnalysisMode(analysisRow.analysis_mode),
     followerCount: analysisRow.follower_count == null ? null : Number(analysisRow.follower_count),
     perfReachValue: analysisRow.perf_reach_value == null ? null : Number(analysisRow.perf_reach_value),
     perfReachKind: (analysisRow.perf_reach_kind as string) ?? null,

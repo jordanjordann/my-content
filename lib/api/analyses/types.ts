@@ -416,12 +416,31 @@ export type AnalysisDetail = {
   createdAt: string;
   /** Ticket #144 (TDD §7) — purely additive. `null` only for pre-schema-3 rows (none exist post-012). */
   performance: AnalysisPerformance;
+  /**
+   * Ticket #294 — the STORED `analyses.analysis_mode` column, read straight off the row
+   * (`lib/server/db.ts`'s `getAnalysisDetail`). Deliberately separate from the derived,
+   * tier2-bucket-key-parsed `AnalysisMode` (`AnalysisTableDerivedPerformance.analysisMode`,
+   * used only for the table's cosmetic `Caption only`/`Images only` chip): that derivation is
+   * `null` whenever `tier2` is absent, which is the wrong failure mode for a correctness
+   * signal. A banner asserting "this analysis may be fabricated" must read the fact recorded
+   * when the row was written, never a value re-derived from an unrelated performance bucket.
+   * `null` on rows written before `analysis_mode` existed (nullable column, no backfill).
+   */
+  storedAnalysisMode: AnalysisMode | null;
 };
 
 /** `AnalysisDetail` plus the classified `CountState` for views and likes (TDD §4.3). */
 export type AnalysisDetailClassified = AnalysisDetail & {
   viewCountState: CountState;
   likeCountState: CountState;
+  /**
+   * Ticket #294 — `true` iff `platform === "youtube"` AND `storedAnalysisMode ===
+   * "metadata_only"`: the video was never downloaded (yt-dlp bot-blocked), so Gemini ran on
+   * the caption/title alone and any visual claims in the result are fabricated. Computed once
+   * here (`lib/api/analyses/helpers.ts`'s `isUntrustedYoutubeMetadataOnly`) per AGENTS.md's
+   * data-transformation rule — the modal only branches on this flag, never re-derives it.
+   */
+  isUntrustedYoutubeMetadataOnly: boolean;
 };
 
 export type AnalysesListResponse = {
