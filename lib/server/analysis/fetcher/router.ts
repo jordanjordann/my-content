@@ -34,12 +34,25 @@ export async function fetchMetadata(classified: ClassifiedUrl): Promise<FetchedM
 
 /**
  * Hybrid by design: metadata comes from ScrapeCreators, the playable video
- * URL still comes from `yt-dlp` (see fetcher/youtube.ts). A failed
- * `extractVideoUrl` yields `videoUrl: null`, which the pipeline treats as a
- * legitimate metadata-only analysis.
+ * URL still comes from `yt-dlp` (see fetcher/youtube.ts).
+ *
+ * `extractVideoUrl` needs nothing but the URL, so it runs FIRST, before
+ * `fetchShortMetadata` (1 ScrapeCreators credit). A `null` result here can
+ * ONLY mean extraction failed — a YouTube Short is always a video, unlike
+ * Instagram, where an all-image post genuinely has no video (that "legitimate
+ * metadata-only" case is real for Instagram; it does NOT generalise to
+ * YouTube — see fetcher/adapter.ts). So a `null` throws immediately, before
+ * `fetchShortMetadata` is ever called: a Short we cannot download costs 0
+ * ScrapeCreators credits instead of 1 (#288, #292).
  */
 async function fetchYoutubeMetadata(url: string): Promise<FetchedMetadata> {
-  const { metadata, ownerHint, reachResult } = await fetchShortMetadata(url);
   const videoUrl = await extractVideoUrl(url);
+  if (videoUrl === null) {
+    throw new Error(
+      "Could not download the video for this Short. YouTube blocked the download from our server, so no analysis was made — nothing was charged.",
+    );
+  }
+
+  const { metadata, ownerHint, reachResult } = await fetchShortMetadata(url);
   return { metadata: { ...metadata, videoUrl }, ownerHint, reachResult };
 }
