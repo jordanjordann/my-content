@@ -39,7 +39,7 @@ describe("buildUserPrompt — no-media prohibition (ticket #293)", () => {
     expect(prompt).toMatch(/MUST NOT describe or refer to anything visual/);
   });
 
-  it("names the actual schema scorecard field (visualPolish), not the non-existent 'visualQuality'", () => {
+  it("names the actual schema scorecard field (visualPolish)", () => {
     // Regression for review comment B1 on PR #298: the guard text once
     // referenced "visualQuality", a field that has never existed in
     // scorecardSchema/SCORECARD_KEYS/the UI. Assert against the real
@@ -52,6 +52,17 @@ describe("buildUserPrompt — no-media prohibition (ticket #293)", () => {
     const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
 
     expect(prompt).toContain("visualPolish");
+  });
+
+  it("never emits the non-existent 'visualQuality' field name", () => {
+    // Separate test from the positive assertion above, so this assertion
+    // is independently mutation-provable — a mutant that removes the
+    // negative check would otherwise still be caught by the positive one
+    // in the same test, never actually exercising this line.
+    const metadata = baseMetadata({ mediaType: "post", videoUrl: null, mediaParts: [] });
+
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
+
     expect(prompt).not.toMatch(/visualQuality/);
   });
 
