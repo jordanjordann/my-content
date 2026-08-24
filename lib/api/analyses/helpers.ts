@@ -525,9 +525,15 @@ function deriveAnalysisMode(tier2: PerformanceTier2 | null): AnalysisMode | null
  * analysis can describe timestamps, editing and visuals that were never in the video.
  *
  * `true` iff `platform === "youtube"` AND `storedAnalysisMode === "metadata_only"`. Every other
- * combination — including a non-YouTube `metadata_only` row (Instagram's `metadata_only` means
- * a genuinely all-image carousel, nothing was ever fabricated) and a `null` stored mode (row
- * predates the `analysis_mode` column, or a healthy row of any other mode) — is `false`.
+ * combination is `false`, including a non-YouTube `metadata_only` row. That is deliberately
+ * narrower than the underlying fact: `metadata_only` is the pipeline's DEFAULT mode
+ * (`lib/server/analysis/pipeline/index.ts`), upgraded to `images_only` only once
+ * `mediaParts.length > 0` — so an Instagram `metadata_only` row is the exact same "Gemini
+ * never saw the media" case as the YouTube one this flag targets, NOT a genuinely all-image
+ * carousel (`images_only` is the mode that means that). Ticket #294 scopes this banner to the
+ * 3 known YouTube rows only; the Instagram coverage gap is tracked separately under #288 and is
+ * out of scope here. A `null` stored mode (row predates the `analysis_mode` column, or a
+ * healthy row of any other mode) is also `false`.
  */
 export function isUntrustedYoutubeMetadataOnly(
   platform: AnalysisPlatform,

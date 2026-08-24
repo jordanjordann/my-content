@@ -1,5 +1,7 @@
 import { createClient } from "@libsql/client";
 
+import type { AnalysisMode } from "@/lib/api/analyses/types";
+
 const databaseUrl = process.env.TURSO_DATABASE_URL ?? "file:./my-content.db";
 
 export const db = createClient({
@@ -18,6 +20,22 @@ function toNullableBoolean(value: unknown): boolean | null {
     return null;
   }
   return Number(value) === 1;
+}
+
+/**
+ * Ticket #294 — validates the raw `analyses.analysis_mode` column value against the known
+ * `AnalysisMode` literals before it enters the typed surface, the same posture
+ * `deriveAnalysisMode` (`lib/api/analyses/helpers.ts`) already takes for the tier2-derived
+ * value. Without this, `analysisRow.analysis_mode as string` was an unvalidated cast: any
+ * unexpected stored string would flow, unchecked by `tsc`, all the way to
+ * `AnalysisDetail.storedAnalysisMode: AnalysisMode | null` and lie about its own type to every
+ * downstream consumer. `null` for `null`/`undefined` and for any value that isn't one of the
+ * three known modes — never a silent guess.
+ */
+function toAnalysisMode(value: unknown): AnalysisMode | null {
+  return value === "full_video" || value === "images_only" || value === "metadata_only"
+    ? value
+    : null;
 }
 
 export async function getSetting(key: string) {
@@ -276,7 +294,7 @@ export async function getAnalysisDetail(analysisId: string) {
     // chip uses (`deriveAnalysisMode` in `lib/api/analyses/helpers.ts`): that derivation is
     // fine for a cosmetic label but is absent whenever `tier2` is null, which is exactly the
     // wrong failure mode for a correctness banner. Read straight off the row instead.
-    storedAnalysisMode: (analysisRow.analysis_mode as string) ?? null,
+    storedAnalysisMode: toAnalysisMode(analysisRow.analysis_mode),
     followerCount: analysisRow.follower_count == null ? null : Number(analysisRow.follower_count),
     perfReachValue: analysisRow.perf_reach_value == null ? null : Number(analysisRow.perf_reach_value),
     perfReachKind: (analysisRow.perf_reach_kind as string) ?? null,

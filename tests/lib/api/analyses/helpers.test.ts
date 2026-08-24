@@ -670,7 +670,17 @@ describe("isUntrustedYoutubeMetadataOnly (ticket #294)", () => {
     }
   });
 
-  it("instagram metadata_only (a genuinely all-image carousel, nothing fabricated) is false", () => {
+  /**
+   * NOT because Instagram `metadata_only` is a safe, all-image case — it isn't. Per
+   * `lib/server/analysis/pipeline/index.ts`, `metadata_only` is the pipeline's DEFAULT mode,
+   * upgraded to `images_only` only once `mediaParts.length > 0`; a genuine all-image carousel
+   * is `images_only`, not `metadata_only`. So an Instagram `metadata_only` row is the exact
+   * same "Gemini never saw the media" case the YouTube branch targets, and today gets no
+   * banner either. `false` here is purely ticket #294's stated scope (the 3 known YouTube
+   * rows) — widening to Instagram is a real gap, tracked separately under #288, not a
+   * correctness fact about Instagram's `metadata_only`.
+   */
+  it("instagram metadata_only is false — ticket #294's scope is YouTube only, not a claim that Instagram metadata_only is safe (see #288)", () => {
     expect(isUntrustedYoutubeMetadataOnly("instagram", "metadata_only")).toBe(false);
   });
 
@@ -678,11 +688,51 @@ describe("isUntrustedYoutubeMetadataOnly (ticket #294)", () => {
     expect(isUntrustedYoutubeMetadataOnly("youtube", null)).toBe(false);
   });
 
-  it("stored column wins even against a hypothetically disagreeing derived value — there is no derived value in this function's inputs, by construction", () => {
-    // A row could have `tier2.bucketKey` implying `full_video` (e.g. a stale/drifted bucket)
-    // while `analyses.analysis_mode` genuinely stores `metadata_only`. This function has no way
-    // to read the bucket key at all, so it can only ever answer from the stored column — the
-    // trap the ticket calls out is unreachable here by construction, not merely untested.
-    expect(isUntrustedYoutubeMetadataOnly("youtube", "metadata_only")).toBe(true);
+  /**
+   * The ticket's actual trap, made concrete: a row whose `tier2.bucketKey` parses to
+   * `full_video` (via `deriveAnalysisTablePerformance`'s `analysisMode`, the SAME derivation
+   * the table's `Caption only` chip uses) while the stored `analyses.analysis_mode` column
+   * genuinely says `metadata_only`. If `isUntrustedYoutubeMetadataOnly` were ever rewired to
+   * read the derived value instead of the stored column, this row's banner would silently
+   * disappear even though it fits behind a `full_video`-shaped bucket key by coincidence — this
+   * test fails exactly that regression, unlike the previous placeholder assertion it replaces.
+   */
+  it("a row whose derived table chip disagrees with the stored column still follows the STORED column, not the derived one", () => {
+    const disagreeingPerformance: AnalysisPerformance = {
+      computed: {
+        reach: { value: 10_000, kind: "VIEWS", derivedFrom: "TOP_LEVEL", state: "AVAILABLE" },
+        likes: { value: 500, state: "AVAILABLE" },
+        comments: { value: 20, state: "AVAILABLE" },
+        audience: { value: 5_000, capturedAt: "2026-07-01T00:00:00.000Z", sourceFetchedAt: null },
+        postAgeHours: 48,
+        tier1: { denominator: "REACH", ratio: 0.05, reachKind: "VIEWS" },
+        tier2: {
+          median: 8_000,
+          sampleSize: 6,
+          // Parses to analysisMode "full_video" — a stale/drifted bucket key relative to the
+          // row's real stored mode below.
+          bucketKey: "youtube:short:full_video",
+          multiplier: 1.25,
+          minSample: 5,
+          state: "MEASURED",
+          reason: null,
+        },
+        tier3: null,
+        tierUsed: "CREATOR_BASELINE",
+        confidence: "HIGH",
+        confidenceReason: null,
+        provisional: false,
+        unavailableReason: null,
+      },
+      judgement: { performanceScore: 4, verdict: "n/a", drivers: [] },
+    };
+
+    const tableDerived = deriveAnalysisTablePerformance(disagreeingPerformance, "short", null);
+    expect(tableDerived?.analysisMode).toBe("full_video");
+
+    // The stored column, independently, says metadata_only — the actual fact recorded at
+    // write time. The banner flag must follow THIS, not the derived chip above.
+    const storedAnalysisMode: AnalysisMode = "metadata_only";
+    expect(isUntrustedYoutubeMetadataOnly("youtube", storedAnalysisMode)).toBe(true);
   });
 });

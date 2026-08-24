@@ -138,7 +138,7 @@ export function AnalysisDetailModal({ id, onClose }: AnalysisDetailModalProps) {
         </div>
 
         {data?.isUntrustedYoutubeMetadataOnly && (
-          <div className="shrink-0 px-6 pt-4">
+          <div className="shrink-0 px-6 pt-4 pb-4">
             <UntrustedAnalysisWarningSection />
           </div>
         )}

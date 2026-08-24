@@ -829,3 +829,44 @@ describe("GET /api/analyses — ticket #252: the live multiplier end to end", ()
     expect(row.performance.computed.tier2.multiplier).toBeCloseTo(5, 5); // 500 / 100
   });
 });
+
+/**
+ * Ticket #294 review (PR #297) — the reviewer's blocking finding: nothing in the test suite
+ * exercised the `analyses.analysis_mode` column surviving the DB -> `getAnalysisDetail` ->
+ * `[id]/route.ts` hop. Dropping the column from the SELECT, or from the route's response body,
+ * failed no test. This inserts a real row with a real `analysis_mode` and asserts the detail
+ * endpoint's JSON body carries it through unchanged.
+ */
+describe("GET /api/analyses/[id] — ticket #294: the stored analysis_mode column survives the DB -> route hop", () => {
+  it("a row with analysis_mode = 'metadata_only' returns storedAnalysisMode: 'metadata_only' in the response body", async () => {
+    const id = await insertAnalysis(db, { username: "creator-metadata-only" });
+    await db.execute({
+      sql: "UPDATE analyses SET analysis_mode = 'metadata_only' WHERE id = ?",
+      args: [id],
+    });
+
+    const response = await detailRoute.GET(makeGetRequest(), makeDetailParams(id));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+
+    expect(body.storedAnalysisMode).toBe("metadata_only");
+  });
+
+  it("a row with no analysis_mode stored returns storedAnalysisMode: null, never a fabricated mode", async () => {
+    const id = await insertAnalysis(db, { username: "creator-no-mode" });
+
+    const response = await detailRoute.GET(makeGetRequest(), makeDetailParams(id));
+    const body = await response.json();
+
+    expect(body.storedAnalysisMode).toBeNull();
+  });
+
+  // Note: an "unrecognised stored value" case is not constructible against the real DB — the
+  // `analyses` table has its own `CHECK (analysis_mode IN ('full_video', 'images_only',
+  // 'metadata_only'))` constraint (`migrations/009_analysis_mode_images_only.sql`), so an
+  // invalid value cannot be written even directly via SQL. `lib/server/db.ts`'s
+  // `toAnalysisMode` narrowing is defense-in-depth against that invariant ever being relaxed or
+  // bypassed (e.g. a future migration, a raw admin query) — covered at the unit level by
+  // mirroring `deriveAnalysisMode`'s own allowlist posture, not by a DB-level test that the
+  // schema itself makes unreachable.
+});
