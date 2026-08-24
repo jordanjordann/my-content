@@ -160,34 +160,50 @@ export async function runAnalysis({
     // block below, which follows the existing delete/preserve-for-
     // re-analysis convention).
     let analysisMode: "full_video" | "images_only" | "metadata_only" = "metadata_only";
-    // Instagram (fetcher/adapter.ts, via resolveMediaParts()) populates
-    // metadata.mediaParts directly. YouTube (fetcher/youtube.ts) is
-    // untouched by this ticket and only ever sets metadata.videoUrl — fall
-    // back to a single synthetic video part built from it so the YouTube
-    // path keeps working unchanged through the now-shared prepareParts().
-    const mediaParts =
-      metadata.mediaParts && metadata.mediaParts.length > 0
-        ? metadata.mediaParts
-        : metadata.videoUrl
-          ? [
-              {
-                index: 0,
-                kind: "video" as const,
-                url: metadata.videoUrl,
-                durationSec: metadata.durationSec ?? null,
-                width: metadata.originalWidth ?? null,
-                height: metadata.originalHeight ?? null,
-                playCount: metadata.playCount ?? null,
-                viewCount: metadata.viewCount ?? null,
-                displayedCountIsPlayCount: metadata.displayedCountIsPlayCount ?? false,
-              },
-            ]
-          : [];
-    const hasVideoPart = mediaParts.some((part) => part.kind === "video");
 
     let geminiParts: Awaited<ReturnType<typeof prepareParts>>["geminiParts"] = [];
 
-    if (mediaParts.length > 0) {
+    if (classified.platform === "youtube") {
+      // Ticket #295: Gemini's native YouTube URL input replaces yt-dlp +
+      // download + File API upload, for the YouTube path ONLY —
+      // Instagram's branch below (prepareParts()) is untouched.
+      // `metadata.videoUrl` is the ORIGINAL public YouTube URL
+      // (fetcher/router.ts no longer downloads or rewrites it); handed to
+      // Gemini as a bare `fileData.fileUri` part with `mimeType`
+      // deliberately omitted (verified request shape,
+      // .claude/context/verified-facts.md). Google fetches the video
+      // server-side, so there is no local file, no File API asset —
+      // `fileUri`/`fileExpiresAt` (the `gemini_file_uri` column pair, a
+      // File-API-upload artifact) correctly stay null on this path.
+      //
+      // #292's refusal behaviour is preserved STRUCTURALLY here, not by a
+      // pre-check: there is no more free, local probe to run before this
+      // point (that was `yt-dlp`, now gone). If Gemini genuinely cannot
+      // obtain the video (private/removed/region-blocked — public videos
+      // only is a documented limit of this preview feature),
+      // `analyzeContent()` below throws, and this function's existing
+      // catch block (delete the row for a first analysis, mark 'failed'
+      // for a re-analysis) refuses exactly as before — no bespoke failure
+      // branch needed (same reasoning as docs/audit/ANALYSIS-288 §5). The
+      // #293 prompt guard remains the backstop if this preview feature is
+      // ever withdrawn.
+      if (!metadata.videoUrl) {
+        throw new Error("YouTube analysis is missing a video URL to send to Gemini");
+      }
+      report("downloading", 1, "Sending video to Gemini...");
+      geminiParts = [{ fileData: { fileUri: metadata.videoUrl } }];
+      analysisMode = "full_video";
+    } else if (metadata.mediaParts && metadata.mediaParts.length > 0) {
+      // Instagram (fetcher/adapter.ts, via resolveMediaParts()) populates
+      // metadata.mediaParts directly — unchanged by ticket #295. The
+      // videoUrl-only synthetic-part fallback that used to live here was
+      // deleted: it existed solely for YouTube (the only platform whose
+      // metadata carries a videoUrl without mediaParts), which now takes
+      // the branch above instead. Instagram always populates mediaParts
+      // whenever it sets videoUrl (fetcher/adapter.ts), so this branch
+      // never relied on that fallback in the first place.
+      const mediaParts = metadata.mediaParts;
+      const hasVideoPart = mediaParts.some((part) => part.kind === "video");
       const label =
         mediaParts.length > 1 ? `Downloading ${mediaParts.length} media parts...` : "Downloading video...";
       report("downloading", 1, label);

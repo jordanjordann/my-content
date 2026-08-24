@@ -1,9 +1,44 @@
-import { GoogleGenAI, FinishReason, type Part } from "@google/genai";
+import { ApiError, GoogleGenAI, FinishReason, type Part } from "@google/genai";
 
 import { ANALYSIS_RESPONSE_SCHEMA } from "@/lib/server/analysis/schema";
 import type { PreparedGeminiPart } from "@/lib/server/analysis/media";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
+
+// Ticket #295: default `videoMetadata.fps` sampling is 1.0 (SDK-documented,
+// verified live). A clip under ~2s can round to zero sampled frames and
+// Gemini returns HTTP 400 "No frames to extract with given parameters" —
+// this is NOT an access/availability failure, the video was already
+// fetched. Retried exactly once, only for this specific error, with fps
+// raised. Do NOT raise this globally: it directly multiplies input token
+// cost (a 1s clip billed ~6049 VIDEO tokens at fps 24 vs. a normal ~300
+// tokens/sec at the default rate — see verified-facts.md).
+const FRAME_SAMPLING_RETRY_FPS = 24;
+const NO_FRAMES_ERROR_PATTERN = /No frames to extract/i;
+
+function isFrameSamplingError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 400 && NO_FRAMES_ERROR_PATTERN.test(error.message);
+}
+
+/**
+ * Ticket #295: only a bare `fileData` part with NO `mimeType` can hit the
+ * frame-sampling trap — that shape is unique to the Gemini-native YouTube
+ * URL path (`fileData: { fileUri }`, mimeType deliberately omitted, see
+ * `media/types.ts`). Every Instagram part either sets `mimeType` (File
+ * API upload) or is `inlineData` (image) — this guard therefore can never
+ * fire on the Instagram path, by construction, not by platform-checking.
+ */
+function withFrameSamplingRetry(parts: PreparedGeminiPart[]): PreparedGeminiPart[] | null {
+  let changed = false;
+  const retried = parts.map((part) => {
+    if ("fileData" in part && part.fileData.mimeType === undefined && part.videoMetadata === undefined) {
+      changed = true;
+      return { ...part, videoMetadata: { fps: FRAME_SAMPLING_RETRY_FPS } };
+    }
+    return part;
+  });
+  return changed ? retried : null;
+}
 
 /**
  * Ticket #71 Step 4: `analyzeContent(fileUri, prompt)` -> `analyzeContent(parts,
@@ -15,6 +50,27 @@ export async function analyzeContent(
   mediaParts: PreparedGeminiPart[],
   prompt: string,
 ): Promise<{ text: string; raw: string }> {
+  try {
+    return await callGemini(mediaParts, prompt);
+  } catch (error) {
+    if (!isFrameSamplingError(error)) {
+      throw error;
+    }
+    const retriedParts = withFrameSamplingRetry(mediaParts);
+    if (retriedParts === null) {
+      // No bare fileData part to retry with a higher fps — this 400 came
+      // from somewhere else (e.g. a File-API-uploaded video, which is
+      // unexpected). Do not mask it as recoverable.
+      throw error;
+    }
+    console.warn(
+      "[GEMINI] Frame-sampling floor hit (short clip, default 1.0 fps) — retrying once with videoMetadata.fps raised. This retry costs more input tokens than the default rate.",
+    );
+    return await callGemini(retriedParts, prompt);
+  }
+}
+
+async function callGemini(mediaParts: PreparedGeminiPart[], prompt: string): Promise<{ text: string; raw: string }> {
   const parts: Part[] = [...mediaParts];
 
   parts.push({ text: prompt });

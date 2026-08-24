@@ -58,9 +58,21 @@ export interface ResolvedMediaParts {
   truncated: boolean;
 }
 
-/** A single Gemini request part after download/inline-encoding (`prepareParts()`). */
+/**
+ * A single Gemini request part after download/inline-encoding
+ * (`prepareParts()`), OR — ticket #295 — a `fileData` part built directly
+ * from a public YouTube URL with `mimeType` deliberately omitted (verified
+ * request shape, `.claude/context/verified-facts.md` "Gemini — YouTube URL
+ * as direct video input"). `mimeType` is optional rather than a third
+ * variant so both shapes share one type; `prepareParts()` (Instagram, File
+ * API uploads) always supplies it, so this widening does not change its
+ * behaviour. `videoMetadata` is optional and used ONLY on the YouTube
+ * native-URL path, to retry a very short clip that would otherwise 400 with
+ * "No frames to extract" at the default 1.0 fps sampling rate — see
+ * `gemini/generate.ts`.
+ */
 export type PreparedGeminiPart =
-  | { fileData: { fileUri: string; mimeType: string } }
+  | { fileData: { fileUri: string; mimeType?: string }; videoMetadata?: { fps: number } }
   | { inlineData: { mimeType: string; data: string } };
 
 export interface PreparedParts {
