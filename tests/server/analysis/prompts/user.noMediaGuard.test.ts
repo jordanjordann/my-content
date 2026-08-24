@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildUserPrompt } from "@/lib/server/analysis/prompts";
-import type { MediaMetadata } from "@/lib/server/analysis/types";
+import { SCORECARD_KEYS, type MediaMetadata } from "@/lib/server/analysis/types";
 import { buildTestComputedPerformanceBlock } from "./testHelpers";
 
 /**
@@ -37,7 +37,22 @@ describe("buildUserPrompt — no-media prohibition (ticket #293)", () => {
 
     expect(prompt).toContain("## No Media Provided");
     expect(prompt).toMatch(/MUST NOT describe or refer to anything visual/);
-    expect(prompt).toMatch(/visualQuality/);
+  });
+
+  it("names the actual schema scorecard field (visualPolish), not the non-existent 'visualQuality'", () => {
+    // Regression for review comment B1 on PR #298: the guard text once
+    // referenced "visualQuality", a field that has never existed in
+    // scorecardSchema/SCORECARD_KEYS/the UI. Assert against the real
+    // schema's field name so this can't silently drift again — do not
+    // hardcode the literal string here.
+    expect(SCORECARD_KEYS).toContain("visualPolish");
+
+    const metadata = baseMetadata({ mediaType: "post", videoUrl: null, mediaParts: [] });
+
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
+
+    expect(prompt).toContain("visualPolish");
+    expect(prompt).not.toMatch(/visualQuality/);
   });
 
   it("does not emit the prohibition when mediaParts carries at least one image part (Instagram images_only)", () => {
@@ -101,5 +116,18 @@ describe("buildUserPrompt — no-media prohibition (ticket #293)", () => {
     const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
 
     expect(prompt).not.toContain("## No Media Provided");
+  });
+
+  it("treats an empty-string videoUrl as no media (matches pipeline/index.ts's truthiness check)", () => {
+    // Regression for review comment M1 on PR #298: pipeline/index.ts derives
+    // mediaParts with `metadata.videoUrl ? [...] : []` — plain truthiness,
+    // so an empty string is "no video". The guard must use the same check
+    // (not `!= null`), or an empty-string videoUrl would suppress the guard
+    // in the exact state it exists to cover.
+    const metadata = baseMetadata({ mediaType: "post", videoUrl: "", mediaParts: [] });
+
+    const prompt = buildUserPrompt(metadata, "focus", buildTestComputedPerformanceBlock(metadata));
+
+    expect(prompt).toContain("## No Media Provided");
   });
 });
