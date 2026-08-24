@@ -26,6 +26,7 @@ import { AnalysisStyleSection } from "@/app/app/analyses/components/sections/Ana
 import { AnalysisScorecardSection } from "@/app/app/analyses/components/sections/AnalysisScorecardSection";
 import { AnalysisRedFlagsSection } from "@/app/app/analyses/components/sections/AnalysisRedFlagsSection";
 import { AnalysisSuggestionsSection } from "@/app/app/analyses/components/sections/AnalysisSuggestionsSection";
+import { UntrustedAnalysisWarningSection } from "@/app/app/analyses/components/sections/UntrustedAnalysisWarningSection";
 import { PatternBlock } from "@/app/app/analyses/components/sections/PatternBlock";
 import { EngagementCount } from "@/app/app/analyses/components/counts/EngagementCount";
 import { AnalysisDetailTabList } from "./components/tabs/AnalysisDetailTabList";
@@ -135,6 +136,12 @@ export function AnalysisDetailModal({ id, onClose }: AnalysisDetailModalProps) {
             <XIcon className="size-5" aria-hidden="true" />
           </button>
         </div>
+
+        {data?.isUntrustedYoutubeMetadataOnly && (
+          <div className="shrink-0 px-6 pt-4">
+            <UntrustedAnalysisWarningSection />
+          </div>
+        )}
 
         {/* Content */}
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">

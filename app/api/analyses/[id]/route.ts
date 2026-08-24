@@ -124,6 +124,9 @@ export async function GET(
       results,
       createdAt: detail.createdAt,
       performance,
+      // Ticket #294 — raw `analyses.analysis_mode` column, passed through as-is (AGENTS.md's
+      // API-layer rule); `lib/api/analyses/hooks.ts`'s `select` derives the untrusted flag.
+      storedAnalysisMode: detail.storedAnalysisMode,
     });
   } catch (error) {
     return NextResponse.json(

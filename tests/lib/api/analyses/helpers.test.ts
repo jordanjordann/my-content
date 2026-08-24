@@ -3,8 +3,13 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { classifyLikeCount, classifyViewCount, deriveAnalysisTablePerformance } from "@/lib/api/analyses/helpers";
-import type { AnalysisPerformance } from "@/lib/api/analyses/types";
+import {
+  classifyLikeCount,
+  classifyViewCount,
+  deriveAnalysisTablePerformance,
+  isUntrustedYoutubeMetadataOnly,
+} from "@/lib/api/analyses/helpers";
+import type { AnalysisMode, AnalysisPerformance, AnalysisPlatform } from "@/lib/api/analyses/types";
 
 /**
  * Ticket #101 — table-driven tests for the two pure `CountState` classifiers
@@ -638,5 +643,46 @@ describe("deriveAnalysisTablePerformance — commentCountState (ticket #205)", (
     };
     const derived = deriveAnalysisTablePerformance(withHiddenComments, "reel", null);
     expect(derived?.commentCountState).toEqual({ kind: "unknown" });
+  });
+});
+
+/**
+ * Ticket #294 — the detail modal's untrusted-analysis flag. Every case below is driven by the
+ * STORED `analysis_mode` column, never by `deriveAnalysisMode`'s tier2-bucket derivation — the
+ * function under test takes no `tier2`/`PerformanceComputed` argument at all, so a fixture
+ * whose derived table chip would disagree with the stored column is structurally impossible to
+ * construct here, which is itself the point (`lib/api/analyses/helpers.ts`'s doc comment).
+ */
+describe("isUntrustedYoutubeMetadataOnly (ticket #294)", () => {
+  const platforms: AnalysisPlatform[] = ["youtube", "instagram"];
+  const modes: (AnalysisMode | null)[] = ["metadata_only", "images_only", "full_video", null];
+
+  it("true only for youtube + stored metadata_only", () => {
+    expect(isUntrustedYoutubeMetadataOnly("youtube", "metadata_only")).toBe(true);
+  });
+
+  it("false for every other platform/mode combination", () => {
+    for (const platform of platforms) {
+      for (const mode of modes) {
+        if (platform === "youtube" && mode === "metadata_only") continue;
+        expect(isUntrustedYoutubeMetadataOnly(platform, mode)).toBe(false);
+      }
+    }
+  });
+
+  it("instagram metadata_only (a genuinely all-image carousel, nothing fabricated) is false", () => {
+    expect(isUntrustedYoutubeMetadataOnly("instagram", "metadata_only")).toBe(false);
+  });
+
+  it("youtube with a null stored mode (pre-column row, or a healthy row) is false", () => {
+    expect(isUntrustedYoutubeMetadataOnly("youtube", null)).toBe(false);
+  });
+
+  it("stored column wins even against a hypothetically disagreeing derived value — there is no derived value in this function's inputs, by construction", () => {
+    // A row could have `tier2.bucketKey` implying `full_video` (e.g. a stale/drifted bucket)
+    // while `analyses.analysis_mode` genuinely stores `metadata_only`. This function has no way
+    // to read the bucket key at all, so it can only ever answer from the stored column — the
+    // trap the ticket calls out is unreachable here by construction, not merely untested.
+    expect(isUntrustedYoutubeMetadataOnly("youtube", "metadata_only")).toBe(true);
   });
 });

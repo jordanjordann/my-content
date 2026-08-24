@@ -16,6 +16,7 @@ import {
   classifyLikeCount,
   classifyViewCount,
   deriveAnalysisTablePerformance,
+  isUntrustedYoutubeMetadataOnly,
   normalize,
   toProxiedThumbnail,
 } from "@/lib/api/analyses/helpers";
@@ -74,6 +75,7 @@ function selectProxiedAnalysisDetail(data: AnalysisDetail): AnalysisDetailClassi
       likeCount: data.likeCount,
       likeAndViewCountsDisabled: data.likeAndViewCountsDisabled,
     }),
+    isUntrustedYoutubeMetadataOnly: isUntrustedYoutubeMetadataOnly(data.platform, data.storedAnalysisMode),
   };
 }
 
