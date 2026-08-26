@@ -574,9 +574,9 @@ export async function runAnalysis({
     // the analysis result is persisted, inside a try/catch that logs and
     // swallows — the same convention resolveProfile() already uses above.
     // A fingerprint failure must never fail an analysis.
-    if (profile?.id) {
+    if (profileId) {
       try {
-        await recomputeFingerprint(profile.id);
+        await recomputeFingerprint(profileId);
       } catch (error) {
         console.error("[PIPELINE] Fingerprint recompute failed:", error);
       }

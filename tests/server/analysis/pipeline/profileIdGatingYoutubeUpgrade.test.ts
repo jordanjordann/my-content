@@ -196,7 +196,8 @@ describe("runAnalysis — YouTube upgrade branch's SECOND computePerformanceBloc
 
     const row = await client.execute({
       sql: `
-        SELECT profile_id, analysis_mode, perf_baseline_sample_size, perf_baseline_median, perf_tier_used
+        SELECT profile_id, analysis_mode, perf_baseline_sample_size, perf_baseline_median, perf_tier_used,
+               audience_source_fetched_at
         FROM analyses WHERE id = ?
       `,
       args: [result.analysisId],
@@ -213,5 +214,12 @@ describe("runAnalysis — YouTube upgrade branch's SECOND computePerformanceBloc
     expect(row.rows[0]?.profile_id).toBeNull();
     expect(row.rows[0]?.perf_baseline_sample_size).toBe(0);
     expect(row.rows[0]?.perf_baseline_median).toBeNull();
+
+    // Same failure-only gating must hold for `audienceSourceFetchedAt` on
+    // this SECOND `computePerformanceBlock` call: `profile.lastFetchedAt`
+    // is the `PROFILE_NEVER_FETCHED_SENTINEL` epoch (never a real fetch),
+    // so `hasRealProfileData()` must read this as `false` and the upgrade
+    // UPDATE must persist NULL — not the sentinel timestamp.
+    expect(row.rows[0]?.audience_source_fetched_at).toBeNull();
   });
 });
