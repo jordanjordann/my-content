@@ -151,12 +151,18 @@ describe("runAnalysis — analyses.profile_id (ticket #291 code review, blocking
     });
 
     const row = await client.execute({
-      sql: "SELECT profile_id, follower_count FROM analyses WHERE id = ?",
+      sql: "SELECT profile_id, follower_count, audience_source_fetched_at FROM analyses WHERE id = ?",
       args: [result.analysisId],
     });
 
     expect(row.rows[0]?.profile_id).toBeNull();
     expect(row.rows[0]?.follower_count).toBeNull();
+    // Ticket #291 code review round 3, "stale sentinel leaking into a
+    // stored column": a failure-only row's `last_fetched_at` is the
+    // `PROFILE_NEVER_FETCHED_SENTINEL` epoch (`1970-01-01 00:00:00`), never
+    // a real fetch time. `audience_source_fetched_at` must stay genuinely
+    // NULL here, not leak that fake epoch date into the column.
+    expect(row.rows[0]?.audience_source_fetched_at).toBeNull();
   });
 
   it("DOES attach a real (non-failed) profile row's id to the analysis — control case", async () => {
@@ -181,5 +187,58 @@ describe("runAnalysis — analyses.profile_id (ticket #291 code review, blocking
 
     expect(row.rows[0]?.profile_id).toBe(realProfile.id);
     expect(row.rows[0]?.follower_count).toBe(12_345);
+  });
+
+  /**
+   * Ticket #291 code review round 3: the round-2 fix's predicate
+   * (`profile && !profile.lookupFailedAt`) wrongly treated "the most recent
+   * lookup attempt failed" as "this row carries no real data" — but
+   * `recordProfileLookupFailure` NEVER touches `follower_count` or
+   * `last_fetched_at` on a row that already has real data from an earlier
+   * successful fetch (its own doc comment). A real Instagram profile (e.g.
+   * `follower_count = 260675`) that then hits a single transient failure
+   * still has genuine, current data — `analyses.profile_id` and the Tier 2
+   * baseline pool eligibility it drives must not be revoked just because
+   * `lookup_failed_at` happens to be set. `hasRealProfileData()`
+   * (`pipeline/index.ts`) fixes this by checking `last_fetched_at` against
+   * `PROFILE_NEVER_FETCHED_SENTINEL` instead — real data stays real data
+   * regardless of a later, unrelated failure marker.
+   */
+  it("DOES attach profile_id when the row has real follower data even though lookup_failed_at is set (transient failure after a successful fetch)", async () => {
+    const { upsertProfile, recordProfileLookupFailure } = await import("@/lib/server/profiles/repository");
+
+    const realProfile = await upsertProfile({
+      platform: "instagram",
+      username: "failure-only-creator",
+      followerCount: 260_675,
+    });
+    expect(realProfile.lookupFailedAt).toBeNull();
+    const realLastFetchedAt = realProfile.lastFetchedAt;
+
+    // Simulate a later, transient failure on the SAME row (e.g. a flaky
+    // upstream error on a subsequent analysis of the same creator) — this
+    // sets lookup_failed_at without touching follower_count/last_fetched_at.
+    const afterFailure = await recordProfileLookupFailure("instagram", "failure-only-creator");
+    expect(afterFailure.id).toBe(realProfile.id);
+    expect(afterFailure.lookupFailedAt).not.toBeNull();
+    expect(afterFailure.followerCount).toBe(260_675);
+    expect(afterFailure.lastFetchedAt).toBe(realLastFetchedAt);
+
+    const { runAnalysis } = await import("@/lib/server/analysis/pipeline");
+    const result = await runAnalysis({
+      url: "https://www.instagram.com/reel/abc/",
+      prompt: "focus on hooks",
+    });
+
+    const row = await client.execute({
+      sql: "SELECT profile_id, follower_count, audience_source_fetched_at FROM analyses WHERE id = ?",
+      args: [result.analysisId],
+    });
+
+    expect(row.rows[0]?.profile_id).toBe(realProfile.id);
+    expect(row.rows[0]?.follower_count).toBe(260_675);
+    // Also asserts the audience_source_fetched_at fix: the real
+    // last_fetched_at is persisted, not NULL and not the 1970 sentinel.
+    expect(row.rows[0]?.audience_source_fetched_at).toBe(realLastFetchedAt);
   });
 });
