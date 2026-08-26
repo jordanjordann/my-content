@@ -178,7 +178,19 @@ export async function resolveProfile({
       `[Profiles] lookup_failure platform=${platform} username=${normalizedUsername} retry_after_hours=${PROFILE_LOOKUP_FAILURE_RETRY_HOURS}`,
     );
 
-    await recordProfileLookupFailure(platform, normalizedUsername);
+    // Code review on ticket #291: this write records the fact that the
+    // lookup failed — it must never itself become a second, unhandled
+    // failure that stops `return cached ?? null` below from running. A
+    // profile failure (recording or fetching) must never fail an analysis
+    // (same convention as the outer try/catch this is already inside).
+    try {
+      await recordProfileLookupFailure(platform, normalizedUsername);
+    } catch (recordError) {
+      console.error(
+        `[Profiles] failed to record lookup failure for ${platform}/${normalizedUsername}:`,
+        recordError,
+      );
+    }
 
     return cached ?? null;
   }

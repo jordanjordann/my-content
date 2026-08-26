@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { db } from "@/lib/server/db";
+import { PROFILE_NEVER_FETCHED_SENTINEL } from "@/lib/server/profiles/constants";
 import type { Profile, ProfileInput } from "@/lib/server/profiles/types";
 
 /**
@@ -133,7 +134,16 @@ export async function upsertProfile(input: ProfileInput): Promise<Profile> {
  *   - It does NOT bump `last_fetched_at`. That column means "this row's
  *     data is current as of this time"; a failed attempt produced no new
  *     data, so claiming a fresh `last_fetched_at` would make the row look
- *     like a real refresh happened when only a negative result did.
+ *     like a real refresh happened when only a negative result did. On a
+ *     row's FIRST failure (no existing row, so no real prior value to
+ *     preserve) the INSERT explicitly binds `PROFILE_NEVER_FETCHED_SENTINEL`
+ *     rather than leaving the column unnamed — `last_fetched_at` is
+ *     `NOT NULL DEFAULT (datetime('now'))` (migration 006), so an unnamed
+ *     column would silently default to "now" and recreate exactly this bug
+ *     (code review on ticket #291, blocking issue 1). On a repeat failure
+ *     (`ON CONFLICT`), the column is left untouched — it still holds
+ *     whatever `last_fetched_at` genuinely means for that row already,
+ *     either a real prior fetch or an earlier sentinel.
  *
  * `resolveProfile` checks `lookup_failed_at` against its own short retry
  * window (`isLookupFailureFresh` / `PROFILE_LOOKUP_FAILURE_RETRY_HOURS`) to
@@ -148,14 +158,14 @@ export async function recordProfileLookupFailure(
 
   const result = await db.execute({
     sql: `
-      INSERT INTO profiles (id, platform, username, lookup_failed_at)
-      VALUES (?, ?, ?, datetime('now'))
+      INSERT INTO profiles (id, platform, username, lookup_failed_at, last_fetched_at)
+      VALUES (?, ?, ?, datetime('now'), ?)
       ON CONFLICT(platform, username) DO UPDATE SET
         lookup_failed_at = datetime('now'),
         updated_at       = datetime('now')
       RETURNING *
     `,
-    args: [id, platform, username],
+    args: [id, platform, username, PROFILE_NEVER_FETCHED_SENTINEL],
   });
 
   const row = result.rows[0];

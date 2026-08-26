@@ -129,6 +129,23 @@ export async function runAnalysis({
     // to the DB write.
     metadata.followerCount = followerCount;
 
+    // Ticket #291 code review, blocking issue 2: a `profiles` row whose
+    // MOST RECENT lookup attempt failed (`lookupFailedAt` still set —
+    // `resolveProfile` returns such a row as-is, without clearing the
+    // marker, whenever the failure is still inside its retry window)
+    // carries no real fetched data for THIS attempt. Attaching its `id` as
+    // `analyses.profile_id` would still make the analysis eligible for the
+    // live-comparator baseline pool (`computeBlock.ts` gates Tier 2 solely
+    // on `profileId != null` — `performance/baseline.ts`'s
+    // `(profile_id, perf_bucket_key, schema_version)` grouping), grouping
+    // it against other posts from the same creator on the strength of a
+    // row that has no real signal behind it. `followerCount` above is
+    // already correctly null-or-stale-real-value in this case (a failure
+    // never touches `follower_count` — `recordProfileLookupFailure`'s doc
+    // comment); `profileId` needs the same "don't pretend a failure is
+    // usable data" treatment.
+    const profileId = profile && !profile.lookupFailedAt ? profile.id : null;
+
     report("summarizing", 1, "Generating title from caption...");
     const generatedTitle = await summarizeCaptionToTitle(metadata.caption ?? "");
     const finalTitle = generatedTitle ?? metadata.caption ?? null;
@@ -315,7 +332,7 @@ export async function runAnalysis({
       followerCount,
       audienceSourceFetchedAt: profile?.lastFetchedAt ?? null,
       postDate: metadata.postDate,
-      profileId: profile?.id ?? null,
+      profileId,
       analysisId,
       schemaVersion: ANALYSIS_SCHEMA_VERSION,
     });
@@ -366,7 +383,7 @@ export async function runAnalysis({
         metadata.originalWidth ?? null,
         metadata.originalHeight ?? null,
         metadata.carouselItemCount ?? null,
-        profile?.id ?? null,
+        profileId,
         followerCount,
         analysisMode,
         coauthorProducersJson,
@@ -446,7 +463,7 @@ export async function runAnalysis({
         followerCount,
         audienceSourceFetchedAt: profile?.lastFetchedAt ?? null,
         postDate: metadata.postDate,
-        profileId: profile?.id ?? null,
+        profileId,
         analysisId,
         schemaVersion: ANALYSIS_SCHEMA_VERSION,
       });

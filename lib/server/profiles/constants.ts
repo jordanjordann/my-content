@@ -46,3 +46,18 @@ function resolveProfileLookupFailureRetryHours(): number {
 }
 
 export const PROFILE_LOOKUP_FAILURE_RETRY_HOURS = resolveProfileLookupFailureRetryHours();
+
+// Ticket #291 code review, blocking issue 1: `profiles.last_fetched_at` is
+// `NOT NULL DEFAULT (datetime('now'))` (migration 006) — additive-only
+// migrations (this ticket's own convention) can't drop that constraint
+// without a full-table rebuild, so `recordProfileLookupFailure`'s INSERT
+// cannot simply omit the column and cannot bind NULL to it either. Instead
+// it binds this fixed epoch sentinel explicitly on a row's FIRST failure
+// (there is no real `profiles` row yet, so there is no real prior
+// `last_fetched_at` to preserve). `isStale()` computes `Date.now() -
+// epochMs`, which is always far past `PROFILE_TTL_DAYS`, so a first-failure
+// row can never read as "fetched just now" — the exact bug this constant
+// exists to close (a fresh-looking `last_fetched_at` on a row that has no
+// real fetched data behind it, leaking into `audience_source_fetched_at` on
+// any analysis of the same channel — `pipeline/index.ts`).
+export const PROFILE_NEVER_FETCHED_SENTINEL = "1970-01-01 00:00:00";
