@@ -14,6 +14,15 @@ export interface Profile {
   isBusinessAccount: boolean | null;
   isPrivate: boolean | null;
   rawPayload: string | null;
+  /**
+   * Timestamp of the most recent FAILED lookup attempt for this row, or
+   * `null` if the last attempt (or the only attempt) succeeded. Cleared
+   * back to `null` by any successful `upsertProfile` — see
+   * `lib/server/profiles/repository.ts`. Checked against its own short
+   * retry window (`PROFILE_LOOKUP_FAILURE_RETRY_HOURS`), independent of
+   * `lastFetchedAt` / `PROFILE_TTL_DAYS` (ticket #291).
+   */
+  lookupFailedAt: string | null;
   lastFetchedAt: string;
   createdAt: string;
   updatedAt: string;

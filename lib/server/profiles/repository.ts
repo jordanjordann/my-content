@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { db } from "@/lib/server/db";
+import { PROFILE_NEVER_FETCHED_SENTINEL } from "@/lib/server/profiles/constants";
 import type { Profile, ProfileInput } from "@/lib/server/profiles/types";
 
 /**
@@ -36,6 +37,7 @@ function mapRow(row: Record<string, unknown>): Profile {
     isBusinessAccount: toNullableBoolean(row.is_business_account),
     isPrivate: toNullableBoolean(row.is_private),
     rawPayload: (row.raw_payload as string) ?? null,
+    lookupFailedAt: (row.lookup_failed_at as string) ?? null,
     lastFetchedAt: row.last_fetched_at as string,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
@@ -83,6 +85,10 @@ export async function upsertProfile(input: ProfileInput): Promise<Profile> {
         is_business_account  = COALESCE(excluded.is_business_account, profiles.is_business_account),
         is_private           = COALESCE(excluded.is_private, profiles.is_private),
         raw_payload          = COALESCE(excluded.raw_payload, profiles.raw_payload),
+        -- A successful fetch always clears any prior failure marker — this
+        -- is what actually stops recordProfileLookupFailure below from
+        -- lingering on a row that now has real, current data (ticket #291).
+        lookup_failed_at     = NULL,
         last_fetched_at      = datetime('now'),
         updated_at           = datetime('now')
       RETURNING *
@@ -111,6 +117,62 @@ export async function upsertProfile(input: ProfileInput): Promise<Profile> {
     const fallback = await getProfileByUsername(input.platform, input.username);
     if (!fallback) {
       throw new Error(`upsertProfile: failed to read back ${input.platform}/${input.username}`);
+    }
+    return fallback;
+  }
+
+  return mapRow(row as unknown as Record<string, unknown>);
+}
+
+/**
+ * Ticket #291: records that a platform lookup FAILED, without pretending
+ * it succeeded. Distinct from `upsertProfile` in two ways:
+ *
+ *   - It never touches `follower_count` or any other fetched field — a
+ *     failure carries no new data to write, so an existing row's last
+ *     known values (real or still-null) are left exactly as they were.
+ *   - It does NOT bump `last_fetched_at`. That column means "this row's
+ *     data is current as of this time"; a failed attempt produced no new
+ *     data, so claiming a fresh `last_fetched_at` would make the row look
+ *     like a real refresh happened when only a negative result did. On a
+ *     row's FIRST failure (no existing row, so no real prior value to
+ *     preserve) the INSERT explicitly binds `PROFILE_NEVER_FETCHED_SENTINEL`
+ *     rather than leaving the column unnamed — `last_fetched_at` is
+ *     `NOT NULL DEFAULT (datetime('now'))` (migration 006), so an unnamed
+ *     column would silently default to "now" and recreate exactly this bug
+ *     (code review on ticket #291, blocking issue 1). On a repeat failure
+ *     (`ON CONFLICT`), the column is left untouched — it still holds
+ *     whatever `last_fetched_at` genuinely means for that row already,
+ *     either a real prior fetch or an earlier sentinel.
+ *
+ * `resolveProfile` checks `lookup_failed_at` against its own short retry
+ * window (`isLookupFailureFresh` / `PROFILE_LOOKUP_FAILURE_RETRY_HOURS`) to
+ * decide whether to skip the next fetch attempt — separately from the
+ * unrelated `PROFILE_TTL_DAYS` freshness check on `last_fetched_at`.
+ */
+export async function recordProfileLookupFailure(
+  platform: ProfileInput["platform"],
+  username: string,
+): Promise<Profile> {
+  const id = randomUUID();
+
+  const result = await db.execute({
+    sql: `
+      INSERT INTO profiles (id, platform, username, lookup_failed_at, last_fetched_at)
+      VALUES (?, ?, ?, datetime('now'), ?)
+      ON CONFLICT(platform, username) DO UPDATE SET
+        lookup_failed_at = datetime('now'),
+        updated_at       = datetime('now')
+      RETURNING *
+    `,
+    args: [id, platform, username, PROFILE_NEVER_FETCHED_SENTINEL],
+  });
+
+  const row = result.rows[0];
+  if (!row) {
+    const fallback = await getProfileByUsername(platform, username);
+    if (!fallback) {
+      throw new Error(`recordProfileLookupFailure: failed to read back ${platform}/${username}`);
     }
     return fallback;
   }

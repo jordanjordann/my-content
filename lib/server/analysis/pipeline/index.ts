@@ -13,6 +13,7 @@ import type { ProgressState } from "./progress";
 import { createProgress, updateProgress } from "./progress";
 import { resolveProfile } from "@/lib/server/profiles";
 import type { Profile, ProfileInput } from "@/lib/server/profiles";
+import { PROFILE_NEVER_FETCHED_SENTINEL } from "@/lib/server/profiles/constants";
 import type { OwnerProfileHint } from "@/lib/server/analysis/types";
 import { recomputeFingerprint } from "@/lib/server/fingerprint";
 import { computePerformanceBlock } from "@/lib/server/analysis/performance/computeBlock";
@@ -45,6 +46,33 @@ function toProfileInputHint(hint: OwnerProfileHint | null): Partial<ProfileInput
 /** Boolean -> SQLite 0/1, preserving NULL for "unknown" (never coerced to 0). */
 function toDbBool(value: boolean | null | undefined): number | null {
   return value == null ? null : value ? 1 : 0;
+}
+
+/**
+ * Ticket #291 code review round 3: whether `profile` has data from at least
+ * one successful platform fetch — i.e. `last_fetched_at` was actually bumped
+ * by `upsertProfile`, not left at `PROFILE_NEVER_FETCHED_SENTINEL` (a row
+ * that has only ever recorded failures — `lib/server/profiles/repository.ts`'s
+ * `recordProfileLookupFailure` doc comment: the sentinel is bound explicitly
+ * on a row's FIRST failure, and a repeat failure never touches the column).
+ *
+ * This is deliberately NOT the same question as "did the MOST RECENT lookup
+ * attempt fail" (`profile.lookupFailedAt`) — the round-2 fix's predicate
+ * (`!profile.lookupFailedAt`). A profile can carry both real, current data
+ * AND a fresh failure marker: a transient error on an attempt AFTER an
+ * earlier successful fetch (e.g. a real Instagram profile with
+ * `follower_count = 260675` that then hit one flaky retry) sets
+ * `lookup_failed_at` via `recordProfileLookupFailure`, which never touches
+ * `follower_count` or `last_fetched_at` — so the row's real data stays
+ * intact and usable even while the marker is set. Checking `lookupFailedAt`
+ * alone wrongly excluded exactly that row from `analyses.profile_id` and
+ * from the Tier 2 baseline pool it should still be eligible for; checking
+ * `lastFetchedAt` against the sentinel instead asks the question that
+ * actually matters — "has a real fetch ever landed on this row" — regardless
+ * of whether a later, unrelated attempt happened to fail.
+ */
+function hasRealProfileData(profile: Profile | null): profile is Profile {
+  return !!profile && profile.lastFetchedAt !== PROFILE_NEVER_FETCHED_SENTINEL;
 }
 
 export interface RunAnalysisOptions {
@@ -128,6 +156,20 @@ export async function runAnalysis({
     // `metadata`, so it must be assigned here, not just passed separately
     // to the DB write.
     metadata.followerCount = followerCount;
+
+    // Ticket #291 code review round 3: a `profiles` row that has NEVER had a
+    // successful fetch land (`hasRealProfileData()` — see its doc comment)
+    // carries no real signal at all. Attaching its `id` as `analyses.
+    // profile_id` would still make the analysis eligible for the
+    // live-comparator baseline pool (`computeBlock.ts` gates Tier 2 solely
+    // on `profileId != null` — `performance/baseline.ts`'s
+    // `(profile_id, perf_bucket_key, schema_version)` grouping), grouping it
+    // against other posts from the same creator on the strength of a row
+    // that has no real signal behind it. A row that DOES carry real data
+    // from a past successful fetch, even if a later, unrelated attempt then
+    // failed and left `lookup_failed_at` set, is still real data — see
+    // `hasRealProfileData()`.
+    const profileId = hasRealProfileData(profile) ? profile.id : null;
 
     report("summarizing", 1, "Generating title from caption...");
     const generatedTitle = await summarizeCaptionToTitle(metadata.caption ?? "");
@@ -313,9 +355,16 @@ export async function runAnalysis({
       commentCount: metadata.commentCount,
       likeAndViewCountsDisabled: metadata.likeAndViewCountsDisabled,
       followerCount,
-      audienceSourceFetchedAt: profile?.lastFetchedAt ?? null,
+      // Ticket #291 code review round 3: a failure-only row's `last_fetched_at`
+      // is the `PROFILE_NEVER_FETCHED_SENTINEL` epoch, not a real fetch time
+      // (`recordProfileLookupFailure`'s doc comment) — persisting it here
+      // would leak a fake `1970-01-01` into this column instead of an
+      // honest NULL. `hasRealProfileData()` gates on the same "has a real
+      // fetch ever landed" question `profileId` above uses, so this and
+      // `profileId` always agree on whether `profile` counts as real data.
+      audienceSourceFetchedAt: hasRealProfileData(profile) ? profile.lastFetchedAt : null,
       postDate: metadata.postDate,
-      profileId: profile?.id ?? null,
+      profileId,
       analysisId,
       schemaVersion: ANALYSIS_SCHEMA_VERSION,
     });
@@ -366,7 +415,7 @@ export async function runAnalysis({
         metadata.originalWidth ?? null,
         metadata.originalHeight ?? null,
         metadata.carouselItemCount ?? null,
-        profile?.id ?? null,
+        profileId,
         followerCount,
         analysisMode,
         coauthorProducersJson,
@@ -444,9 +493,14 @@ export async function runAnalysis({
         commentCount: metadata.commentCount,
         likeAndViewCountsDisabled: metadata.likeAndViewCountsDisabled,
         followerCount,
-        audienceSourceFetchedAt: profile?.lastFetchedAt ?? null,
+        // Ticket #291 code review round 3: same gating as the earlier
+        // computePerformanceBlock call above — a failure-only row's
+        // `last_fetched_at` is the `PROFILE_NEVER_FETCHED_SENTINEL` epoch,
+        // not a real fetch time, so this must stay gated through
+        // `hasRealProfileData()` here too, not just on the first call.
+        audienceSourceFetchedAt: hasRealProfileData(profile) ? profile.lastFetchedAt : null,
         postDate: metadata.postDate,
-        profileId: profile?.id ?? null,
+        profileId,
         analysisId,
         schemaVersion: ANALYSIS_SCHEMA_VERSION,
       });
@@ -520,9 +574,9 @@ export async function runAnalysis({
     // the analysis result is persisted, inside a try/catch that logs and
     // swallows — the same convention resolveProfile() already uses above.
     // A fingerprint failure must never fail an analysis.
-    if (profile?.id) {
+    if (profileId) {
       try {
-        await recomputeFingerprint(profile.id);
+        await recomputeFingerprint(profileId);
       } catch (error) {
         console.error("[PIPELINE] Fingerprint recompute failed:", error);
       }

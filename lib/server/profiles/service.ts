@@ -1,6 +1,11 @@
 import { getInstagramProfile, getYoutubeChannel } from "@/lib/server/scrapecreators";
-import { getProfileByUsername, upsertProfile } from "@/lib/server/profiles/repository";
-import { isStale } from "@/lib/server/profiles/helpers";
+import {
+  getProfileByUsername,
+  recordProfileLookupFailure,
+  upsertProfile,
+} from "@/lib/server/profiles/repository";
+import { isLookupFailureFresh, isStale } from "@/lib/server/profiles/helpers";
+import { PROFILE_LOOKUP_FAILURE_RETRY_HOURS } from "@/lib/server/profiles/constants";
 import type { Profile, ProfileInput, ProfilePlatform } from "@/lib/server/profiles/types";
 
 export interface ResolveProfileOptions {
@@ -100,16 +105,27 @@ async function fetchYoutubeChannelInput(handle: string): Promise<ProfileInput> {
 
 /**
  * Cache-then-fetch profile resolution (FR-7), in this exact order:
- *   1. Cached row exists and is fresh (< PROFILE_TTL_DAYS) -> return it,
- *      no API call.
- *   2. Else if the post payload's owner block already carried a follower
+ *   1. Cached row exists, carries no unresolved failure marker, and is
+ *      fresh (< PROFILE_TTL_DAYS) -> return it, no API call.
+ *   2. Else if the row's last lookup attempt FAILED and that failure is
+ *      still within its short retry window
+ *      (PROFILE_LOOKUP_FAILURE_RETRY_HOURS) -> return the cached row as-is,
+ *      no API call. This is ticket #291's fix: without it, a channel whose
+ *      lookup fails (e.g. YouTube hiding subscriberCount) re-spent a
+ *      ScrapeCreators credit on every single analysis, forever, because no
+ *      row was ever written to remember the failure.
+ *   3. Else if the post payload's owner block already carried a follower
  *      count -> upsert from that hint and return, no API call (saves the
  *      Profile-endpoint credit — TDD §1.1.5). For YouTube this never fires:
  *      the video payload's `channel` block carries no subscriber count.
- *   3. Else fetch from the platform-specific endpoint, upsert, return.
- *   4. If step 3 throws -> log and return the stale cached row if one
- *      exists, otherwise null. A profile failure must never fail an
- *      analysis; engagement rate simply comes out NULL.
+ *   4. Else fetch from the platform-specific endpoint, upsert (which also
+ *      clears any prior failure marker), return.
+ *   5. If step 4 throws -> log it (including a distinct, greppable
+ *      "lookup_failure" line so a repeating leak is visible), record the
+ *      failure via `recordProfileLookupFailure` so step 2 can short-circuit
+ *      the next call, then return the stale cached row if one exists,
+ *      otherwise null. A profile failure must never fail an analysis;
+ *      engagement rate simply comes out NULL.
  */
 export async function resolveProfile({
   platform,
@@ -119,8 +135,14 @@ export async function resolveProfile({
   const normalizedUsername = platform === "youtube" ? normalizeYoutubeHandle(username) : username;
   const cached = await getProfileByUsername(platform, normalizedUsername);
 
-  if (cached && !isStale(cached.lastFetchedAt)) {
-    return cached;
+  if (cached) {
+    if (!cached.lookupFailedAt && !isStale(cached.lastFetchedAt)) {
+      return cached;
+    }
+
+    if (cached.lookupFailedAt && isLookupFailureFresh(cached.lookupFailedAt)) {
+      return cached;
+    }
   }
 
   if (ownerHintHasFollowerCount(ownerHint)) {
@@ -148,6 +170,28 @@ export async function resolveProfile({
     return await upsertProfile(input);
   } catch (error) {
     console.error(`[Profiles] resolveProfile failed for ${platform}/${normalizedUsername}:`, error);
+    // Ticket #291: a distinct, greppable line — separate from the message
+    // above — so a repeating credit leak (the same channel failing on
+    // every analysis) is visible to whoever is watching logs/metrics,
+    // instead of silently recurring forever.
+    console.error(
+      `[Profiles] lookup_failure platform=${platform} username=${normalizedUsername} retry_after_hours=${PROFILE_LOOKUP_FAILURE_RETRY_HOURS}`,
+    );
+
+    // Code review on ticket #291: this write records the fact that the
+    // lookup failed — it must never itself become a second, unhandled
+    // failure that stops `return cached ?? null` below from running. A
+    // profile failure (recording or fetching) must never fail an analysis
+    // (same convention as the outer try/catch this is already inside).
+    try {
+      await recordProfileLookupFailure(platform, normalizedUsername);
+    } catch (recordError) {
+      console.error(
+        `[Profiles] failed to record lookup failure for ${platform}/${normalizedUsername}:`,
+        recordError,
+      );
+    }
+
     return cached ?? null;
   }
 }
