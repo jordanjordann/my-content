@@ -1,4 +1,11 @@
-import { ApiError, GoogleGenAI, FinishReason, type Part } from "@google/genai";
+import {
+  ApiError,
+  GoogleGenAI,
+  FinishReason,
+  MediaModality,
+  type Part,
+  type GenerateContentResponseUsageMetadata,
+} from "@google/genai";
 
 import { ANALYSIS_RESPONSE_SCHEMA } from "@/lib/server/analysis/schema";
 import type { PreparedGeminiPart } from "@/lib/server/analysis/media";
@@ -21,17 +28,47 @@ function isFrameSamplingError(error: unknown): boolean {
 }
 
 /**
- * Ticket #295: only a bare `fileData` part with NO `mimeType` can hit the
- * frame-sampling trap — that shape is unique to the Gemini-native YouTube
- * URL path (`fileData: { fileUri }`, mimeType deliberately omitted, see
- * `media/types.ts`). Every Instagram part either sets `mimeType` (File
- * API upload) or is `inlineData` (image) — this guard therefore can never
- * fire on the Instagram path, by construction, not by platform-checking.
+ * Ticket #295 code review, B2: the ONLY mechanical proof that Gemini actually
+ * decoded a video, rather than answering off title/description text alone,
+ * is `usageMetadata.promptTokensDetails` carrying a `VIDEO`-modality entry
+ * with a positive token count — the exact signal
+ * `docs/audit/ANALYSIS-288-youtube-extraction.md` §3's spike used to prove
+ * "option 3 works" (real capture: `{"modality":"VIDEO","tokenCount":6049}`
+ * alongside a fabrication test that only passed because the model had really
+ * seen the frames). `usageMetadata` is a plain, all-optional class
+ * (`GenerateContentResponseUsageMetadata`, `genai.d.ts`) — every field,
+ * including `promptTokensDetails` and each entry's `modality`/`tokenCount`,
+ * can be absent, so this reads defensively rather than asserting shape.
+ * Do NOT infer video modality from `mimeType`, part shape, or any
+ * pre-call assumption — this is the only post-call, response-derived check.
  */
+export function hasVideoModalityEvidence(usageMetadata: GenerateContentResponseUsageMetadata | undefined): boolean {
+  return (usageMetadata?.promptTokensDetails ?? []).some(
+    (detail) => detail.modality === MediaModality.VIDEO && (detail.tokenCount ?? 0) > 0,
+  );
+}
+
+/**
+ * Ticket #295, M1 (code review): only a bare `fileData` part with NO
+ * `mimeType` can hit the frame-sampling trap — that shape is
+ * `YoutubeNativeUrlPart`, a genuine discriminated variant of
+ * `PreparedGeminiPart` (`media/types.ts`), not merely a convention on a
+ * single widened type. `UploadedVideoPart` (Instagram, File API upload)
+ * REQUIRES `mimeType: string`; `InlineImagePart` has no `fileData` key at
+ * all — this guard therefore cannot fire on either, enforced by the type
+ * checker at the point every part is constructed, not just by
+ * platform-checking here.
+ */
+function isBareYoutubeUrlPart(
+  part: PreparedGeminiPart,
+): part is Extract<PreparedGeminiPart, { fileData: { fileUri: string; mimeType?: undefined } }> {
+  return "fileData" in part && part.fileData.mimeType === undefined && part.videoMetadata === undefined;
+}
+
 function withFrameSamplingRetry(parts: PreparedGeminiPart[]): PreparedGeminiPart[] | null {
   let changed = false;
   const retried = parts.map((part) => {
-    if ("fileData" in part && part.fileData.mimeType === undefined && part.videoMetadata === undefined) {
+    if (isBareYoutubeUrlPart(part)) {
       changed = true;
       return { ...part, videoMetadata: { fps: FRAME_SAMPLING_RETRY_FPS } };
     }
@@ -46,10 +83,24 @@ function withFrameSamplingRetry(parts: PreparedGeminiPart[]): PreparedGeminiPart
  * precede the text prompt, in slide order — a carousel's N media parts all
  * go to Gemini in ONE call, not one call per slide.
  */
+export interface AnalyzeContentResult {
+  text: string;
+  raw: string;
+  /**
+   * Raw `usageMetadata` off the Gemini response — surfaced (not discarded)
+   * per ticket #295 code review B2, so a caller can prove video modality was
+   * actually decoded rather than trusting a pre-call assumption. `undefined`
+   * only in the already-guarded-against case where the SDK omits it (the
+   * `finishReason` check above already fails closed before this is reached
+   * in every real success path).
+   */
+  usageMetadata: GenerateContentResponseUsageMetadata | undefined;
+}
+
 export async function analyzeContent(
   mediaParts: PreparedGeminiPart[],
   prompt: string,
-): Promise<{ text: string; raw: string }> {
+): Promise<AnalyzeContentResult> {
   try {
     return await callGemini(mediaParts, prompt);
   } catch (error) {
@@ -70,7 +121,7 @@ export async function analyzeContent(
   }
 }
 
-async function callGemini(mediaParts: PreparedGeminiPart[], prompt: string): Promise<{ text: string; raw: string }> {
+async function callGemini(mediaParts: PreparedGeminiPart[], prompt: string): Promise<AnalyzeContentResult> {
   const parts: Part[] = [...mediaParts];
 
   parts.push({ text: prompt });
@@ -131,5 +182,5 @@ async function callGemini(mediaParts: PreparedGeminiPart[], prompt: string): Pro
   console.log("[GEMINI] Response received:");
   console.log(text);
 
-  return { text, raw: text };
+  return { text, raw: text, usageMetadata: response.usageMetadata };
 }

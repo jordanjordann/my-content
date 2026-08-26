@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "@google/genai";
+import { ApiError, MediaModality } from "@google/genai";
 
 /**
  * Ticket #66 code review follow-up: `generate.ts` has no test file at all,
@@ -47,7 +47,16 @@ vi.mock("@google/genai", () => {
     }
   }
 
-  return { GoogleGenAI, FinishReason, ApiError };
+  enum MediaModality {
+    MODALITY_UNSPECIFIED = "MODALITY_UNSPECIFIED",
+    TEXT = "TEXT",
+    IMAGE = "IMAGE",
+    VIDEO = "VIDEO",
+    AUDIO = "AUDIO",
+    DOCUMENT = "DOCUMENT",
+  }
+
+  return { GoogleGenAI, FinishReason, ApiError, MediaModality };
 });
 
 vi.mock("@/lib/server/analysis/schema", () => ({
@@ -153,7 +162,11 @@ describe("analyzeContent — finishReason guard (ticket #66 code review)", () =>
     const analyzeContent = await importAnalyzeContent();
 
     const result = await analyzeContent(dummyParts, "prompt");
-    expect(result).toEqual({ text: '{"style":{}}', raw: '{"style":{}}' });
+    expect(result).toEqual({
+      text: '{"style":{}}',
+      raw: '{"style":{}}',
+      usageMetadata: { candidatesTokenCount: 300 },
+    });
   });
 });
 
@@ -199,7 +212,11 @@ describe("analyzeContent — YouTube frame-sampling 400 retry (ticket #295)", ()
     const analyzeContent = await importAnalyzeContent();
     const result = await analyzeContent(bareYoutubePart, "prompt");
 
-    expect(result).toEqual({ text: '{"style":{}}', raw: '{"style":{}}' });
+    expect(result).toEqual({
+      text: '{"style":{}}',
+      raw: '{"style":{}}',
+      usageMetadata: { candidatesTokenCount: 300 },
+    });
     expect(generateContentMock).toHaveBeenCalledTimes(2);
 
     const secondCallArgs = generateContentMock.mock.calls[1]![0] as { contents: unknown[] };
@@ -211,12 +228,29 @@ describe("analyzeContent — YouTube frame-sampling 400 retry (ticket #295)", ()
 
   it("does not retry, and rethrows, a 'No frames' 400 when there is no bare fileData part to raise fps on", async () => {
     const uploadedVideoPart = [{ fileData: { fileUri: "files/abc123", mimeType: "video/mp4" } }];
-    generateContentMock.mockRejectedValueOnce(
-      new ApiError({
-        status: 400,
-        message: JSON.stringify({ error: { code: 400, message: "No frames to extract", status: "INVALID_ARGUMENT" } }),
-      }),
-    );
+    generateContentMock
+      .mockRejectedValueOnce(
+        new ApiError({
+          status: 400,
+          message: JSON.stringify({ error: { code: 400, message: "No frames to extract", status: "INVALID_ARGUMENT" } }),
+        }),
+      )
+      // M3 (code review): give the mock a SECOND resolved value, matching a
+      // normal successful STOP response. Under a mutation that widens the
+      // fps-retry gate to match ANY `fileData` part (dropping the
+      // `mimeType === undefined` check), this test's own production code
+      // would call `generateContent` a second time. Without a configured
+      // second resolution, that second call resolves to `undefined`, and
+      // reading `response.candidates` on it throws a `TypeError` — the test
+      // then fails on an incidental crash instead of on the
+      // `toHaveBeenCalledTimes(1)` assertion its name is actually about.
+      // With this second value in place, a widened-gate mutation makes the
+      // test fail cleanly on "called twice", not on an unrelated TypeError.
+      .mockResolvedValueOnce({
+        candidates: [{ finishReason: "STOP" }],
+        usageMetadata: { candidatesTokenCount: 300 },
+        text: '{"style":{}}',
+      });
 
     const analyzeContent = await importAnalyzeContent();
 
@@ -245,5 +279,65 @@ describe("analyzeContent — YouTube frame-sampling 400 retry (ticket #295)", ()
 
     await expect(analyzeContent(bareYoutubePart, "prompt")).rejects.toThrow(/network timeout/);
     expect(generateContentMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Ticket #295 code review, B2: `hasVideoModalityEvidence` is the ONE gate
+ * standing between "Gemini was sent a video" and "the row honestly records
+ * that Gemini decoded one". Direct unit coverage here, independent of the
+ * pipeline-level tests in `youtubeNativeUrl.test.ts` — if this predicate is
+ * ever loosened (e.g. treating a zero-token or absent-`tokenCount` entry as
+ * evidence, or matching on any modality instead of specifically `VIDEO`),
+ * these fail without needing to exercise the whole pipeline.
+ */
+describe("hasVideoModalityEvidence (ticket #295 code review, B2)", () => {
+  afterEach(() => {
+    vi.resetModules();
+  });
+
+  async function importHasVideoModalityEvidence() {
+    const mod = await import("@/lib/server/analysis/gemini/generate");
+    return mod.hasVideoModalityEvidence;
+  }
+
+  it("is true when promptTokensDetails contains a VIDEO entry with a positive tokenCount", async () => {
+    const hasVideoModalityEvidence = await importHasVideoModalityEvidence();
+    expect(
+      hasVideoModalityEvidence({
+        promptTokensDetails: [
+          { modality: MediaModality.TEXT, tokenCount: 500 },
+          { modality: MediaModality.VIDEO, tokenCount: 6049 },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("is false when there is no VIDEO entry at all (text-only / metadata-only response)", async () => {
+    const hasVideoModalityEvidence = await importHasVideoModalityEvidence();
+    expect(
+      hasVideoModalityEvidence({
+        promptTokensDetails: [{ modality: MediaModality.TEXT, tokenCount: 500 }],
+      }),
+    ).toBe(false);
+  });
+
+  it("is false when a VIDEO entry exists but its tokenCount is 0 — presence alone is not evidence", async () => {
+    const hasVideoModalityEvidence = await importHasVideoModalityEvidence();
+    expect(
+      hasVideoModalityEvidence({
+        promptTokensDetails: [{ modality: MediaModality.VIDEO, tokenCount: 0 }],
+      }),
+    ).toBe(false);
+  });
+
+  it("is false when usageMetadata itself is undefined", async () => {
+    const hasVideoModalityEvidence = await importHasVideoModalityEvidence();
+    expect(hasVideoModalityEvidence(undefined)).toBe(false);
+  });
+
+  it("is false when promptTokensDetails is undefined", async () => {
+    const hasVideoModalityEvidence = await importHasVideoModalityEvidence();
+    expect(hasVideoModalityEvidence({})).toBe(false);
   });
 });
