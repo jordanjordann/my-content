@@ -423,74 +423,201 @@ no successor class. Everything moves onto the unified client.
 
 ## Gemini — YouTube URL as direct video input (`fileData.fileUri`) — LIVE (2026-08-24, issue #288 spike)
 
-**Recorded here late, by the PR #299 code review (2026-08-26), not by the original spike
-session.** `docs/audit/ANALYSIS-288-youtube-extraction.md` §3 states this section was
-"recorded in `.claude/context/verified-facts.md`" — **that claim was checked while acting
-on PR #299's review and found FALSE: no section with this title existed in this file
-before this edit.** The spike happened and its result is real (ticket #295 shipped and
-works, per PR #299's own reviewer independently confirming the wire shape at HEAD against
-this exact codebase), but the promised write-up to this file never landed. This section
-transcribes the spike's result from the audit doc's own report of it — **not a fresh live
-call** made while fixing PR #299's review. Treat the specific numbers below as secondhand
-(audit-doc-sourced), not as independently re-verified in this session; the SDK mechanics
-they rely on (`usageMetadata.promptTokensDetails`, `ModalityTokenCount.modality`) ARE
-independently confirmed elsewhere in this same file (see "Gemini SDK — `@google/genai`"
-above, and the two real `promptTokensDetails` captures with populated `VIDEO` entries in
-the `ANALYSIS_RESPONSE_SCHEMA` V1/V3 sections below).
+> **Provenance note (2026-08-26 reconciliation).** This section is the
+> **firsthand** record, written from the actual 2026-08-24 spike run. It was
+> recorded on disk that day but **never committed** — it sat as an uncommitted
+> working-tree change in the main checkout, so it was invisible to anyone on a
+> branch. The backend developer on `be/295-youtube-gemini-native` correctly
+> found it missing and re-added a **secondhand** version transcribed from
+> `docs/audit/ANALYSIS-288-youtube-extraction.md` §3 (commit `928ec8c`). The
+> two versions were compared line by line on 2026-08-26: **they contradict
+> each other on nothing.** They have been merged here into one section —
+> firsthand text wins, and the developer's correct additions (the
+> `createPartFromUri()` note, the `hasVideoModalityEvidence()` linkage, the
+> fps-retry gating, the #292 refusal-handling note, and the corrected
+> `cleanYouTubeUrl()` status) are folded in. No duplicate remains.
 
-- **Tested:** 2026-08-24, issue #288 spike (tech lead John, per the audit doc). **Not
-  re-run in this PR #299 fix session** — no live Gemini calls were made while addressing
-  the review (budget constraint, explicit in this fix's own brief).
-- **Working request shape on `@google/genai@2.13.0`:** `{ fileData: { fileUri: "<public
-  YouTube URL>" } }`, `mimeType` key deliberately omitted (not merely `undefined`).
-  `createPartFromUri()` is NOT used for this path (that helper always sets `mimeType`,
-  see "Gemini SDK" above) — the part is built by hand.
-- **The `{ type: "video", uri }` form documented on some Gemini docs pages does NOT exist
-  on this installed SDK version.** `Part` (`genai.d.ts`) has no `type`/`uri` member — that
-  page describes a newer, not-yet-adopted unified content surface. Do not build against it.
-- **`youtube.com/shorts/<id>` is accepted directly by Gemini**, with no `watch?v=`
-  rewrite needed. Consequently `cleanYouTubeUrl()` (which used to blank the query string
-  before handing a URL to `yt-dlp`) must not be applied on this path — ticket #295 removed
-  it as dead code for exactly this reason.
-- **Mechanical proof that Gemini actually decoded the video (the fact this whole section
-  exists to support):** the spike's `usageMetadata.promptTokensDetails` contained a
-  `{"modality":"VIDEO","tokenCount":6049}` entry (plus `{"modality":"AUDIO","tokenCount":
-  31}`), AND a designed fabrication check passed — a clip titled "Shortest Video on
-  Youtube" with no visual metadata in its title/description, where the model nonetheless
-  correctly described a ginger-and-white cat mid-meow on beige tile with a Greek-key rug
-  border (ground truth: the video's own public thumbnail). **This is the exact signal
-  `hasVideoModalityEvidence()` (`lib/server/analysis/gemini/generate.ts`, added in this PR
-  #299 fix round) checks for** — a `VIDEO`-modality `ModalityTokenCount` entry with a
-  positive `tokenCount` in `promptTokensDetails`.
-- **Trap: default frame sampling can starve a short clip.** With no `videoMetadata` set,
-  a ~1s clip returned a genuine HTTP 400 `ApiError`, message containing "No frames to
-  extract with given parameters" — NOT an access/availability failure (the video was
-  already fetched by Gemini). Root cause: default `videoMetadata.fps` sampling is 1.0,
-  which can round to zero sampled frames on a sub-2s clip. Fix: retry exactly once with
-  `videoMetadata: { fps: 24 }` on the SAME part. Ticket #295 implements this retry, gated
-  strictly to a bare (`mimeType`-less) `fileData` part so it cannot fire on an
-  Instagram/File-API-uploaded part (see `media/types.ts`'s `YoutubeNativeUrlPart` vs.
-  `UploadedVideoPart` discriminated types, PR #299 review M1).
-- **Documented limits of this preview feature (audit doc, not independently re-verified
-  here):** public videos only (private/region-blocked/removed videos fail, structurally
-  indistinguishable from any other "Gemini could not obtain the video" failure — the
-  pipeline's existing refusal handling, #292, covers this without a bespoke branch);
-  free tier ~8h of video/day; ~300 input tokens/sec of video at default resolution
-  (~18k tokens for a 60s Short); ~100 tokens/sec at low resolution; raising `fps` directly
-  multiplies input token cost (a 1s clip at fps 24 billed ~6049 VIDEO tokens vs. a normal
-  ~300 tokens/sec at the default rate).
-- **Cost of the original spike:** 2 Gemini `generateContent` calls, 0 ScrapeCreators
-  credits (per the audit doc). **Cost of writing this section:** 0 — no new live calls,
-  transcription only.
+- **Captured:** 2026-08-24, tech lead (John), option-3 spike on issue #288.
+- **Authorisation:** owner-approved, budget 1 Gemini call (a 2nd was permitted
+  if one more would settle it — both were used, see the ledger below).
+  **ZERO ScrapeCreators credits spent; no ScrapeCreators call was made.**
+- **SDK:** `@google/genai@2.13.0` (re-verified from
+  `node_modules/@google/genai/package.json` again during the 2026-08-26
+  reconciliation — still 2.13.0).
+- **Model:** `gemini-2.5-flash` — the same model production uses
+  (`lib/server/analysis/gemini/generate.ts`).
+- **Spike script (throwaway, outside the repo):** `/tmp/spike-gemini-yt.mjs`.
+- **The 2026-08-26 reconciliation made NO live calls.** Nothing below was
+  re-run; only the on-disk/SDK/code cross-checks noted inline were redone.
 
-### What is NOT claimed by this section
+### ⚠️⚠️ VERDICT: IT WORKS. Google fetches the YouTube video server-side.
 
-- That this section's specific numbers (6049 VIDEO tokens, the exact fabrication-test
-  wording, the 8h/day free-tier figure) were independently re-verified against a live
-  call during the PR #299 fix. They are carried over from the audit doc's own report of
-  the 2026-08-24 spike, one level of indirection removed from a fresh capture.
-- That the preview feature's public-videos-only limitation, or its rate limits, have
-  changed or been re-checked since 2026-08-24.
+Our own egress IP does not matter on this path — we never touch YouTube.
+`usageMetadata.promptTokensDetails` came back with a **`"modality": "VIDEO"`**
+entry of 6049 tokens and an **`"AUDIO"`** entry of 31 tokens. Those modality
+buckets only exist if the service actually decoded media. This is the
+mechanical proof, independent of the text answer.
+
+**This fact is now load-bearing, not trivia.** `hasVideoModalityEvidence()`
+(`lib/server/analysis/gemini/generate.ts`, PR #299) gates whether a row may
+claim `analysis_mode = 'full_video'`: it requires a `VIDEO`-modality
+`ModalityTokenCount` entry with a positive `tokenCount` in
+`promptTokensDetails`. If Google ever stops emitting that bucket, YouTube rows
+silently stop earning `full_video` — treat this section as a contract to
+re-verify, not as settled history.
+
+### The working request shape ON OUR INSTALLED SDK
+
+`fileData.fileUri`. **The newer `{"type": "video", "uri": ...}` form in
+Google's current public docs does NOT exist on `@google/genai@2.13.0`** — that
+doc page describes the newer unified `input` surface (its example names model
+`gemini-3.7-flash`). Our `Part` interface (`genai.d.ts:10537`) has no `type`
+or `uri` member at all. Do not port the doc snippet verbatim.
+
+```ts
+await ai.models.generateContent({
+  model: "gemini-2.5-flash",
+  contents: [
+    { fileData: { fileUri: "https://www.youtube.com/shorts/<id>" } },
+    { text: prompt },
+  ],
+  config: { temperature: 0, maxOutputTokens: 8192 },
+});
+```
+
+Observed wire body, POSTed to
+`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`:
+
+```json
+{"contents":[{"parts":[{"fileData":{"fileUri":"https://www.youtube.com/shorts/tPEE9ZwTmy0"},"videoMetadata":{"fps":24}},{"text":"..."}],"role":"user"}],"generationConfig":{"temperature":0,"maxOutputTokens":8192}}
+```
+
+- **`mimeType` is NOT required** and was deliberately omitted — the key is
+  absent, not set to `undefined`. `FileData` (`genai.d.ts:4036`) types it
+  optional; Google's docs confirm it is not needed for a YouTube URL. Omitting
+  it returned HTTP 200.
+- **Do not use `createPartFromUri()` on this path.** Its signature is
+  `createPartFromUri(uri: string, mimeType: string, ...)` — `mimeType` is a
+  *required* positional argument, so the helper can never produce the
+  bare-`fileData` part this path needs. Build the part by hand.
+  *(Re-verified 2026-08-26 against `genai.d.ts:2653`.)*
+- No `ai.files.upload`, no File API asset, no `/tmp` download, no `yt-dlp`.
+  The URL goes straight into the part.
+
+### `youtube.com/shorts/<id>` IS accepted directly — no rewrite needed
+
+The exact string `https://www.youtube.com/shorts/tPEE9ZwTmy0` was accepted and
+resolved. **No rewrite to `watch?v=<id>` is necessary.**
+
+This is why `cleanYouTubeUrl()` — the helper that blanked the query string
+before handing a URL to `yt-dlp`, and which would have destroyed a
+`watch?v=<id>` id — must never be applied on this path. **Ticket #295 has since
+deleted `cleanYouTubeUrl()` outright as dead code** (verified 2026-08-26: no
+implementation or caller remains; only the explanatory comment at
+`lib/server/analysis/fetcher/youtube.ts:15-17` mentions it). Do not reintroduce
+any URL-normalisation step here.
+
+### ⚠️ TRAP: "No frames to extract" on very short clips — raise `fps`
+
+Call 1 sent `fileData` alone with no `videoMetadata`, and returned:
+
+```
+HTTP 400 INVALID_ARGUMENT
+"No frames to extract with given parameters. Verify fps, start/end time and video duration."
+```
+
+**Read this error correctly: it is NOT an access/permission/fetch failure.**
+Google had already fetched the video; it failed at the frame-sampling step.
+The test clip is 1000 ms long and the default sampling rate is **1.0 fps**
+(`VideoMetadata.fps`, `genai.d.ts:15577-15584`: "If not specified, the default
+value is 1.0. The valid range is (0.0, 24.0]"). One second at 1 fps rounded to
+zero frames.
+
+Call 2 added `videoMetadata: { fps: 24 }` to the **same part** and returned
+HTTP 200. A normal 15–60 s Short will not hit this at the default fps; a
+sub-2-second clip can. Any implementation should treat this specific 400 as a
+retryable-with-higher-fps case or guard on duration, **not** as "video
+unavailable".
+
+**How #295 implements it:** retry exactly once, only on this error pattern,
+and **gated strictly to a bare (`mimeType`-less) `fileData` part** so the retry
+can never fire on an Instagram / File-API-uploaded part. See the
+`YoutubeNativeUrlPart` vs. `UploadedVideoPart` discriminated union in
+`lib/server/analysis/media/types.ts` (PR #299 review, M1).
+
+### The model genuinely SAW the video — fabrication test passed
+
+Designed so caption paraphrase is detectable. Test video
+`https://www.youtube.com/shorts/tPEE9ZwTmy0` is titled **"Shortest Video on
+Youtube"** — the title, description and keywords describe **nothing visual**
+(full metadata already on record in the `/v1/youtube/video` section above).
+Ground truth was taken from the free public thumbnail
+`https://img.youtube.com/vi/tPEE9ZwTmy0/hqdefault.jpg` (no credits, no API),
+viewed directly before the call.
+
+| Asked | Thumbnail ground truth | Model answered |
+|---|---|---|
+| Creature + colour | ginger/orange tabby, white chest | "a cat, which is orange/ginger and white" |
+| Mouth | open mid-meow | "opening its mouth wide, as if meowing" |
+| Floor | light beige ceramic tile | "tiled and is a light, yellowish-beige color" |
+| Rug border pattern | **Greek key / meander border** | "Its border has a **Greek key (meander) pattern**" |
+| On-screen text | none | "NONE" |
+
+The Greek-key answer is the decisive one: that detail is not in the title,
+description, keywords or comments, and is not guessable. Combined with the
+`VIDEO`/`AUDIO` token modalities, this is a real vision read, not caption-grade
+text. `finishReason: "STOP"`.
+
+### Limits that bite us
+
+- **Preview.** Google documents the YouTube-URL feature as *in preview and
+  available at no charge*. Preview features can change or be withdrawn — this
+  is a product risk to accept consciously, not a stable contract. `[DOC]`
+- **Public videos only** — private and unlisted videos are rejected. `[DOC]`
+  Not a constraint for us: users paste public Shorts. Operationally, a
+  private / removed / region-blocked video fails in a way that is **not**
+  structurally distinguishable from any other "Gemini could not obtain the
+  video" failure, so the existing refusal path (#292) covers it — no bespoke
+  branch is warranted. *(That indistinguishability is an engineering
+  observation, not a documented guarantee.)*
+- **Free tier caps total YouTube video ingested at 8 hours/day**; paid tier has
+  no length-based limit. Max 10 videos per request on Gemini 2.5+. `[DOC]`
+- **Token cost ≈ 300 tokens per second of video at default media resolution,
+  ≈ 100 tokens/sec at low.** `[DOC]` A 60 s Short ≈ 18k tokens at default. It
+  is **not free**, and it is charged as normal input tokens even though the
+  YouTube fetch itself is not billed. (For scale: the production call sets
+  `maxOutputTokens: 32768`, which is an *output* budget and does not bound
+  this input cost.)
+- **`fps` multiplies the cost.** Our 1-second clip at `fps: 24` billed **6049
+  VIDEO tokens** — far above the ~300/sec default figure, because 24 frames
+  were sampled instead of 1. Do not raise `fps` globally; raise it only as the
+  targeted fix for the "No frames to extract" 400.
+- Media resolution is settable per-part via `Part.mediaResolution`
+  (`PartMediaResolutionLevel.MEDIA_RESOLUTION_LOW | MEDIUM | ...`,
+  `genai.d.ts:10589-10611`). **Not exercised in this spike** — the low-res
+  ≈100 tok/sec figure above is documentation, not a measurement.
+- `videoMetadata.startOffset` / `endOffset` exist for clipping. Not exercised.
+
+### Call ledger — this spike
+
+| # | Request | Result |
+|---|---|---|
+| 1 | `fileData.fileUri` = shorts URL, no `videoMetadata` | HTTP 400, "No frames to extract" (video WAS fetched) |
+| 2 | same + `videoMetadata: { fps: 24 }` | **HTTP 200**, correct visual answers, `STOP` |
+
+**Total: 2 Gemini `generateContent` calls (1 billed for output, 1 rejected at
+400). 0 ScrapeCreators credits. 0 rows written. Nothing deployed.**
+**The 2026-08-26 reconciliation added 0 further calls.**
+
+### What this section deliberately does NOT claim
+
+- That any figure here was re-measured after 2026-08-24. The numbers are the
+  original firsthand capture; nothing has been re-run since.
+- That the preview feature's limits (public-videos-only, 8h/day free tier,
+  token rates) still hold today. They are `[DOC]` values as of 2026-08-24 and
+  a preview surface can move without notice.
+- That low media resolution, `startOffset`/`endOffset`, or multi-video requests
+  behave as documented — none of those were exercised.
 
 ---
 
