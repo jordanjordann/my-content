@@ -1644,7 +1644,7 @@ requirement. **Nothing 3A needs is unsupported.** Every row is from Railway's pr
 | 3A requirement | Railway | Verdict |
 |---|---|---|
 | **A long-lived background worker that NEVER sleeps** — §10.4's whole process model | Railway's sleep feature ("app sleeping", now branded **Serverless**) is **OFF by default and toggled per-service** in *service settings → Deploy → Serverless* ([docs.railway.com/guides/optimize-usage](https://docs.railway.com/guides/optimize-usage)). We simply never enable it on the worker. | ✅ **Satisfied, and better than Render.** §11.2 disqualified Render because its free tier spins a service down after 15 minutes *on an inbound-traffic heuristic we do not control*. Railway's is an explicit opt-in switch — the same "under our control, not the platform's" property that made Fly's `auto_stop` acceptable. |
-| **The `yt-dlp` binary + ffmpeg** | Railway builds and deploys from a **user-supplied `Dockerfile`** at the source root ([docs.railway.com/guides/dockerfiles](https://docs.railway.com/guides/dockerfiles)); no documented restriction on installing system packages in the build. | ✅ **Satisfied.** §11.3's Dockerfile is written once and is **host-agnostic** — it is the same artefact under Fly or Railway. This was never the risky part. |
+| ~~**The `yt-dlp` binary + ffmpeg**~~ — **NO LONGER A REQUIREMENT (#295, 2026-08-24)** | Railway builds and deploys from a **user-supplied `Dockerfile`** at the source root ([docs.railway.com/guides/dockerfiles](https://docs.railway.com/guides/dockerfiles)); no documented restriction on installing system packages in the build. | ✅ **Satisfied, and now moot.** #295 moved YouTube onto Gemini's native URL input (`fileData.fileUri`) and **deleted `yt-dlp` from the codebase and the Dockerfile**; ffmpeg was never used (§11.3a C). The image installs **no external binary** — it is plain `node:${NODE_VERSION}-slim`. Kept in the table because the Railway capability check was real; the requirement it checked is gone. |
 | **Two processes from one image** (`next start` + `scripts/worker.ts`) | Multiple services from one repo, each with its own **custom start command** ([docs.railway.com/guides/services](https://docs.railway.com/guides/services), monorepo deployment). | ✅ **Satisfied.** The `fly.toml` `[processes]` block in §11.3 becomes two Railway services sharing one repo/Dockerfile. |
 | **A worker with no HTTP port / no public domain** | A public domain is opt-in on Railway; services communicate over private networking. | ✅ **Satisfied.** |
 | **SSE progress transport** (§10.4) | Needs a long-lived Node process, which the web service is. | ✅ **Satisfied** — this was a consequence of OR-14, not of the host. |
@@ -1662,6 +1662,17 @@ have been escalated rather than absorbed — it is not.
 > exist), the secret list (it omits secrets that break a production boot), and the migration list. The
 > paragraph is **kept unedited** so the amendment can be read against what it corrects. **§11.3a is the
 > version in force.**
+>
+> ⚠️ **A FOURTH CLAIM IS NOW ALSO WRONG — `yt-dlp` (2026-08-24, ticket #295, PR #295/#299, `a0f28aa`).** The
+> paragraph below describes the image as "Node + `yt-dlp` + ffmpeg". **Neither binary is in the image.** ffmpeg
+> never was (§11.3a C); `yt-dlp` was removed outright when the YouTube path moved to **Gemini's native YouTube
+> URL input** — the bare public URL is handed to Gemini as a `fileData.fileUri` part and **Google fetches the
+> video server-side**, so this codebase does not download YouTube video at all. `extractVideoUrl`,
+> `cleanYouTubeUrl` and the `/tmp` download step are deleted; the Dockerfile's `yt-dlp` install stage and its
+> `ARG YT_DLP_VERSION` / `ARG TARGETARCH` are gone with it. **The current image is plain
+> `node:${NODE_VERSION}-slim` with `ARG NODE_VERSION` and `ARG APP_SESSION_SECRET` as its only build args.**
+> Authoritative detail: `.claude/context/verified-facts.md` → *"Gemini — YouTube URL as direct video input
+> (`fileData.fileUri`)"* and the Railway *"Dockerfile auto-detection and `ARG` build variables"* section.
 
 **Updated for OR-23.** `Dockerfile` (Node + `yt-dlp` + ffmpeg — unchanged and host-agnostic), **two Railway
 services from the one repo/Dockerfile** with distinct start commands (`next start` and the worker entrypoint,
@@ -1723,15 +1734,25 @@ that reads each variable:
 #### C. **ffmpeg is not needed in the image.** §11.3 and §11.2b both name it; the code does not use it.
 
 `ffmpeg` appears **nowhere** in `lib/`, `app/` or `scripts/`. `ffmpeg-static` is in `package.json` dependencies
-but **nothing imports it** — it is dead weight. The only external binary the code actually shells out to is
-`yt-dlp`, at `lib/server/analysis/fetcher/youtube.ts:189`, invoked via `execFile("yt-dlp", ...)` — so it must be
-on `PATH` — with `-g --skip-download` and `-f "best[height<=1080]"`. That flag set **prints a URL and exits**: it
-never downloads, and `best[...]` selects a single progressive stream, so **no muxing step is ever reached**, which
-is the only thing that would pull in ffmpeg. The download itself is done by the app's own downloader.
+but **nothing imports it** — it is dead weight.
 
-**Effect on sizing: the Dockerfile risk §11.2b called "the risky part" is roughly halved.** It is one binary on
-`PATH`, not a media toolchain. It remains genuinely unverified until someone runs `docker build && docker run`,
-which is exactly why the first deploy ticket is the Dockerfile.
+> ⚠️ **UPDATED 2026-08-24 (ticket #295, `a0f28aa`) — the image now needs NO external binary at all.** When this
+> amendment was written the one remaining shell-out was `yt-dlp` (`execFile("yt-dlp", "-g", "--skip-download",
+> "-f", "best[height<=1080]", ...)` in `lib/server/analysis/fetcher/youtube.ts`), which is why C concluded "one
+> binary on `PATH`, not a media toolchain". **That shell-out no longer exists.** #295 replaced the whole
+> download path with **Gemini's native YouTube URL input**: the bare public URL goes to Gemini as a
+> `fileData.fileUri` part and **Google fetches the video server-side** — no `yt-dlp`, no `ai.files.upload`, no
+> `/tmp` download for YouTube. `extractVideoUrl` and `cleanYouTubeUrl` are deleted and have no callers left.
+
+**The current Dockerfile, verified at `main`.** Stages are `deps` → `builder` → `runner`, all on
+`node:${NODE_VERSION}-slim`. There is **no `yt-dlp` install stage** and therefore **no `ARG YT_DLP_VERSION` and
+no `ARG TARGETARCH`** (`TARGETARCH` existed only to pick the per-architecture `yt-dlp` binary). The only build
+args are **`ARG NODE_VERSION`** and **`ARG APP_SESSION_SECRET`** (§B — the build-time dummy). Cross-check:
+`.claude/context/verified-facts.md` → Railway *"Dockerfile auto-detection and `ARG` build variables"*.
+
+**Effect on sizing: the Dockerfile risk §11.2b called "the risky part" is now gone, not halved.** A stock
+`node:*-slim` image with no `apt-get` of a third-party binary and no per-arch download step is ordinary. The
+first deploy ticket is still the Dockerfile, but it no longer carries binary-provisioning risk.
 
 #### D. §11 never mentioned auth, and auth is deploy-critical.
 
@@ -1783,8 +1804,9 @@ docs, not from memory:
 - `PORT` and `HOSTNAME` are read by `server.js` (`output.md:54`). **`HOSTNAME=0.0.0.0` is required in a
   container**, or the server binds loopback and the platform's health check never connects.
 - If tracing ever misses a runtime asset, `outputFileTracingIncludes` is the documented escape hatch
-  (`output.md:80-158`). Not expected to be needed here — `yt-dlp` is a system binary on `PATH`, outside tracing
-  entirely — but named so it is not re-derived under time pressure.
+  (`output.md:80-158`). Not expected to be needed here — since #295 the app shells out to **no external binary
+  at all** (§C), so there is nothing living outside the trace to rescue — but named so it is not re-derived
+  under time pressure.
 
 #### G. Not a change, but worth recording: `.github/workflows/ci.yml` has **no deploy step at all** today.
 

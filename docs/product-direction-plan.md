@@ -184,7 +184,7 @@ Rewriting re-derives all of it and re-makes the same bugs already paid for once:
 - Q1.4 (schema redesign) = a prompt + parser change — `lib/server/analysis/prompts/system.ts`, `lib/server/analysis/parser/analysis.ts`.
 - Q1.5 (reproducibility) = a config change + rubric text — `lib/server/analysis/gemini/generate.ts`, `system.ts`.
 - Q1.8 ("Recurring Red Flags" → "Red Flags") = a string change.
-- Q2.5 (YouTube) = swap the **metadata** source behind a fetcher. The platform-neutral `MediaMetadata` interface was designed precisely to allow this. (The **download** path stays on `yt-dlp` — see 1.1.)
+- Q2.5 (YouTube) = swap the **metadata** source behind a fetcher. The platform-neutral `MediaMetadata` interface was designed precisely to allow this. (The **video** path is **no longer `yt-dlp`** — as of #295 it is Gemini's native YouTube URL input; see the banner on 1.1.)
 
 The layering — **fetcher → adapter → pipeline → Gemini → persist** — is the right shape for everything described above, including generation.
 
@@ -231,9 +231,26 @@ Order below follows the owner's explicitly stated priorities. Deviations and add
 
 — (a)–(c) landed in **one backend PR**; and separately,
 
-- **(d)** the YouTube work — **shipped.** Tickets **#53, #54 and #57 are all closed.** **Feasibility verification is COMPLETE.** The full YouTube → ScrapeCreators migration was investigated and found **NOT VIABLE** (see 1.1). The owner's decision: **KEEP YouTube**, on a **hybrid** — `yt-dlp` retained for download, ScrapeCreators for metadata. Tickets **#53 → #54 → #57**, strictly serial, sequenced after the security fix.
+- **(d)** the YouTube work — **shipped.** Tickets **#53, #54 and #57 are all closed.** **Feasibility verification is COMPLETE.** The full YouTube → ScrapeCreators migration was investigated and found **NOT VIABLE** (see 1.1). The owner's decision: **KEEP YouTube**, on a **hybrid** — at the time `yt-dlp` for download, ScrapeCreators for metadata. **(The download half has since been replaced: #295 moved video to Gemini's native YouTube URL input and removed `yt-dlp`. Metadata is still ScrapeCreators. See 1.1.)** Tickets **#53 → #54 → #57**, strictly serial, sequenced after the security fix.
 
-#### 1.1 YouTube: hybrid `yt-dlp` (download) + ScrapeCreators (metadata) [CONFIRMED]
+#### 1.1 YouTube: hybrid ~~`yt-dlp`~~ **Gemini native URL** (video) + ScrapeCreators (metadata) [CONFIRMED]
+
+> ⚠️ **SUPERSEDED IN PART — 2026-08-24, ticket #295 (merged, `a0f28aa`). `yt-dlp` IS GONE.** The half of this
+> section that says the binary is retained is **no longer true**. The YouTube **video** path now uses
+> **Gemini's native YouTube URL input**: the bare public URL is passed to Gemini as a `fileData.fileUri` part
+> and **Google fetches the video server-side**. This codebase **no longer downloads YouTube video at all** —
+> `extractVideoUrl`, `cleanYouTubeUrl`, the `/tmp` download step and the Dockerfile's `yt-dlp` install stage
+> (with `ARG YT_DLP_VERSION` / `ARG TARGETARCH`) are **all deleted**, and no caller of `yt-dlp` remains
+> anywhere. The **command-injection concern is retired with it** — there is no subprocess left to inject into.
+>
+> **What still stands, unchanged:** the full YouTube → ScrapeCreators migration is still **not viable** for
+> *video* (SC's URLs remain IP-locked, 403 from our server) — that is *why* the video source moved to Gemini
+> rather than to SC. **ScrapeCreators still owns YouTube metadata** (view/like/comment + subscriber count),
+> and **Shorts-only** is still the settled policy.
+>
+> Authoritative current state: `.claude/context/verified-facts.md` → *"Gemini — YouTube URL as direct video
+> input (`fileData.fileUri`)"*, plus the supersede note in the *"ScrapeCreators — `/v1/youtube/video`"*
+> section. The original text below is **kept unedited** as the record of the decision as it was taken.
 
 Owner, originally: *"we can make youtube similar flow like instagram using ScrapeCreators."* That was investigated in full and **does not work.**
 
@@ -565,8 +582,8 @@ Explicit list of premises in `product-direction-open-questions.md` that are now 
 | Multi-slide carousels "mean the schema stops being one-row-one-video — which migration 005 explicitly enforced" (Q2.6) | **Not a conflict.** One content, N media parts. Migration 005 holds unchanged. The work is in the download/upload path, not the schema. |
 | Phone-native information density needed from the start (Q3.6) | **Retired.** Desktop dashboard, confirmed. |
 | "Cut YouTube" as the cheap fix for the command-injection vector (§0.1) | **REJECTED by the owner — no longer a live option.** YouTube is kept. See §6 for the recorded reason. |
-| The YouTube → ScrapeCreators migration is viable / planned | **False.** Verified NOT viable: SC's YouTube video URLs are IP-locked to their scrapers and return 403 from our server (13 videos tested, 0 usable). Replaced by the **hybrid** — `yt-dlp` for download, SC for metadata (§3, 1.1). |
-| The migration "drops the `yt-dlp` binary dependency entirely" | **False.** `yt-dlp` is **retained** for video download. It is the only path that yields a URL bound to our own IP. The command-injection fix is therefore mandatory, not obviated. |
+| The YouTube → ScrapeCreators migration is viable / planned | **Still false for video.** Verified NOT viable: SC's YouTube video URLs are IP-locked to their scrapers and return 403 from our server (13 videos tested, 0 usable). SC owns **metadata** only. The video half is **no longer `yt-dlp` either** — since #295 it is **Gemini's native YouTube URL input** (§3, 1.1). |
+| The `yt-dlp` binary dependency is "retained" | **NOW FALSE — it was true until 2026-08-24.** ✅ **The dependency IS dropped.** Ticket #295 (merged, `a0f28aa`) moved the video path to Gemini's native YouTube URL input (`fileData.fileUri`, Google fetches server-side), and **deleted `yt-dlp`, `extractVideoUrl`, `cleanYouTubeUrl`, the `/tmp` download step and the Dockerfile install stage**. No caller remains. The command-injection fix is **obviated** — there is no subprocess left. See the banner on §1.1. |
 | Q1.8: Gemini's "recurring" patterns are per-video commentary | **Still true, and the owner's stated reason for it was wrong.** Gemini saw one video and nothing else. Neither recurring nor comparative. |
 | Auth/tenancy is "the highest-leverage answer in the audit" (Q2.1) | **Downgraded.** Deferrable — see §6. |
 | The creator-vs-competitor data-model distinction is not deferrable and moves into the Q1.4 PRD | **Obsolete — reversed by the owner.** No distinction is being built at all. One profile model. See PRD §8 and §3, 2.1a. |
@@ -613,7 +630,7 @@ Recorded with reasons so nobody relitigates them.
 | --- | --- | --- |
 | **Rewriting the app** | **No** | Plumbing is good, contract is wrong. See §2. |
 | **Cutting YouTube** | **REJECTED — not doing** | Considered as the cheap fix for the command-injection vector, and as the fallback if the SC migration failed. The migration did fail, and the owner **still chose to keep YouTube**. Do not relitigate. The injection is fixed directly (`execFile` + argv arrays, end-anchored classifier regexes) and metadata parity comes from SC (§3, 1.1). |
-| **Full YouTube → ScrapeCreators migration (download included)** | **Not viable — abandoned** | SC's YouTube video URLs are IP-locked to their scraper IPs; 403 from our server. 13 videos tested, 0 usable. `yt-dlp` deciphers signatures locally so its URLs bind to our IP. Hybrid adopted instead. |
+| **Full YouTube → ScrapeCreators migration (download included)** | **Not viable — abandoned** | SC's YouTube video URLs are IP-locked to their scraper IPs; 403 from our server. 13 videos tested, 0 usable. `yt-dlp` deciphers signatures locally so its URLs bind to our IP. Hybrid adopted instead. **Update (#295, 2026-08-24): the `yt-dlp` half is also gone — video now goes to Gemini as a native YouTube URL, fetched server-side by Google. SC keeps metadata only.** |
 | **Widening YouTube support to `/watch?v=` / long-form** | **Not doing — DECIDED AND REJECTED** | Shorts-only. Short-form product focus, and a 15-min video at `MAX_VIDEO_SECONDS = 900` is ~100× the Gemini input tokens of a 30s Short. The `[DECISION]` ticket that raised it (**#58**) is **closed as decided and rejected** — this is settled policy, not an open question. |
 | **`hasAudio: true` for YouTube Shorts** | **Rejected** | Would be **inferred, not observed** — the ScrapeCreators payload carries **no audio flag**. Not a regression, but a real ceiling on YouTube prompt context (§3, 1.1). |
 | **`originalWidth` / `originalHeight` for YouTube** | **Rejected** | **Absent from the ScrapeCreators payload entirely**, so the **#46 resolution context block stays empty for YouTube** (§3, 1.1). |
@@ -636,7 +653,8 @@ Recorded with reasons so nobody relitigates them.
 
 ```
 Phase 1  YouTube hybrid (#53 → #54 → #57) [CONFIRMED] moderate        ─┐
-         ├─ yt-dlp KEPT for download; SC for metadata; Shorts-only    │
+         ├─ yt-dlp for download; SC for metadata; Shorts-only         │
+         │     (yt-dlp REMOVED later by #295 — Gemini native URL)     │
          ├─ injection fix: execFile + anchored regex  [MANDATORY]     │
          ├─ #53 SC client — MUST capture live payloads to             │
          │     verified-facts.md BEFORE any field mapping             │
