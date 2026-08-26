@@ -25,8 +25,9 @@ const IG_POST_RE = /^https?:\/\/(www\.)?instagram\.com\/p\/[\w-]+\/?(\?.*)?$/i;
  * See #54 and #58 (decision ticket, closed as rejected). The pattern is also
  * end-anchored on purpose so traversal-style URLs such as
  * `youtube.com/shorts/x/../../watch?v=y` are rejected before the pipeline.
- * `cleanYouTubeUrl` in fetcher/youtube.ts additionally depends on the id
- * living in the path rather than the query string.
+ * Ticket #295: the matched URL is now also what's handed to Gemini
+ * directly as its native `fileData.fileUri` input (no rewrite) — one more
+ * reason the id must live in the path, not the query string.
  */
 const YT_SHORT_RE = /^https?:\/\/(www\.)?youtube\.com\/shorts\/[\w-]+\/?(\?.*)?$/i;
 

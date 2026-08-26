@@ -1,11 +1,17 @@
 # syntax=docker/dockerfile:1
 #
-# Web service only (TDD §11.3a A). Debian slim, not Alpine — the yt-dlp
-# standalone Linux binary is a PyInstaller build and expects glibc.
+# Web service only (TDD §11.3a A). Debian slim.
 # Node version pinned to .nvmrc (24.14.1).
 #
 # Three stages: deps (npm ci) -> builder (next build, standalone output) ->
-# runner (traced runtime + yt-dlp + migrations, non-root).
+# runner (traced runtime + migrations, non-root).
+#
+# Ticket #295: yt-dlp is REMOVED. It was the only external binary this
+# image installed (lib/server/analysis/fetcher/youtube.ts execFile("yt-dlp",
+# ...)); that call site is gone — the YouTube path now hands the public
+# video URL straight to Gemini as a native `fileData.fileUri` part and
+# Google fetches it server-side. Confirmed no other caller before removing
+# the install step below.
 
 ARG NODE_VERSION=24.14.1
 
@@ -51,39 +57,6 @@ ENV NODE_ENV=production
 # (output.md:54); without this the platform health check never connects.
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
-
-# yt-dlp: the only external binary the app shells out to
-# (lib/server/analysis/fetcher/youtube.ts execFile("yt-dlp", ...)), by bare
-# name, so it must be on PATH. Pinned, not "latest". ffmpeg is deliberately
-# NOT installed — nothing in lib/, app/ or scripts/ invokes it; the yt-dlp
-# call is `-g --skip-download -f "best[height<=1080]"`, which prints a URL
-# and never reaches a muxing step (TDD §11.3a C).
-ARG YT_DLP_VERSION=2026.07.04
-# TARGETARCH: BuildKit sets this automatically to the image's target
-# platform arch (amd64 / arm64). yt-dlp's standalone Linux builds are
-# per-arch PyInstaller binaries (yt-dlp_linux is x86_64-only and will not
-# run on an arm64 image, e.g. a native build on Apple Silicon) — pick the
-# matching asset rather than hardcoding the amd64 one.
-#
-# --http1.1 --retry: GitHub's release-asset CDN has been observed resetting
-# streams mid-download from this build environment (curl error 18,
-# "transfer closed" / "HTTP/2 stream ... was not closed cleanly"). HTTP/1.1
-# plus retries makes the download reliable here.
-ARG TARGETARCH
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
-    && case "${TARGETARCH}" in \
-         amd64) YT_DLP_ASSET=yt-dlp_linux ;; \
-         arm64) YT_DLP_ASSET=yt-dlp_linux_aarch64 ;; \
-         *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
-       esac \
-    && curl -fL --http1.1 --retry 5 --retry-all-errors --retry-delay 2 \
-      -o /usr/local/bin/yt-dlp \
-      "https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}/${YT_DLP_ASSET}" \
-    && chmod a+rx /usr/local/bin/yt-dlp \
-    && apt-get purge -y curl \
-    && apt-get autoremove -y \
-    && rm -rf /var/lib/apt/lists/*
 
 # tsx: scripts/migrate.ts runs under it, and it is a devDependency that
 # `output: "standalone"` does not trace (it only traces what the app

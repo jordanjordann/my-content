@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiError, MediaModality } from "@google/genai";
 
 /**
  * Ticket #66 code review follow-up: `generate.ts` has no test file at all,
@@ -33,7 +34,29 @@ vi.mock("@google/genai", () => {
     RECITATION = "RECITATION",
   }
 
-  return { GoogleGenAI, FinishReason };
+  // Real shape (node_modules/@google/genai/dist/node/index.mjs): `status`
+  // is the HTTP status, `message` is `JSON.stringify(errorBody)` — the
+  // nested error message (e.g. "No frames to extract...") is a SUBSTRING
+  // of `.message`, not the whole string.
+  class ApiError extends Error {
+    status: number;
+    constructor(options: { message: string; status: number }) {
+      super(options.message);
+      this.name = "ApiError";
+      this.status = options.status;
+    }
+  }
+
+  enum MediaModality {
+    MODALITY_UNSPECIFIED = "MODALITY_UNSPECIFIED",
+    TEXT = "TEXT",
+    IMAGE = "IMAGE",
+    VIDEO = "VIDEO",
+    AUDIO = "AUDIO",
+    DOCUMENT = "DOCUMENT",
+  }
+
+  return { GoogleGenAI, FinishReason, ApiError, MediaModality };
 });
 
 vi.mock("@/lib/server/analysis/schema", () => ({
@@ -139,6 +162,182 @@ describe("analyzeContent — finishReason guard (ticket #66 code review)", () =>
     const analyzeContent = await importAnalyzeContent();
 
     const result = await analyzeContent(dummyParts, "prompt");
-    expect(result).toEqual({ text: '{"style":{}}', raw: '{"style":{}}' });
+    expect(result).toEqual({
+      text: '{"style":{}}',
+      raw: '{"style":{}}',
+      usageMetadata: { candidatesTokenCount: 300 },
+    });
+  });
+});
+
+/**
+ * Ticket #295: the Gemini-native YouTube URL path (`fileData.fileUri`, no
+ * `mimeType`) hits a documented 400 ("No frames to extract with given
+ * parameters") on very short clips at the default 1.0 fps sampling rate —
+ * NOT an access failure, the video was already fetched. `analyzeContent`
+ * must retry exactly once with `videoMetadata: { fps: 24 }` added to the
+ * offending part, and must NOT retry (or mask) any other error, including
+ * a 400 on an Instagram-shaped part (mimeType present) or any non-400
+ * error — those must propagate as-is, since they cannot be this specific
+ * frame-sampling trap by construction.
+ */
+describe("analyzeContent — YouTube frame-sampling 400 retry (ticket #295)", () => {
+  const bareYoutubePart = [{ fileData: { fileUri: "https://www.youtube.com/shorts/tiny" } }];
+
+  afterEach(() => {
+    vi.resetModules();
+    generateContentMock.mockReset();
+  });
+
+  it("retries once with videoMetadata.fps: 24 after a 'No frames to extract' 400, and returns the retried result", async () => {
+    generateContentMock
+      .mockRejectedValueOnce(
+        new ApiError({
+          status: 400,
+          message: JSON.stringify({
+            error: {
+              code: 400,
+              message: "No frames to extract with given parameters. Verify fps, start/end time and video duration.",
+              status: "INVALID_ARGUMENT",
+            },
+          }),
+        }),
+      )
+      .mockResolvedValueOnce({
+        candidates: [{ finishReason: "STOP" }],
+        usageMetadata: { candidatesTokenCount: 300 },
+        text: '{"style":{}}',
+      });
+
+    const analyzeContent = await importAnalyzeContent();
+    const result = await analyzeContent(bareYoutubePart, "prompt");
+
+    expect(result).toEqual({
+      text: '{"style":{}}',
+      raw: '{"style":{}}',
+      usageMetadata: { candidatesTokenCount: 300 },
+    });
+    expect(generateContentMock).toHaveBeenCalledTimes(2);
+
+    const secondCallArgs = generateContentMock.mock.calls[1]![0] as { contents: unknown[] };
+    expect(secondCallArgs.contents[0]).toEqual({
+      fileData: { fileUri: "https://www.youtube.com/shorts/tiny" },
+      videoMetadata: { fps: 24 },
+    });
+  });
+
+  it("does not retry, and rethrows, a 'No frames' 400 when there is no bare fileData part to raise fps on", async () => {
+    const uploadedVideoPart = [{ fileData: { fileUri: "files/abc123", mimeType: "video/mp4" } }];
+    generateContentMock
+      .mockRejectedValueOnce(
+        new ApiError({
+          status: 400,
+          message: JSON.stringify({ error: { code: 400, message: "No frames to extract", status: "INVALID_ARGUMENT" } }),
+        }),
+      )
+      // M3 (code review): give the mock a SECOND resolved value, matching a
+      // normal successful STOP response. Under a mutation that widens the
+      // fps-retry gate to match ANY `fileData` part (dropping the
+      // `mimeType === undefined` check), this test's own production code
+      // would call `generateContent` a second time. Without a configured
+      // second resolution, that second call resolves to `undefined`, and
+      // reading `response.candidates` on it throws a `TypeError` — the test
+      // then fails on an incidental crash instead of on the
+      // `toHaveBeenCalledTimes(1)` assertion its name is actually about.
+      // With this second value in place, a widened-gate mutation makes the
+      // test fail cleanly on "called twice", not on an unrelated TypeError.
+      .mockResolvedValueOnce({
+        candidates: [{ finishReason: "STOP" }],
+        usageMetadata: { candidatesTokenCount: 300 },
+        text: '{"style":{}}',
+      });
+
+    const analyzeContent = await importAnalyzeContent();
+
+    await expect(analyzeContent(uploadedVideoPart, "prompt")).rejects.toThrow(/No frames to extract/);
+    expect(generateContentMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry a different 400 (e.g. a genuinely unavailable/private video) — propagates immediately", async () => {
+    generateContentMock.mockRejectedValueOnce(
+      new ApiError({
+        status: 400,
+        message: JSON.stringify({ error: { code: 400, message: "Video not accessible", status: "INVALID_ARGUMENT" } }),
+      }),
+    );
+
+    const analyzeContent = await importAnalyzeContent();
+
+    await expect(analyzeContent(bareYoutubePart, "prompt")).rejects.toThrow(/Video not accessible/);
+    expect(generateContentMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry a non-ApiError, non-400 failure", async () => {
+    generateContentMock.mockRejectedValueOnce(new Error("network timeout"));
+
+    const analyzeContent = await importAnalyzeContent();
+
+    await expect(analyzeContent(bareYoutubePart, "prompt")).rejects.toThrow(/network timeout/);
+    expect(generateContentMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Ticket #295 code review, B2: `hasVideoModalityEvidence` is the ONE gate
+ * standing between "Gemini was sent a video" and "the row honestly records
+ * that Gemini decoded one". Direct unit coverage here, independent of the
+ * pipeline-level tests in `youtubeNativeUrl.test.ts` — if this predicate is
+ * ever loosened (e.g. treating a zero-token or absent-`tokenCount` entry as
+ * evidence, or matching on any modality instead of specifically `VIDEO`),
+ * these fail without needing to exercise the whole pipeline.
+ */
+describe("hasVideoModalityEvidence (ticket #295 code review, B2)", () => {
+  afterEach(() => {
+    vi.resetModules();
+  });
+
+  async function importHasVideoModalityEvidence() {
+    const mod = await import("@/lib/server/analysis/gemini/generate");
+    return mod.hasVideoModalityEvidence;
+  }
+
+  it("is true when promptTokensDetails contains a VIDEO entry with a positive tokenCount", async () => {
+    const hasVideoModalityEvidence = await importHasVideoModalityEvidence();
+    expect(
+      hasVideoModalityEvidence({
+        promptTokensDetails: [
+          { modality: MediaModality.TEXT, tokenCount: 500 },
+          { modality: MediaModality.VIDEO, tokenCount: 6049 },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("is false when there is no VIDEO entry at all (text-only / metadata-only response)", async () => {
+    const hasVideoModalityEvidence = await importHasVideoModalityEvidence();
+    expect(
+      hasVideoModalityEvidence({
+        promptTokensDetails: [{ modality: MediaModality.TEXT, tokenCount: 500 }],
+      }),
+    ).toBe(false);
+  });
+
+  it("is false when a VIDEO entry exists but its tokenCount is 0 — presence alone is not evidence", async () => {
+    const hasVideoModalityEvidence = await importHasVideoModalityEvidence();
+    expect(
+      hasVideoModalityEvidence({
+        promptTokensDetails: [{ modality: MediaModality.VIDEO, tokenCount: 0 }],
+      }),
+    ).toBe(false);
+  });
+
+  it("is false when usageMetadata itself is undefined", async () => {
+    const hasVideoModalityEvidence = await importHasVideoModalityEvidence();
+    expect(hasVideoModalityEvidence(undefined)).toBe(false);
+  });
+
+  it("is false when promptTokensDetails is undefined", async () => {
+    const hasVideoModalityEvidence = await importHasVideoModalityEvidence();
+    expect(hasVideoModalityEvidence({})).toBe(false);
   });
 });

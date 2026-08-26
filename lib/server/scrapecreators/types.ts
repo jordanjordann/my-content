@@ -295,11 +295,12 @@ export interface ScrapeCreatorsYoutubeCaptionTrack {
 
 /**
  * `downloadOptions` on `/v1/youtube/video`. Modeled from the live capture,
- * but deliberately UNUSED for download purposes — `formats` came back empty
- * with null manifest URLs, and the API's own `note` field says links expire
- * and some videos only expose signature-ciphered formats. `extractVideoUrl`
- * (yt-dlp, lib/server/analysis/fetcher/youtube.ts) owns video download URL
- * extraction; this field is not a substitute.
+ * but deliberately UNUSED — `formats` came back empty with null manifest
+ * URLs, and the API's own `note` field says links expire and some videos
+ * only expose signature-ciphered formats. Ticket #295: this codebase no
+ * longer downloads YouTube video at all (Gemini fetches it server-side
+ * from the original public URL); this field was never a substitute for
+ * that and remains modeled only for completeness.
  */
 export interface ScrapeCreatorsYoutubeDownloadOptions {
   expiresInSeconds?: string;

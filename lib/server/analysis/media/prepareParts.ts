@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { downloadVideo, downloadMedia } from "@/lib/server/analysis/downloader";
 import { uploadToGemini, pollUntilReady, getMimeType, getImageMimeType } from "@/lib/server/analysis/gemini";
 import { resolveMaxTotalMediaBytes, MAX_IMAGE_BYTES } from "./constants";
-import type { MediaPart, PreparedGeminiPart, PreparedParts } from "./types";
+import type { MediaPart, PreparedParts, UploadedVideoPart, InlineImagePart } from "./types";
 
 /**
  * Thrown when preparation fails partway through a multi-part post (e.g.
@@ -50,7 +50,13 @@ export async function prepareParts(parts: MediaPart[]): Promise<PreparedParts> {
   // pointing at a constants file nobody was importing on purpose.
   const maxTotalMediaBytes = resolveMaxTotalMediaBytes();
 
-  const geminiParts: PreparedGeminiPart[] = [];
+  // M1 (ticket #295 code review): typed narrowly, excluding
+  // `YoutubeNativeUrlPart` — this function only ever uploads to the File API
+  // (always supplies `mimeType`) or inlines an image. A future change that
+  // accidentally builds a bare, `mimeType`-less `fileData` part here now
+  // fails to compile against this array's own declared type, instead of
+  // silently type-checking against the shared union.
+  const geminiParts: (UploadedVideoPart | InlineImagePart)[] = [];
   const tempFilePaths: string[] = [];
   const videoFileUris: { uri: string; expiresAt: string }[] = [];
   let bytesUsed = 0;

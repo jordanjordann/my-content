@@ -1,5 +1,3 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import type { MediaMetadata, OwnerProfileHint } from "@/lib/server/analysis/types";
 import { getYoutubeVideo } from "@/lib/server/scrapecreators";
 import type { ScrapeCreatorsYoutubeVideo } from "@/lib/server/scrapecreators";
@@ -7,42 +5,18 @@ import { resolveYoutubeReach } from "@/lib/server/analysis/performance/reach";
 import type { ReachResult } from "@/lib/server/analysis/performance/types";
 
 /**
- * Two data sources in one file, deliberately (ticket #54):
- *
- *   - Metadata  -> ScrapeCreators `/v1/youtube/video` (`fetchShortMetadata`).
- *   - Video URL -> `yt-dlp` (`extractVideoUrl`), which is the only thing that
- *     works. yt-dlp deciphers YouTube signatures locally so the resulting URL
- *     binds to our IP; ScrapeCreators' media URLs are IP-locked to their own
- *     scrapers and 403 from our server, and `downloadOptions.formats` came
- *     back empty on the real payload (see .claude/context/verified-facts.md).
+ * Ticket #295: down to ONE data source now — metadata from ScrapeCreators
+ * `/v1/youtube/video` (`fetchShortMetadata`). The video itself is no longer
+ * downloaded by this codebase at all: `fetcher/router.ts` hands the
+ * ORIGINAL public YouTube URL straight through as `metadata.videoUrl`, and
+ * `pipeline/index.ts` passes that URL to Gemini as a native
+ * `fileData.fileUri` part — Google fetches the video server-side (verified,
+ * `.claude/context/verified-facts.md` "Gemini — YouTube URL as direct video
+ * input"). This removed `extractVideoUrl` (`yt-dlp`) and `cleanYouTubeUrl`
+ * (the query-string-stripping helper `yt-dlp` needed) — neither has a
+ * caller left in this codebase, and `yt-dlp` is no longer installed in the
+ * deployment image (Dockerfile).
  */
-
-const execFileAsync = promisify(execFile);
-
-const USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
-
-/**
- * Strips the query string before handing the URL to `yt-dlp`.
- *
- * DESTRUCTIVE for any `watch?v=` style URL — it would strip the video id
- * itself. That is safe today only because the classifier accepts
- * `youtube.com/shorts/...` exclusively, where the id lives in the path. If
- * YouTube support is ever widened, this helper must be reworked first (the
- * widening was considered and rejected — see #58).
- *
- * Applies to the `yt-dlp` path ONLY. The URL passed to ScrapeCreators is the
- * caller's original URL, untouched.
- */
-function cleanYouTubeUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    parsed.search = "";
-    return parsed.toString();
-  } catch {
-    return url;
-  }
-}
 
 /**
  * Local null-safe guards, mirroring the discipline in
@@ -85,8 +59,8 @@ function toIsoFromOffsetDate(value: unknown): string | null {
  * Maps the flat `/v1/youtube/video` payload (no `data` envelope) to
  * MediaMetadata.
  *
- * `videoUrl` is always null here — the router fills it from
- * `extractVideoUrl`.
+ * `videoUrl` is always null here — the router fills it in with the
+ * ORIGINAL public YouTube URL (ticket #295, no rewrite, no download).
  *
  * Throws when `channel.handle` is missing entirely, meaning this isn't a
  * video payload — same posture as `adaptPostResponse` throwing on a missing
@@ -168,12 +142,13 @@ export interface FetchedYoutubeMetadata {
 }
 
 /**
- * Metadata only — this function no longer shells out at all. The playable
- * video URL comes from `extractVideoUrl` via the router.
+ * Metadata only — this function has never shelled out to anything; the
+ * playable video is now handed straight to Gemini by URL (`fetcher/
+ * router.ts`, `pipeline/index.ts`), not downloaded by this codebase at all.
  */
 export async function fetchShortMetadata(url: string): Promise<FetchedYoutubeMetadata> {
-  // Note: the ORIGINAL url, not cleanYouTubeUrl(url) — ScrapeCreators takes a
-  // full YouTube URL and the cleaner is a yt-dlp-path concern.
+  // Note: the ORIGINAL url, unmodified. Nothing in this codebase rewrites
+  // it any more (ticket #295 removed the last consumer of a cleaned URL).
   const raw = await getYoutubeVideo(url);
 
   return {
@@ -181,28 +156,4 @@ export async function fetchShortMetadata(url: string): Promise<FetchedYoutubeMet
     ownerHint: extractYoutubeOwnerHint(raw),
     reachResult: resolveYoutubeReach(raw.viewCountInt),
   };
-}
-
-export async function extractVideoUrl(url: string): Promise<string | null> {
-  try {
-    const cleanUrl = cleanYouTubeUrl(url);
-    const { stdout } = await execFileAsync("yt-dlp", [
-      "-g",
-      "--skip-download",
-      "--no-warnings",
-      "--user-agent",
-      USER_AGENT,
-      "--extractor-args",
-      "youtube:player_client=web",
-      "--no-playlist",
-      "-f",
-      "best[height<=1080]",
-      cleanUrl,
-    ]);
-    const trimmed = stdout.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  } catch (error) {
-    console.error("[YouTube] extractVideoUrl failed:", error);
-    return null;
-  }
 }

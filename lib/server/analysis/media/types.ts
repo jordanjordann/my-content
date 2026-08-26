@@ -58,10 +58,52 @@ export interface ResolvedMediaParts {
   truncated: boolean;
 }
 
-/** A single Gemini request part after download/inline-encoding (`prepareParts()`). */
-export type PreparedGeminiPart =
-  | { fileData: { fileUri: string; mimeType: string } }
-  | { inlineData: { mimeType: string; data: string } };
+/**
+ * A File-API-uploaded video part — `prepareParts()` (Instagram) ALWAYS
+ * supplies `mimeType` (from a helper that returns `string`, never
+ * `undefined`), so it is required here, not optional. `videoMetadata` is
+ * typed `undefined`-only (never a real value) rather than omitted, so a
+ * discriminated union of this type with `YoutubeNativeUrlPart` can narrow on
+ * either field without a "property does not exist" compile error — see the
+ * code review that replaced the prior single widened type (ticket #295, M1):
+ * with `mimeType?: string` on one shared type, "an uploaded part can never
+ * reach the fps-retry gate" was a convention enforced by `prepareParts()`'s
+ * behaviour, not by the type checker. A future change to `prepareParts()`
+ * that accidentally builds a part shaped like `YoutubeNativeUrlPart` would
+ * have compiled silently. Requiring `mimeType: string` here means
+ * `prepareParts.ts` can (and does) type its own return array narrowly as
+ * `(UploadedVideoPart | InlineImagePart)[]`, excluding the YouTube variant
+ * entirely at the point of construction — the omission becomes a compile
+ * error, not a runtime hope.
+ */
+export interface UploadedVideoPart {
+  fileData: { fileUri: string; mimeType: string };
+  videoMetadata?: undefined;
+}
+
+/**
+ * Ticket #295: a `fileData` part built directly from a public YouTube URL,
+ * `mimeType` deliberately OMITTED as a key (verified request shape,
+ * `.claude/context/verified-facts.md` "Gemini — YouTube URL as direct video
+ * input") — Google fetches and decodes the video server-side from the bare
+ * URL. `mimeType` is typed `undefined`-only (never a real value), the mirror
+ * image of `UploadedVideoPart`, so the two are a genuine discriminated pair
+ * rather than one type with an optional field. `videoMetadata` is real and
+ * optional here — used ONLY to retry a very short clip that would otherwise
+ * 400 with "No frames to extract" at the default 1.0 fps sampling rate, see
+ * `gemini/generate.ts`.
+ */
+export interface YoutubeNativeUrlPart {
+  fileData: { fileUri: string; mimeType?: undefined };
+  videoMetadata?: { fps: number };
+}
+
+export interface InlineImagePart {
+  inlineData: { mimeType: string; data: string };
+}
+
+/** A single Gemini request part after download/inline-encoding (`prepareParts()`) or the Gemini-native YouTube URL path (ticket #295). */
+export type PreparedGeminiPart = UploadedVideoPart | YoutubeNativeUrlPart | InlineImagePart;
 
 export interface PreparedParts {
   geminiParts: PreparedGeminiPart[];

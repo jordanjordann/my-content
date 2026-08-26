@@ -2,7 +2,7 @@ import type { MediaMetadata, OwnerProfileHint } from "@/lib/server/analysis/type
 import type { ClassifiedUrl } from "@/lib/server/analysis/classifier";
 import type { ReachResult } from "@/lib/server/analysis/performance/types";
 import { fetchInstagramMetadata } from "./instagram";
-import { fetchShortMetadata, extractVideoUrl } from "./youtube";
+import { fetchShortMetadata } from "./youtube";
 
 export interface FetchedMetadata {
   metadata: MediaMetadata;
@@ -33,26 +33,30 @@ export async function fetchMetadata(classified: ClassifiedUrl): Promise<FetchedM
 }
 
 /**
- * Hybrid by design: metadata comes from ScrapeCreators, the playable video
- * URL still comes from `yt-dlp` (see fetcher/youtube.ts).
+ * Ticket #295: `yt-dlp` is gone from this path entirely. `metadata.videoUrl`
+ * is simply the ORIGINAL public YouTube URL, unmodified — no rewrite to
+ * `watch?v=`, no query-string stripping (`youtube.com/shorts/<id>` is
+ * accepted as-is by Gemini's native URL input; a rewrite would only risk
+ * breaking it). `pipeline/index.ts` hands this URL straight to Gemini as a
+ * `fileData.fileUri` part — Google fetches the video server-side, so our
+ * own egress IP being blocked no longer matters (verified,
+ * `.claude/context/verified-facts.md` "Gemini — YouTube URL as direct
+ * video input").
  *
- * `extractVideoUrl` needs nothing but the URL, so it runs FIRST, before
- * `fetchShortMetadata` (1 ScrapeCreators credit). A `null` result here can
- * ONLY mean extraction failed — a YouTube Short is always a video, unlike
- * Instagram, where an all-image post genuinely has no video (that "legitimate
- * metadata-only" case is real for Instagram; it does NOT generalise to
- * YouTube — see fetcher/adapter.ts). So a `null` throws immediately, before
- * `fetchShortMetadata` is ever called: a Short we cannot download costs 0
- * ScrapeCreators credits instead of 1 (#288, #292).
+ * #292's "refuse before spending a credit" ordering does NOT survive this
+ * change as written: it depended on a free, local `yt-dlp` probe running
+ * before the credit-costing `fetchShortMetadata` call, and that probe no
+ * longer exists — there is nothing left to check for free. What DOES
+ * survive is #292's underlying guarantee (never silently degrade to a
+ * caption-only analysis when the video is genuinely unavailable): if
+ * Gemini cannot obtain the video (private, removed, region-blocked — this
+ * is a public-videos-only preview feature), `analyzeContent()` in
+ * `pipeline/index.ts` throws, and the pipeline's existing delete/
+ * mark-failed error handling refuses the analysis exactly as before. See
+ * the YouTube branch there for the detail. The #293 prompt guard remains
+ * the backstop if this preview feature is ever withdrawn.
  */
 async function fetchYoutubeMetadata(url: string): Promise<FetchedMetadata> {
-  const videoUrl = await extractVideoUrl(url);
-  if (videoUrl === null) {
-    throw new Error(
-      "Could not download the video for this Short. YouTube blocked the download from our server, so no analysis was made — nothing was charged.",
-    );
-  }
-
   const { metadata, ownerHint, reachResult } = await fetchShortMetadata(url);
-  return { metadata: { ...metadata, videoUrl }, ownerHint, reachResult };
+  return { metadata: { ...metadata, videoUrl: url }, ownerHint, reachResult };
 }

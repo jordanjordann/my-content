@@ -3,7 +3,7 @@ import { db } from "@/lib/server/db";
 import { classifyUrl } from "@/lib/server/analysis/classifier";
 import { fetchMetadata } from "@/lib/server/analysis/fetcher";
 import { deleteTempFile } from "@/lib/server/analysis/downloader";
-import { analyzeContent, summarizeCaptionToTitle } from "@/lib/server/analysis/gemini";
+import { analyzeContent, hasVideoModalityEvidence, summarizeCaptionToTitle } from "@/lib/server/analysis/gemini";
 import { prepareParts, PreparePartsError } from "@/lib/server/analysis/media";
 import { buildSystemInstruction, buildUserPrompt } from "@/lib/server/analysis/prompts";
 import { parseContentAnalysis } from "@/lib/server/analysis/parser";
@@ -160,34 +160,81 @@ export async function runAnalysis({
     // block below, which follows the existing delete/preserve-for-
     // re-analysis convention).
     let analysisMode: "full_video" | "images_only" | "metadata_only" = "metadata_only";
-    // Instagram (fetcher/adapter.ts, via resolveMediaParts()) populates
-    // metadata.mediaParts directly. YouTube (fetcher/youtube.ts) is
-    // untouched by this ticket and only ever sets metadata.videoUrl — fall
-    // back to a single synthetic video part built from it so the YouTube
-    // path keeps working unchanged through the now-shared prepareParts().
-    const mediaParts =
-      metadata.mediaParts && metadata.mediaParts.length > 0
-        ? metadata.mediaParts
-        : metadata.videoUrl
-          ? [
-              {
-                index: 0,
-                kind: "video" as const,
-                url: metadata.videoUrl,
-                durationSec: metadata.durationSec ?? null,
-                width: metadata.originalWidth ?? null,
-                height: metadata.originalHeight ?? null,
-                playCount: metadata.playCount ?? null,
-                viewCount: metadata.viewCount ?? null,
-                displayedCountIsPlayCount: metadata.displayedCountIsPlayCount ?? false,
-              },
-            ]
-          : [];
-    const hasVideoPart = mediaParts.some((part) => part.kind === "video");
+
+    // Ticket #295 code review, B2 -> H1 (owner ruling, 2026-08-26): for the
+    // YouTube native-URL path, `analysisMode` cannot be decided yet at this
+    // point in the function — it is only an INTENT here (we are about to
+    // attempt a full-video analysis), not a fact. Whether Gemini actually
+    // decoded the video is only knowable once its response comes back with
+    // `usageMetadata`.
+    //
+    // The pre-call persisted value must therefore be the CONSERVATIVE
+    // default ('metadata_only', already this variable's initial value —
+    // nothing to assign here) rather than the optimistic one. B2's original
+    // fix asserted 'full_video' provisionally and downgraded it after the
+    // call; the reviewer found that ordering left a real window — for the
+    // whole duration of the Gemini call, and permanently if the process is
+    // killed before the correction runs — where a 'pending' row claimed
+    // 'full_video' with zero evidence, an unearned claim structurally
+    // identical to the one #288 was about. Inverting so the honest mode is
+    // what a killed/errored process stalls on, and 'full_video' is only ever
+    // written once `hasVideoModalityEvidence()` has proof, makes that
+    // unearned claim structurally impossible rather than merely narrow: this
+    // flag marks that the YouTube path must re-check analysisMode after
+    // `analyzeContent()` returns and UPGRADE it (recomputing the performance
+    // block to match) if and only if the evidence is present.
+    let youtubeModeNeedsVerification = false;
 
     let geminiParts: Awaited<ReturnType<typeof prepareParts>>["geminiParts"] = [];
 
-    if (mediaParts.length > 0) {
+    if (classified.platform === "youtube") {
+      // Ticket #295: Gemini's native YouTube URL input replaces yt-dlp +
+      // download + File API upload, for the YouTube path ONLY —
+      // Instagram's branch below (prepareParts()) is untouched.
+      // `metadata.videoUrl` is the ORIGINAL public YouTube URL
+      // (fetcher/router.ts no longer downloads or rewrites it); handed to
+      // Gemini as a bare `fileData.fileUri` part with `mimeType`
+      // deliberately omitted (verified request shape,
+      // .claude/context/verified-facts.md). Google fetches the video
+      // server-side, so there is no local file, no File API asset —
+      // `fileUri`/`fileExpiresAt` (the `gemini_file_uri` column pair, a
+      // File-API-upload artifact) correctly stay null on this path.
+      //
+      // #292's refusal behaviour is preserved STRUCTURALLY here, not by a
+      // pre-check: there is no more free, local probe to run before this
+      // point (that was `yt-dlp`, now gone). If Gemini genuinely cannot
+      // obtain the video (private/removed/region-blocked — public videos
+      // only is a documented limit of this preview feature),
+      // `analyzeContent()` below throws, and this function's existing
+      // catch block (delete the row for a first analysis, mark 'failed'
+      // for a re-analysis) refuses exactly as before — no bespoke failure
+      // branch needed (same reasoning as docs/audit/ANALYSIS-288 §5). The
+      // #293 prompt guard remains the backstop if this preview feature is
+      // ever withdrawn.
+      if (!metadata.videoUrl) {
+        throw new Error("YouTube analysis is missing a video URL to send to Gemini");
+      }
+      // M4: nothing is downloaded on this path — Gemini fetches the video
+      // server-side from the bare `fileUri`. Stage + message now agree:
+      // this is preparation for the analyze call, not a download step.
+      report("analyzing", 1, "Preparing video for Gemini analysis...");
+      geminiParts = [{ fileData: { fileUri: metadata.videoUrl } }];
+      // `analysisMode` stays at its conservative default ('metadata_only')
+      // here — see the comment above `youtubeModeNeedsVerification`. It is
+      // only ever upgraded to 'full_video' after `analyzeContent()` returns
+      // evidence that Gemini actually decoded the video.
+      youtubeModeNeedsVerification = true;
+    } else if (metadata.mediaParts && metadata.mediaParts.length > 0) {
+      // Instagram (fetcher/adapter.ts, via resolveMediaParts()) populates
+      // metadata.mediaParts directly — unchanged by ticket #295. The
+      // videoUrl-only synthetic-part fallback that used to live here was
+      // deleted: it existed solely for YouTube (the only platform whose
+      // metadata carries a videoUrl without mediaParts), which now takes
+      // the branch above instead. Instagram always populates mediaParts
+      // whenever it sets videoUrl (fetcher/adapter.ts), so this branch
+      // never relied on that fallback in the first place.
+      const mediaParts = metadata.mediaParts;
+      const hasVideoPart = mediaParts.some((part) => part.kind === "video");
       const label =
         mediaParts.length > 1 ? `Downloading ${mediaParts.length} media parts...` : "Downloading video...";
       report("downloading", 1, label);
@@ -251,7 +298,13 @@ export async function runAnalysis({
     // last_fetched_at` is mutated by the next cache refresh, so this is the
     // only place a completed analysis can ever recover how stale its own
     // audience denominator was (R-13.3.2/R-13.4.5).
-    const computedBlock = await computePerformanceBlock({
+    //
+    // `let`, not `const`: ticket #295 code review B2/H1 recomputes this once
+    // more, below, for the YouTube path ONLY, if Gemini's response DOES
+    // evidence real video decoding (an upgrade from the provisional
+    // 'metadata_only' block computed here) — see
+    // `youtubeModeNeedsVerification`.
+    let computedBlock = await computePerformanceBlock({
       platform: classified.platform,
       mediaType: metadata.mediaType,
       analysisMode,
@@ -344,8 +397,98 @@ export async function runAnalysis({
     const userPrompt = buildUserPrompt(metadata, prompt, computedBlock);
     const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
 
+    // PR #299 round-4 review: `computedBlock` is reassigned below (YouTube
+    // upgrade branch) to a SECOND, independently-computed
+    // `ComputedPerformanceBlock` — different `analysisMode` -> different
+    // `bucketKey` -> a different baseline pool, per `computeBucketKey`
+    // (`performance/baseline.ts`). `promptBlock` is captured here, BEFORE
+    // that reassignment can happen, and is never itself reassigned — it is
+    // pinned to the exact block `buildUserPrompt()` just used to build
+    // `fullPrompt`, i.e. what Gemini actually saw. The prose guard
+    // (`parseContentAnalysis`, called below) must check the model's output
+    // against THIS block, not whatever `computedBlock` becomes after an
+    // upgrade — the guard's own contract (`parser/analysis.ts`'s doc
+    // comment) is "the SAME block the prompt was built from", and using the
+    // post-upgrade `computedBlock` there would silently violate it.
+    const promptBlock = computedBlock;
+
     const geminiResult = await analyzeContent(geminiParts, fullPrompt);
-    const content = parseContentAnalysis(geminiResult.text, metadata, computedBlock);
+
+    // Ticket #295 code review, B2 -> H1 (owner ruling, 2026-08-26): stop
+    // ASSERTING 'full_video' before proof exists, in either direction. The
+    // provisional 'metadata_only' mode + performance block written above is
+    // the honest default (it is exactly what a killed process, or a
+    // concurrent viewer reading the row while `status = 'pending'`, is left
+    // with). Now that the response has arrived, `usageMetadata` is the
+    // mechanical evidence (see `hasVideoModalityEvidence`'s doc comment) —
+    // if it DOES show a VIDEO-modality prompt token count, Gemini actually
+    // decoded the video, and the row has now EARNED the 'full_video' claim.
+    // Upgrade to the truthful mode and recompute the performance block so
+    // `perf_bucket_key`/baseline stay consistent with the corrected
+    // `analysis_mode` — this is a second LOCAL computation (one more DB read
+    // inside `computePerformanceBlock`, no Gemini or ScrapeCreators spend)
+    // against the same already-fetched inputs, not a second live call.
+    if (youtubeModeNeedsVerification && hasVideoModalityEvidence(geminiResult.usageMetadata)) {
+      console.log(
+        "[PIPELINE] YouTube analysis_mode upgraded: Gemini's response carries VIDEO-modality " +
+          "usageMetadata, so the video was actually decoded. Recording the earned 'full_video' " +
+          "claim instead of the provisional 'metadata_only' default.",
+      );
+      analysisMode = "full_video";
+      computedBlock = await computePerformanceBlock({
+        platform: classified.platform,
+        mediaType: metadata.mediaType,
+        analysisMode,
+        reach: reachResult,
+        likeCount: metadata.likeCount,
+        commentCount: metadata.commentCount,
+        likeAndViewCountsDisabled: metadata.likeAndViewCountsDisabled,
+        followerCount,
+        audienceSourceFetchedAt: profile?.lastFetchedAt ?? null,
+        postDate: metadata.postDate,
+        profileId: profile?.id ?? null,
+        analysisId,
+        schemaVersion: ANALYSIS_SCHEMA_VERSION,
+      });
+
+      await db.execute({
+        sql: `
+          UPDATE analyses
+          SET analysis_mode = ?,
+              perf_reach_value = ?, perf_reach_kind = ?, perf_reach_derived_from = ?,
+              perf_tier1_ratio = ?, perf_tier1_denominator = ?, perf_bucket_key = ?,
+              perf_baseline_median = ?, perf_baseline_sample_size = ?, perf_multiplier = ?,
+              perf_tier_used = ?, perf_confidence = ?, perf_confidence_reason = ?,
+              perf_provisional = ?, perf_unavailable_reason = ?,
+              updated_at = datetime('now')
+          WHERE id = ?
+        `,
+        args: [
+          analysisMode,
+          computedBlock.reach.value,
+          computedBlock.reach.kind,
+          computedBlock.reach.derivedFrom,
+          computedBlock.tier1Ratio?.ratio ?? null,
+          computedBlock.tier1Ratio?.denominator ?? null,
+          computedBlock.bucketKey,
+          computedBlock.baseline.state !== "COLD_START" ? computedBlock.baseline.median : null,
+          computedBlock.baseline.sampleSize,
+          computedBlock.baseline.state === "MEASURED" ? computedBlock.baseline.multiplier : null,
+          computedBlock.tierUsed,
+          computedBlock.confidence,
+          computedBlock.confidenceReason,
+          toDbBool(computedBlock.provisional),
+          computedBlock.unavailableReason,
+          analysisId,
+        ],
+      });
+    }
+
+    // `promptBlock`, not `computedBlock` — see the comment above its
+    // declaration. `computedBlock` may have since been upgraded to
+    // 'full_video' (a different bucket/baseline); the guard must still
+    // check against what the prompt actually contained.
+    const content = parseContentAnalysis(geminiResult.text, metadata, promptBlock);
 
     console.log("[PIPELINE] Parsed analysis:");
     console.log(JSON.stringify(content, null, 2));
