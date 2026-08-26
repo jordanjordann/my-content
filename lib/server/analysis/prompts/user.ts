@@ -336,6 +336,60 @@ export function computePerformanceAssessmentBlock(
   return resolvePerformanceAssessment(metadata, computed).computedBlock;
 }
 
+/**
+ * Ticket #293 (#288, defence-in-depth companion to #292): `pipeline/
+ * index.ts` calls `analyzeContent(geminiParts, fullPrompt)` UNCONDITIONALLY,
+ * even when zero media parts reached Gemini. Without this guard, an empty
+ * `geminiParts` list produces no manifest and no warning — the model
+ * happily answers the visual questions from the caption alone, which is
+ * the exact fabrication mechanism #288 documents (invented timestamps,
+ * editing critique, an unearned `visualPolish` score for a video it never
+ * saw).
+ *
+ * "Reached Gemini with media" mirrors the SAME fact `pipeline/index.ts`'s
+ * `mediaParts` derivation establishes (`metadata.mediaParts` non-empty, OR
+ * a truthy `metadata.videoUrl` to synthesize one video part from — see
+ * `pipeline/index.ts`'s `metadata.videoUrl ? [...] : []` ternary, which uses
+ * plain truthiness, not a null check, so an empty-string `videoUrl` also
+ * falls through to "no media") — duplicated here deliberately, this module
+ * only sees `metadata`, never the pipeline's already-built `geminiParts`
+ * array. Checking `metadata.mediaParts` ALONE would be wrong: YouTube
+ * (fetcher/youtube.ts) never populates `mediaParts`, only `videoUrl` —
+ * checking `mediaParts` alone would falsely flag every ordinary, successful
+ * YouTube analysis as "no media" and leak this prohibition into a normal
+ * analysis, which the ticket's own acceptance criteria forbids.
+ *
+ * Mirrors `buildSlideManifest()`'s "returns null when there is nothing to
+ * enumerate" convention: returns null (omitting the block entirely) unless
+ * there is genuinely zero media.
+ *
+ * KNOWN LIMITATION (owner ruling, 2026-08-24, on #288 — accepted, not
+ * fixed here): `scorecardSchema` declares `required: [...SCORECARD_KEYS]`
+ * with every key (including `visualPolish`) a `Type.INTEGER` 1–5, and the
+ * system instruction also demands integers 1–5 for every scorecard key.
+ * Under structured output the model MUST emit a `visualPolish` value even
+ * when this guard fires — there is no way to ask the model to omit a
+ * required field, and the schema is deliberately NOT being changed here
+ * (ticket #292 already refuses these analyses outright before they reach
+ * this prompt, so this guard is a safety net, not the primary defence).
+ * This guard therefore only reduces invented *prose* (timestamps, editing
+ * critique, visual description) — it cannot suppress the required numeric
+ * `visualPolish` score. The wording below asks only for what is actually
+ * achievable under that constraint.
+ */
+function buildNoMediaGuard(metadata: MediaMetadata): string | null {
+  const hasMedia = (metadata.mediaParts?.length ?? 0) > 0 || Boolean(metadata.videoUrl);
+  if (hasMedia) {
+    return null;
+  }
+
+  return `## No Media Provided
+
+You were given NO video and NO images for this post — only the text metadata above (caption, title, stats). You did NOT see any visual content.
+
+You MUST NOT describe or refer to anything visual: no shots, framing, camera work, on-screen text, b-roll, pacing, editing, thumbnail appearance, or timestamp references like "at 0:10". Do not infer any visual detail from the caption or title. Base your entire analysis strictly on the text metadata provided. Where the scorecard requires a numeric visual score such as "visualPolish", you must still provide one, but treat it as a neutral placeholder rather than a real assessment — do not justify it with invented visual detail.`;
+}
+
 export function buildUserPrompt(
   metadata: MediaMetadata,
   userPrompt: string,
@@ -343,6 +397,7 @@ export function buildUserPrompt(
 ): string {
   const contextBlock = buildContextBlock(metadata);
   const slideManifest = buildSlideManifest(metadata);
+  const noMediaGuard = buildNoMediaGuard(metadata);
   const performanceAssessment = resolvePerformanceAssessment(metadata, computed).block;
   const { value: displayedViewCount, isPlayCount } = resolveDisplayedViewCount(metadata);
 
@@ -355,7 +410,7 @@ export function buildUserPrompt(
 - Duration: ${metadata.durationSec ? `${metadata.durationSec}s` : "N/A"}
 - Post Date: ${metadata.postDate ?? "N/A"}
 - Caption: ${metadata.caption ?? "N/A"}
-${contextBlock ? `\n${contextBlock}\n` : ""}${slideManifest ? `\n${slideManifest}\n` : ""}
+${contextBlock ? `\n${contextBlock}\n` : ""}${slideManifest ? `\n${slideManifest}\n` : ""}${noMediaGuard ? `\n${noMediaGuard}\n` : ""}
 ${performanceAssessment}
 
 ---

@@ -9,6 +9,7 @@ import {
   PACING_VALUES,
   TOPIC_NICHES,
 } from "@/lib/analysis/taxonomy/constants";
+import { SCORECARD_KEYS } from "@/lib/server/analysis/types/analysis";
 
 /**
  * Gemini `responseSchema` for the Tier 1 + Tier 2 analysis contract
@@ -135,17 +136,12 @@ const styleSchema: Schema = {
   ],
 };
 
-/** Tier 2 — 7 dimensions, each 1-5 (TDD §3.2 `Scorecard`). No min/max at the schema level — see the module doc comment. */
-const SCORECARD_KEYS = [
-  "hookStrength",
-  "retentionFlow",
-  "visualPolish",
-  "ctaEffectiveness",
-  "messageClarity",
-  "originality",
-  "emotionalResonance",
-] as const;
-
+/**
+ * Tier 2 — 7 dimensions, each 1-5 (TDD §3.2 `Scorecard`). No min/max at the
+ * schema level — see the module doc comment. `SCORECARD_KEYS` is imported
+ * from `types/analysis.ts` rather than re-declared here, so this schema and
+ * the domain type can never drift apart on the key list.
+ */
 const scorecardSchema: Schema = {
   type: Type.OBJECT,
   properties: Object.fromEntries(
