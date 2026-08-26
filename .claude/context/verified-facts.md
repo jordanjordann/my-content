@@ -88,9 +88,22 @@ downloadOptions: {
 isPaidPromotion: boolean
 ```
 
-Note: `downloadOptions` looked like it could replace `yt-dlp`, but formats
-came back empty with null manifest URLs. **Confirmed not usable for download
-— `extractVideoUrl` (yt-dlp) still owns download URL extraction.**
+Note: `downloadOptions` looked like it could replace `yt-dlp` for a **local
+download**, but formats came back empty with null manifest URLs — that
+specific approach was confirmed not usable back on 2026-07-21.
+
+**⚠️ SUPERSEDED as of ticket #295 (2026-08-24) — `yt-dlp` is GONE, not
+retained.** The sentence that used to stand here (*"`extractVideoUrl`
+(yt-dlp) still owns download URL extraction"*) was true when written and is
+now **false**: #295 replaced the entire local-download path with Gemini's
+native YouTube URL input (see "Gemini — YouTube URL as direct video input
+(`fileData.fileUri`)" below) — Google fetches the video server-side from the
+bare public URL, so this codebase no longer downloads YouTube video at all.
+`extractVideoUrl`, `yt-dlp`, and the `/tmp` download step for YouTube are
+deleted from `fetcher/router.ts`/`fetcher/youtube.ts`; the Dockerfile's
+`yt-dlp` install stage is removed. Do not cite the struck-through sentence
+above as current — this note supersedes it. (Left in place with the
+supersede banner, per this file's own convention, rather than deleted.)
 
 ### `trim` parameter
 
@@ -405,6 +418,79 @@ no successor class. Everything moves onto the unified client.
   run under a zero-live-call constraint, so the ported harness was type- and
   shape-checked but not executed. #66 should run it once and record the
   `finishReason` / `usageMetadata` / nullable-number results here.)*
+
+---
+
+## Gemini — YouTube URL as direct video input (`fileData.fileUri`) — LIVE (2026-08-24, issue #288 spike)
+
+**Recorded here late, by the PR #299 code review (2026-08-26), not by the original spike
+session.** `docs/audit/ANALYSIS-288-youtube-extraction.md` §3 states this section was
+"recorded in `.claude/context/verified-facts.md`" — **that claim was checked while acting
+on PR #299's review and found FALSE: no section with this title existed in this file
+before this edit.** The spike happened and its result is real (ticket #295 shipped and
+works, per PR #299's own reviewer independently confirming the wire shape at HEAD against
+this exact codebase), but the promised write-up to this file never landed. This section
+transcribes the spike's result from the audit doc's own report of it — **not a fresh live
+call** made while fixing PR #299's review. Treat the specific numbers below as secondhand
+(audit-doc-sourced), not as independently re-verified in this session; the SDK mechanics
+they rely on (`usageMetadata.promptTokensDetails`, `ModalityTokenCount.modality`) ARE
+independently confirmed elsewhere in this same file (see "Gemini SDK — `@google/genai`"
+above, and the two real `promptTokensDetails` captures with populated `VIDEO` entries in
+the `ANALYSIS_RESPONSE_SCHEMA` V1/V3 sections below).
+
+- **Tested:** 2026-08-24, issue #288 spike (tech lead John, per the audit doc). **Not
+  re-run in this PR #299 fix session** — no live Gemini calls were made while addressing
+  the review (budget constraint, explicit in this fix's own brief).
+- **Working request shape on `@google/genai@2.13.0`:** `{ fileData: { fileUri: "<public
+  YouTube URL>" } }`, `mimeType` key deliberately omitted (not merely `undefined`).
+  `createPartFromUri()` is NOT used for this path (that helper always sets `mimeType`,
+  see "Gemini SDK" above) — the part is built by hand.
+- **The `{ type: "video", uri }` form documented on some Gemini docs pages does NOT exist
+  on this installed SDK version.** `Part` (`genai.d.ts`) has no `type`/`uri` member — that
+  page describes a newer, not-yet-adopted unified content surface. Do not build against it.
+- **`youtube.com/shorts/<id>` is accepted directly by Gemini**, with no `watch?v=`
+  rewrite needed. Consequently `cleanYouTubeUrl()` (which used to blank the query string
+  before handing a URL to `yt-dlp`) must not be applied on this path — ticket #295 removed
+  it as dead code for exactly this reason.
+- **Mechanical proof that Gemini actually decoded the video (the fact this whole section
+  exists to support):** the spike's `usageMetadata.promptTokensDetails` contained a
+  `{"modality":"VIDEO","tokenCount":6049}` entry (plus `{"modality":"AUDIO","tokenCount":
+  31}`), AND a designed fabrication check passed — a clip titled "Shortest Video on
+  Youtube" with no visual metadata in its title/description, where the model nonetheless
+  correctly described a ginger-and-white cat mid-meow on beige tile with a Greek-key rug
+  border (ground truth: the video's own public thumbnail). **This is the exact signal
+  `hasVideoModalityEvidence()` (`lib/server/analysis/gemini/generate.ts`, added in this PR
+  #299 fix round) checks for** — a `VIDEO`-modality `ModalityTokenCount` entry with a
+  positive `tokenCount` in `promptTokensDetails`.
+- **Trap: default frame sampling can starve a short clip.** With no `videoMetadata` set,
+  a ~1s clip returned a genuine HTTP 400 `ApiError`, message containing "No frames to
+  extract with given parameters" — NOT an access/availability failure (the video was
+  already fetched by Gemini). Root cause: default `videoMetadata.fps` sampling is 1.0,
+  which can round to zero sampled frames on a sub-2s clip. Fix: retry exactly once with
+  `videoMetadata: { fps: 24 }` on the SAME part. Ticket #295 implements this retry, gated
+  strictly to a bare (`mimeType`-less) `fileData` part so it cannot fire on an
+  Instagram/File-API-uploaded part (see `media/types.ts`'s `YoutubeNativeUrlPart` vs.
+  `UploadedVideoPart` discriminated types, PR #299 review M1).
+- **Documented limits of this preview feature (audit doc, not independently re-verified
+  here):** public videos only (private/region-blocked/removed videos fail, structurally
+  indistinguishable from any other "Gemini could not obtain the video" failure — the
+  pipeline's existing refusal handling, #292, covers this without a bespoke branch);
+  free tier ~8h of video/day; ~300 input tokens/sec of video at default resolution
+  (~18k tokens for a 60s Short); ~100 tokens/sec at low resolution; raising `fps` directly
+  multiplies input token cost (a 1s clip at fps 24 billed ~6049 VIDEO tokens vs. a normal
+  ~300 tokens/sec at the default rate).
+- **Cost of the original spike:** 2 Gemini `generateContent` calls, 0 ScrapeCreators
+  credits (per the audit doc). **Cost of writing this section:** 0 — no new live calls,
+  transcription only.
+
+### What is NOT claimed by this section
+
+- That this section's specific numbers (6049 VIDEO tokens, the exact fabrication-test
+  wording, the 8h/day free-tier figure) were independently re-verified against a live
+  call during the PR #299 fix. They are carried over from the audit doc's own report of
+  the 2026-08-24 spike, one level of indirection removed from a fresh capture.
+- That the preview feature's public-videos-only limitation, or its rate limits, have
+  changed or been re-checked since 2026-08-24.
 
 ---
 
@@ -2009,8 +2095,16 @@ the path. **Build-time variables must be declared with `ARG` in the stage that u
 variable is not visible to a build stage that has not declared it.
 Source: <https://docs.railway.com/guides/dockerfiles>
 
-Relevant to this repo: the root `Dockerfile` already declares `ARG APP_SESSION_SECRET`,
-`ARG YT_DLP_VERSION`, `ARG TARGETARCH` and `ARG NODE_VERSION`.
+Relevant to this repo: the root `Dockerfile` declares `ARG APP_SESSION_SECRET` and
+`ARG NODE_VERSION`.
+
+**⚠️ CORRECTED as of ticket #295 (2026-08-24).** This line used to also list `ARG
+YT_DLP_VERSION` and `ARG TARGETARCH` — both are **gone**. #295 removed the entire
+`yt-dlp` binary-install stage from the Dockerfile (it existed only to fetch a
+per-architecture `yt-dlp` binary, hence `TARGETARCH`); with `yt-dlp` deleted from the
+codebase (see the superseded note in the `/v1/youtube/video` section above), the
+Dockerfile no longer needs either `ARG`. Verified live against the current `Dockerfile`
+(`grep -n "^ARG" Dockerfile`) at the time of writing — only the two listed above remain.
 
 ### `[DOC]` Serverless / app sleeping
 
