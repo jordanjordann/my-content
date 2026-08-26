@@ -1035,15 +1035,28 @@ committed at `.claude/context/fixtures/scrapecreators-instagram/` (six fixtures 
 sections above). The "no raw capture committed" framing below is no longer true; the
 transcribed-from-memory notes in this section are superseded wherever they overlap with the
 capture sections above and should only be treated as authoritative for things the captures
-above don't cover (e.g. `/v1/instagram/profile`, which remains uncaptured).
+above don't cover.
+
+🛑 **STOP — the "`/v1/instagram/profile` remains uncaptured" claim in this section is DEAD. Do not
+quote it.** That endpoint was captured live on 2026-08-05 and the fixture is committed at
+`.claude/context/fixtures/scrapecreators-instagram/ig_profile_business_account.json`. Jump to
+"ScrapeCreators — `/v1/instagram/profile` — FIRST live capture (2026-08-05, superseding ticket #36)"
+further down this file before writing anything about that endpoint. This stale wording was quoted
+verbatim by the 2026-08-21 audit and produced a bogus P1 ticket (#282) for a gap that had already
+been closed 16 days earlier — that is why the pointer is this loud.
 
 - **Originally tested:** 2026-07-20, during PR #42 — live, against a real reel
   and a real 12-slide all-image carousel.
 - **Raw captures:** **NOT committed at the time this section was written** (2026-07-20/#64).
   The originals lived in `/tmp/sc-carousel-response.json` /
   `/tmp/sc-profile-response.json` and are gone. First-hand captures for
-  `/v1/instagram/post` now exist — see above. `/v1/instagram/profile` is still
-  uncaptured; nothing under `.claude/context/fixtures/` covers that endpoint.
+  `/v1/instagram/post` now exist — see above. ~~`/v1/instagram/profile` is still
+  uncaptured; nothing under `.claude/context/fixtures/` covers that endpoint.~~
+  **SUPERSEDED 2026-08-05** — struck through, kept only as history. A first-hand
+  `/v1/instagram/profile` capture is committed at
+  `.claude/context/fixtures/scrapecreators-instagram/ig_profile_business_account.json`;
+  see the 2026-08-05 capture section below. Never cite this struck-through
+  sentence as evidence of an open gap.
 - **Confidence:** everything below is transcribed from code and code comments
   written at the time of that live session
   (`lib/server/scrapecreators/types.ts`, `lib/server/scrapecreators/instagram.ts`,
@@ -1311,8 +1324,17 @@ and the gap itself (no committed fixture represents a genuinely counts-disabled 
   production uses (`fetchInstagramProfileInput` → `getInstagramProfile` → `scRequest`), not a
   hand-rolled request, and the full raw envelope was recovered afterward from the `profiles.raw_payload`
   column (which stores `JSON.stringify(envelope)` verbatim — see `upsertProfile`).
-- **Raw capture (committed, byte-identical to `raw_payload`):**
+- **Raw capture (committed):**
   `.claude/context/fixtures/scrapecreators-instagram/ig_profile_business_account.json`
+  - ⚠️ **CORRECTION (2026-08-26):** "byte-identical to `raw_payload`" was true when written, but is
+    **no longer true**. Commit `75f41e8` ("[BE] Scrub live production creator data from fixtures,
+    tests, docs, my-content.db", #269) rewrote the identifying values in this fixture with
+    shape-preserving synthetics — `username` is now `commenter_034`, `id` is `1012501038`, and the
+    `profile_pic_url` / `profile_pic_url_hd` values point at `example.invalid`. **Shape, nesting,
+    key count (69 `data.user` keys) and types are unchanged**, so every structural claim in this
+    section still stands and the fixture is still valid to build against. What you may NOT do is
+    treat the literal values as observed live data (`nasa`, `528817151`) — those were scrubbed.
+    `edge_followed_by.count` (104252772) and `edge_follow.count` (92) were left intact.
 
 ### Envelope — CONFIRMED
 
