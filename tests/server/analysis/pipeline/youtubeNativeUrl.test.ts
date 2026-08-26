@@ -115,8 +115,18 @@ vi.mock("@/lib/server/analysis/prompts", () => ({
   buildUserPrompt: () => "user",
 }));
 
+// PR #299 round-4 review: a plain arrow function here (the original form)
+// discards its call args, so no test in this file could ever assert WHICH
+// `ComputedPerformanceBlock` the pipeline actually handed to the guard's
+// entry point. Wrapping a named, inspectable `vi.fn()` (same pattern as
+// `dbExecute`/`analyzeContentMock` above) lets the new describe block below
+// assert on `parseContentAnalysisMock.mock.calls`.
+const parseContentAnalysisMock = vi
+  .fn()
+  .mockReturnValue({ schemaVersion: 1, performance: { performanceScore: null, verdict: "", drivers: [] } });
+
 vi.mock("@/lib/server/analysis/parser", () => ({
-  parseContentAnalysis: () => ({ schemaVersion: 1, performance: { performanceScore: null, verdict: "", drivers: [] } }),
+  parseContentAnalysis: (...args: unknown[]) => parseContentAnalysisMock(...args),
 }));
 
 vi.mock("@/lib/server/profiles", () => ({
@@ -131,6 +141,7 @@ describe("runAnalysis — YouTube native Gemini URL input (ticket #295)", () => 
     preparePartsMock.mockClear();
     fetchMetadataMock.mockClear();
     fetchMetadataMock.mockResolvedValue(buildYoutubeMetadata(YOUTUBE_URL));
+    parseContentAnalysisMock.mockClear();
   });
 
   it("sends a bare fileData.fileUri part built from the unmodified videoUrl, and never calls prepareParts", async () => {
@@ -288,6 +299,7 @@ describe("runAnalysis — YouTube analysis_mode is EARNED, not asserted (ticket 
     preparePartsMock.mockClear();
     fetchMetadataMock.mockClear();
     fetchMetadataMock.mockResolvedValue(buildYoutubeMetadata(YOUTUBE_URL));
+    parseContentAnalysisMock.mockClear();
   });
 
   /**
@@ -378,5 +390,60 @@ describe("runAnalysis — YouTube analysis_mode is EARNED, not asserted (ticket 
     const perfBucketKeyIndex = placeholderIndexBefore("perf_bucket_key = ?");
     expect(query.args[perfBucketKeyIndex]).toMatch(/:full_video$/);
     expect(query.args[perfBucketKeyIndex]).not.toMatch(/:metadata_only$/);
+  });
+});
+
+describe("runAnalysis — fabrication guard is pinned to the prompt-time block, not the upgraded one (PR #299 round-4 review)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    dbExecute.mockClear();
+    analyzeContentMock.mockClear();
+    preparePartsMock.mockClear();
+    fetchMetadataMock.mockClear();
+    fetchMetadataMock.mockResolvedValue(buildYoutubeMetadata(YOUTUBE_URL));
+    parseContentAnalysisMock.mockClear();
+  });
+
+  /**
+   * `computeBucketKey` (`performance/baseline.ts`) folds `analysisMode`
+   * directly into its result (`[platform, mediaType, analysisMode].join(...)`)
+   * — so the provisional 'metadata_only' block computed BEFORE the Gemini
+   * call and the upgraded 'full_video' block computed AFTER it are
+   * genuinely different `ComputedPerformanceBlock`s (different `bucketKey`,
+   * hence a different baseline pool), never the same object twice. This
+   * test uses the REAL `computePerformanceBlock` (unmocked) to prove that:
+   * on the default mock setup (`analyzeContentMock` resolves with
+   * VIDEO-modality `usageMetadata`, so the upgrade fires), the guard's
+   * entry point — `parseContentAnalysis`, mocked here as an inspectable
+   * spy — must still be invoked with the block tagged 'metadata_only'
+   * (what `buildUserPrompt` actually used), never the one tagged
+   * 'full_video' the row ends up persisting under. Reverting the
+   * `promptBlock` pinning in `pipeline/index.ts` (passing the possibly-
+   * reassigned `computedBlock` into `parseContentAnalysis` instead) flips
+   * this assertion, because by the time `parseContentAnalysis` runs,
+   * `computedBlock` has already been reassigned to the upgraded block.
+   */
+  it("passes parseContentAnalysis the metadata_only-tagged block used to build the prompt, even though the row upgrades to full_video", async () => {
+    const { runAnalysis } = await import("@/lib/server/analysis/pipeline");
+
+    await runAnalysis({ url: YOUTUBE_URL, prompt: "focus on hooks" });
+
+    // Sanity check: the row DID upgrade (same fact the sibling describe
+    // block above asserts) — otherwise this test would trivially pass with
+    // only one block ever existing, proving nothing about the pinning.
+    const analysisModeUpdateCalls = dbExecute.mock.calls.filter((call) => {
+      const query = call[0] as { sql: string; args: unknown[] };
+      return typeof query.sql === "string" && query.sql.includes("analysis_mode = ?");
+    });
+    expect(analysisModeUpdateCalls.length).toBeGreaterThanOrEqual(2);
+
+    expect(parseContentAnalysisMock).toHaveBeenCalledTimes(1);
+    const [, , blockPassedToGuard] = parseContentAnalysisMock.mock.calls[0] as [
+      unknown,
+      unknown,
+      { bucketKey: string },
+    ];
+    expect(blockPassedToGuard.bucketKey).toMatch(/:metadata_only$/);
+    expect(blockPassedToGuard.bucketKey).not.toMatch(/:full_video$/);
   });
 });

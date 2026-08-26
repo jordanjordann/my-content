@@ -23,9 +23,24 @@ import { assertContentAnalysis } from "./validation";
  * computed block it checks against is the SAME `ComputedPerformanceBlock`
  * (`computeBlock.ts`) the prompt was built from
  * (`computePerformanceAssessmentBlock`, `prompts/user.ts`) — passed through
- * from the pipeline, never a second, independently-derived figure (ticket
- * #143 — `computeBlock.ts` is computed exactly once per analysis, including
- * its one DB read for the Tier 2 baseline).
+ * from the pipeline as the `computedBlock` parameter below, never a second,
+ * independently-derived figure.
+ *
+ * PR #299 round-4 review: ticket #143's original claim that
+ * `computeBlock.ts` "is computed exactly once per analysis" no longer holds
+ * UNIVERSALLY — the YouTube native-URL path (`pipeline/index.ts`,
+ * `youtubeModeNeedsVerification`) computes it a SECOND time, post-response,
+ * to upgrade a provisional `'metadata_only'` block to an earned
+ * `'full_video'` one once `hasVideoModalityEvidence()` confirms Gemini
+ * decoded the video — a different `analysisMode` yields a different
+ * `bucketKey` (`performance/baseline.ts`), hence a different baseline pool.
+ * The invariant THIS function depends on survives that: `pipeline/index.ts`
+ * pins the pre-upgrade block into a separate `promptBlock` binding at
+ * prompt-build time and always passes THAT (never the possibly-upgraded
+ * `computedBlock`) as this function's `computedBlock` parameter — so what
+ * reaches the guard here is still guaranteed to be the exact block the
+ * prompt was built from, even on a path where a second block gets computed
+ * afterward for the DB write alone.
  */
 export function parseContentAnalysis(
   text: string,

@@ -397,6 +397,21 @@ export async function runAnalysis({
     const userPrompt = buildUserPrompt(metadata, prompt, computedBlock);
     const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
 
+    // PR #299 round-4 review: `computedBlock` is reassigned below (YouTube
+    // upgrade branch) to a SECOND, independently-computed
+    // `ComputedPerformanceBlock` — different `analysisMode` -> different
+    // `bucketKey` -> a different baseline pool, per `computeBucketKey`
+    // (`performance/baseline.ts`). `promptBlock` is captured here, BEFORE
+    // that reassignment can happen, and is never itself reassigned — it is
+    // pinned to the exact block `buildUserPrompt()` just used to build
+    // `fullPrompt`, i.e. what Gemini actually saw. The prose guard
+    // (`parseContentAnalysis`, called below) must check the model's output
+    // against THIS block, not whatever `computedBlock` becomes after an
+    // upgrade — the guard's own contract (`parser/analysis.ts`'s doc
+    // comment) is "the SAME block the prompt was built from", and using the
+    // post-upgrade `computedBlock` there would silently violate it.
+    const promptBlock = computedBlock;
+
     const geminiResult = await analyzeContent(geminiParts, fullPrompt);
 
     // Ticket #295 code review, B2 -> H1 (owner ruling, 2026-08-26): stop
@@ -469,7 +484,11 @@ export async function runAnalysis({
       });
     }
 
-    const content = parseContentAnalysis(geminiResult.text, metadata, computedBlock);
+    // `promptBlock`, not `computedBlock` — see the comment above its
+    // declaration. `computedBlock` may have since been upgraded to
+    // 'full_video' (a different bucket/baseline); the guard must still
+    // check against what the prompt actually contained.
+    const content = parseContentAnalysis(geminiResult.text, metadata, promptBlock);
 
     console.log("[PIPELINE] Parsed analysis:");
     console.log(JSON.stringify(content, null, 2));
