@@ -215,11 +215,14 @@ describe("runAnalysis — YouTube upgrade branch's SECOND computePerformanceBloc
     expect(row.rows[0]?.perf_baseline_sample_size).toBe(0);
     expect(row.rows[0]?.perf_baseline_median).toBeNull();
 
-    // Same failure-only gating must hold for `audienceSourceFetchedAt` on
-    // this SECOND `computePerformanceBlock` call: `profile.lastFetchedAt`
-    // is the `PROFILE_NEVER_FETCHED_SENTINEL` epoch (never a real fetch),
-    // so `hasRealProfileData()` must read this as `false` and the upgrade
-    // UPDATE must persist NULL — not the sentinel timestamp.
+    // This checks the value persisted by the FIRST `computePerformanceBlock`
+    // call (the initial compute), not the second/upgrade call: the upgrade
+    // UPDATE's SET clause never includes `audience_source_fetched_at` at
+    // all, so its value is unobservable from that call site. That's
+    // harmless here — `profile.lastFetchedAt` (the `PROFILE_NEVER_FETCHED_SENTINEL`
+    // epoch) is identical at both call sites, so never re-persisting it on
+    // the second UPDATE doesn't change the outcome. This assertion just
+    // pins the first write's value: NULL, not the sentinel timestamp.
     expect(row.rows[0]?.audience_source_fetched_at).toBeNull();
   });
 });
