@@ -161,17 +161,28 @@ export async function runAnalysis({
     // re-analysis convention).
     let analysisMode: "full_video" | "images_only" | "metadata_only" = "metadata_only";
 
-    // Ticket #295 code review, B2: for the YouTube native-URL path,
-    // `analysisMode` cannot be decided yet at this point in the function —
-    // it is only an INTENT here (we are about to attempt a full-video
-    // analysis), not a fact. Whether Gemini actually decoded the video is
-    // only knowable once its response comes back with `usageMetadata`. The
-    // prior code asserted 'full_video' right here, unconditionally, before
-    // Gemini was ever called — inferred purely from "we have a URL", the
-    // same shape of unearned claim #288 was about, just relocated. This flag
-    // marks that the value assigned below is provisional and must be
-    // verified (and corrected, along with the performance block computed
-    // from it) after `analyzeContent()` returns.
+    // Ticket #295 code review, B2 -> H1 (owner ruling, 2026-08-26): for the
+    // YouTube native-URL path, `analysisMode` cannot be decided yet at this
+    // point in the function — it is only an INTENT here (we are about to
+    // attempt a full-video analysis), not a fact. Whether Gemini actually
+    // decoded the video is only knowable once its response comes back with
+    // `usageMetadata`.
+    //
+    // The pre-call persisted value must therefore be the CONSERVATIVE
+    // default ('metadata_only', already this variable's initial value —
+    // nothing to assign here) rather than the optimistic one. B2's original
+    // fix asserted 'full_video' provisionally and downgraded it after the
+    // call; the reviewer found that ordering left a real window — for the
+    // whole duration of the Gemini call, and permanently if the process is
+    // killed before the correction runs — where a 'pending' row claimed
+    // 'full_video' with zero evidence, an unearned claim structurally
+    // identical to the one #288 was about. Inverting so the honest mode is
+    // what a killed/errored process stalls on, and 'full_video' is only ever
+    // written once `hasVideoModalityEvidence()` has proof, makes that
+    // unearned claim structurally impossible rather than merely narrow: this
+    // flag marks that the YouTube path must re-check analysisMode after
+    // `analyzeContent()` returns and UPGRADE it (recomputing the performance
+    // block to match) if and only if the evidence is present.
     let youtubeModeNeedsVerification = false;
 
     let geminiParts: Awaited<ReturnType<typeof prepareParts>>["geminiParts"] = [];
@@ -208,7 +219,10 @@ export async function runAnalysis({
       // this is preparation for the analyze call, not a download step.
       report("analyzing", 1, "Preparing video for Gemini analysis...");
       geminiParts = [{ fileData: { fileUri: metadata.videoUrl } }];
-      analysisMode = "full_video";
+      // `analysisMode` stays at its conservative default ('metadata_only')
+      // here — see the comment above `youtubeModeNeedsVerification`. It is
+      // only ever upgraded to 'full_video' after `analyzeContent()` returns
+      // evidence that Gemini actually decoded the video.
       youtubeModeNeedsVerification = true;
     } else if (metadata.mediaParts && metadata.mediaParts.length > 0) {
       // Instagram (fetcher/adapter.ts, via resolveMediaParts()) populates
@@ -285,9 +299,10 @@ export async function runAnalysis({
     // only place a completed analysis can ever recover how stale its own
     // audience denominator was (R-13.3.2/R-13.4.5).
     //
-    // `let`, not `const`: ticket #295 code review B2 recomputes this once
-    // more, below, for the YouTube path ONLY, if Gemini's response turns
-    // out not to evidence real video decoding — see
+    // `let`, not `const`: ticket #295 code review B2/H1 recomputes this once
+    // more, below, for the YouTube path ONLY, if Gemini's response DOES
+    // evidence real video decoding (an upgrade from the provisional
+    // 'metadata_only' block computed here) — see
     // `youtubeModeNeedsVerification`.
     let computedBlock = await computePerformanceBlock({
       platform: classified.platform,
@@ -384,28 +399,27 @@ export async function runAnalysis({
 
     const geminiResult = await analyzeContent(geminiParts, fullPrompt);
 
-    // Ticket #295 code review, B2: stop ASSERTING 'full_video' and start
-    // EARNING it. The provisional 'full_video' mode + performance block
-    // written above reflected intent (we attempted to send Gemini a video),
-    // not proof. Now that the response has arrived, `usageMetadata` is the
+    // Ticket #295 code review, B2 -> H1 (owner ruling, 2026-08-26): stop
+    // ASSERTING 'full_video' before proof exists, in either direction. The
+    // provisional 'metadata_only' mode + performance block written above is
+    // the honest default (it is exactly what a killed process, or a
+    // concurrent viewer reading the row while `status = 'pending'`, is left
+    // with). Now that the response has arrived, `usageMetadata` is the
     // mechanical evidence (see `hasVideoModalityEvidence`'s doc comment) —
-    // if it does NOT show a VIDEO-modality prompt token count, Gemini
-    // answered without decoding the media, and persisting 'full_video'
-    // would be a stronger false claim than the original #288 fabrication
-    // bug (no `Caption only` chip, no honest column for #297's untrusted
-    // banner to key off). Downgrade to the truthful mode and recompute the
-    // performance block so `perf_bucket_key`/baseline stay consistent with
-    // the corrected `analysis_mode` — this is a second LOCAL computation
-    // (one more DB read inside `computePerformanceBlock`, no Gemini or
-    // ScrapeCreators spend) against the same already-fetched inputs, not a
-    // second live call.
-    if (youtubeModeNeedsVerification && !hasVideoModalityEvidence(geminiResult.usageMetadata)) {
-      console.warn(
-        "[PIPELINE] YouTube analysis_mode downgraded: Gemini's response carries no VIDEO-modality " +
-          "usageMetadata, so the video was not actually decoded despite being sent. Recording the " +
-          "truthful mode instead of the unearned 'full_video' claim.",
+    // if it DOES show a VIDEO-modality prompt token count, Gemini actually
+    // decoded the video, and the row has now EARNED the 'full_video' claim.
+    // Upgrade to the truthful mode and recompute the performance block so
+    // `perf_bucket_key`/baseline stay consistent with the corrected
+    // `analysis_mode` — this is a second LOCAL computation (one more DB read
+    // inside `computePerformanceBlock`, no Gemini or ScrapeCreators spend)
+    // against the same already-fetched inputs, not a second live call.
+    if (youtubeModeNeedsVerification && hasVideoModalityEvidence(geminiResult.usageMetadata)) {
+      console.log(
+        "[PIPELINE] YouTube analysis_mode upgraded: Gemini's response carries VIDEO-modality " +
+          "usageMetadata, so the video was actually decoded. Recording the earned 'full_video' " +
+          "claim instead of the provisional 'metadata_only' default.",
       );
-      analysisMode = "metadata_only";
+      analysisMode = "full_video";
       computedBlock = await computePerformanceBlock({
         platform: classified.platform,
         mediaType: metadata.mediaType,

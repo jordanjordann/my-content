@@ -84,12 +84,16 @@ const analyzeContentMock = vi
   .fn()
   .mockResolvedValue({ text: "{}", raw: "{}", usageMetadata: VIDEO_MODALITY_USAGE_METADATA });
 
-// Real implementation, not a mock: ticket #295 code review B2 is exactly
-// about this function's job actually running against whatever
-// `analyzeContentMock` resolves with in a given test.
-const hasVideoModalityEvidence = (usageMetadata: { promptTokensDetails?: { modality?: string; tokenCount?: number }[] } | undefined) =>
-  (usageMetadata?.promptTokensDetails ?? []).some(
-    (detail) => detail.modality === "VIDEO" && (detail.tokenCount ?? 0) > 0,
+// M-b (PR #299 review round 2): this used to be a hand-copied twin of
+// `hasVideoModalityEvidence` under a comment falsely claiming "real
+// implementation, not a mock" — mutations to the REAL function (in
+// `gemini/generate.ts`) left this file green while `generate.test.ts`
+// correctly caught them, proving it was a separate, driftable copy.
+// `importActual` pulls the real export out of the real module so this file
+// actually exercises it, not a maintained-by-hand duplicate.
+const { hasVideoModalityEvidence } =
+  await vi.importActual<typeof import("@/lib/server/analysis/gemini/generate")>(
+    "@/lib/server/analysis/gemini/generate",
   );
 
 vi.mock("@/lib/server/analysis/gemini", () => ({
@@ -144,24 +148,96 @@ describe("runAnalysis — YouTube native Gemini URL input (ticket #295)", () => 
     expect(Object.keys((geminiParts[0] as { fileData: object }).fileData)).toEqual(["fileUri"]);
   });
 
-  it("persists analysis_mode = 'full_video' and a NULL gemini_file_uri (no File API asset on this path)", async () => {
+  it("persists analysis_mode = 'full_video' (earned, final state) and a NULL gemini_file_uri (no File API asset on this path)", async () => {
     const { runAnalysis } = await import("@/lib/server/analysis/pipeline");
 
     await runAnalysis({ url: YOUTUBE_URL, prompt: "focus on hooks" });
 
-    const metadataUpdateCall = dbExecute.mock.calls.find((call) => {
+    // Owner ruling H1 (2026-08-26): the provisional pre-call write is now
+    // 'metadata_only', not 'full_video' — the LAST `analysis_mode` UPDATE is
+    // the row's final, earned state, which is what this test asserts.
+    const analysisModeUpdateCalls = dbExecute.mock.calls.filter((call) => {
       const query = call[0] as { sql: string; args: unknown[] };
       return typeof query.sql === "string" && query.sql.includes("analysis_mode = ?");
     });
-    expect(metadataUpdateCall).toBeDefined();
-    const query = metadataUpdateCall![0] as { sql: string; args: unknown[] };
+    expect(analysisModeUpdateCalls.length).toBeGreaterThanOrEqual(2);
+    const lastCall = analysisModeUpdateCalls[analysisModeUpdateCalls.length - 1]!;
+    const query = lastCall[0] as { sql: string; args: unknown[] };
 
     const placeholderIndexBefore = (marker: string): number => {
       const before = query.sql.split(marker)[0] ?? "";
       return (before.match(/\?/g) ?? []).length;
     };
     expect(query.args[placeholderIndexBefore("analysis_mode = ?")]).toBe("full_video");
-    expect(query.args[placeholderIndexBefore("gemini_file_uri = ?")]).toBeNull();
+
+    // gemini_file_uri only appears on the FIRST (metadata) UPDATE — the
+    // upgrade UPDATE doesn't touch it.
+    const metadataUpdateCall = dbExecute.mock.calls.find((call) => {
+      const query = call[0] as { sql: string; args: unknown[] };
+      return typeof query.sql === "string" && query.sql.includes("gemini_file_uri = ?");
+    })!;
+    const metadataQuery = metadataUpdateCall[0] as { sql: string; args: unknown[] };
+    const metadataPlaceholderIndexBefore = (marker: string): number => {
+      const before = metadataQuery.sql.split(marker)[0] ?? "";
+      return (before.match(/\?/g) ?? []).length;
+    };
+    expect(metadataQuery.args[metadataPlaceholderIndexBefore("gemini_file_uri = ?")]).toBeNull();
+  });
+
+  // H1 (PR #299 review round 2, owner ruling 2026-08-26): the provisional
+  // pre-call write must be the honest 'metadata_only' default, not
+  // 'full_video' — this makes a killed/errored process (or a concurrent
+  // viewer reading the row mid-flight) strand on the truthful mode instead
+  // of an unearned claim. Verified directly against the FIRST analysis_mode
+  // UPDATE (the one written before analyzeContent() is ever called).
+  it("writes the provisional analysis_mode as 'metadata_only' BEFORE calling Gemini — never an unearned 'full_video'", async () => {
+    const { runAnalysis } = await import("@/lib/server/analysis/pipeline");
+
+    await runAnalysis({ url: YOUTUBE_URL, prompt: "focus on hooks" });
+
+    const analysisModeUpdateCalls = dbExecute.mock.calls.filter((call) => {
+      const query = call[0] as { sql: string; args: unknown[] };
+      return typeof query.sql === "string" && query.sql.includes("analysis_mode = ?");
+    });
+    expect(analysisModeUpdateCalls.length).toBeGreaterThanOrEqual(1);
+    const firstCall = analysisModeUpdateCalls[0]!;
+    const query = firstCall[0] as { sql: string; args: unknown[] };
+    const placeholderIndexBefore = (marker: string): number => {
+      const before = query.sql.split(marker)[0] ?? "";
+      return (before.match(/\?/g) ?? []).length;
+    };
+    expect(query.args[placeholderIndexBefore("analysis_mode = ?")]).toBe("metadata_only");
+  });
+
+  // H1: a killed process (not a thrown error — that's the `catch` block's
+  // job, covered separately below) never reaches the post-call upgrade.
+  // Simulating that by having `analyzeContent` hang forever and asserting
+  // only ONE analysis_mode UPDATE ever fires proves the row is left at the
+  // honest 'metadata_only' default, not a false 'full_video' claim — the
+  // exact "durable orphan" the reviewer flagged.
+  it("leaves analysis_mode at the honest 'metadata_only' default if the process never gets past the Gemini call (simulated kill)", async () => {
+    // Never resolves — stands in for a killed process: no upgrade, no
+    // completion, ever runs past this point.
+    analyzeContentMock.mockImplementationOnce(() => new Promise(() => {}));
+
+    const { runAnalysis } = await import("@/lib/server/analysis/pipeline");
+
+    // Deliberately not awaited to completion — we only need the write that
+    // happens before the (never-resolving) Gemini call to have landed.
+    void runAnalysis({ url: YOUTUBE_URL, prompt: "focus on hooks" });
+    await vi.waitFor(() => expect(analyzeContentMock).toHaveBeenCalledTimes(1));
+
+    const analysisModeUpdateCalls = dbExecute.mock.calls.filter((call) => {
+      const query = call[0] as { sql: string; args: unknown[] };
+      return typeof query.sql === "string" && query.sql.includes("analysis_mode = ?");
+    });
+    expect(analysisModeUpdateCalls).toHaveLength(1);
+    const query = analysisModeUpdateCalls[0]![0] as { sql: string; args: unknown[] };
+    const placeholderIndexBefore = (marker: string): number => {
+      const before = query.sql.split(marker)[0] ?? "";
+      return (before.match(/\?/g) ?? []).length;
+    };
+    expect(query.args[placeholderIndexBefore("analysis_mode = ?")]).toBe("metadata_only");
   });
 
   it("refuses (deletes the row) rather than persisting a caption-only result when Gemini cannot obtain the video", async () => {
@@ -204,7 +280,7 @@ describe("runAnalysis — YouTube native Gemini URL input (ticket #295)", () => 
   });
 });
 
-describe("runAnalysis — YouTube analysis_mode is EARNED, not asserted (ticket #295 code review, B2)", () => {
+describe("runAnalysis — YouTube analysis_mode is EARNED, not asserted (ticket #295 code review, B2/H1)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     dbExecute.mockClear();
@@ -215,14 +291,15 @@ describe("runAnalysis — YouTube analysis_mode is EARNED, not asserted (ticket 
   });
 
   /**
-   * The detector for B2 itself: if the post-response verification gate in
-   * `pipeline/index.ts` (the `hasVideoModalityEvidence` check) were ever
-   * deleted, this test fails, because the persisted `analysis_mode` would
-   * revert to the old, unconditional 'full_video' assertion even though
-   * `usageMetadata` here carries NO `VIDEO` modality entry at all — the
-   * exact "Gemini answered without decoding the media" case B2 is about.
+   * H1 (owner ruling, 2026-08-26): after the inversion, the provisional
+   * write is already the honest 'metadata_only' — so when Gemini's response
+   * carries no VIDEO-modality evidence, there is nothing to correct. If the
+   * post-response upgrade gate in `pipeline/index.ts` (the
+   * `hasVideoModalityEvidence` check) were ever changed to fire
+   * unconditionally, this test fails, because a second, unwarranted
+   * analysis_mode UPDATE would appear.
    */
-  it("downgrades analysis_mode to 'metadata_only' when Gemini's usageMetadata shows no VIDEO modality", async () => {
+  it("leaves analysis_mode at 'metadata_only' (no upgrade) when Gemini's usageMetadata shows no VIDEO modality", async () => {
     analyzeContentMock.mockResolvedValueOnce({
       text: "{}",
       raw: "{}",
@@ -237,13 +314,10 @@ describe("runAnalysis — YouTube analysis_mode is EARNED, not asserted (ticket 
       const query = call[0] as { sql: string; args: unknown[] };
       return typeof query.sql === "string" && query.sql.includes("analysis_mode = ?");
     });
-    // Two UPDATEs touch analysis_mode: the pre-call provisional write
-    // ('full_video', intent) and the post-verification correction
-    // ('metadata_only', earned). The LAST one is what a reader of the table
-    // (including #297's untrusted banner) actually sees.
-    expect(analysisModeUpdateCalls.length).toBeGreaterThanOrEqual(2);
-    const lastCall = analysisModeUpdateCalls[analysisModeUpdateCalls.length - 1]!;
-    const query = lastCall[0] as { sql: string; args: unknown[] };
+    // Only ONE UPDATE touches analysis_mode: the pre-call provisional write.
+    // No evidence means no upgrade, so no second UPDATE fires.
+    expect(analysisModeUpdateCalls).toHaveLength(1);
+    const query = analysisModeUpdateCalls[0]![0] as { sql: string; args: unknown[] };
     const placeholderIndexBefore = (marker: string): number => {
       const before = query.sql.split(marker)[0] ?? "";
       return (before.match(/\?/g) ?? []).length;
@@ -251,7 +325,16 @@ describe("runAnalysis — YouTube analysis_mode is EARNED, not asserted (ticket 
     expect(query.args[placeholderIndexBefore("analysis_mode = ?")]).toBe("metadata_only");
   });
 
-  it("keeps analysis_mode = 'full_video' when usageMetadata DOES evidence VIDEO modality", async () => {
+  /**
+   * The detector for B2/H1 itself: if the post-response verification gate in
+   * `pipeline/index.ts` (the `hasVideoModalityEvidence` check) were ever
+   * deleted, this test fails, because the persisted `analysis_mode` would
+   * stay at the provisional 'metadata_only' default even though
+   * `usageMetadata` here carries genuine VIDEO-modality evidence — the row
+   * would then under-claim rather than over-claim, but still not match what
+   * Gemini actually did.
+   */
+  it("upgrades analysis_mode to 'full_video' when usageMetadata DOES evidence VIDEO modality", async () => {
     analyzeContentMock.mockResolvedValueOnce({
       text: "{}",
       raw: "{}",
@@ -271,6 +354,11 @@ describe("runAnalysis — YouTube analysis_mode is EARNED, not asserted (ticket 
       const query = call[0] as { sql: string; args: unknown[] };
       return typeof query.sql === "string" && query.sql.includes("analysis_mode = ?");
     });
+    // Two UPDATEs touch analysis_mode: the pre-call provisional write
+    // ('metadata_only', honest default) and the post-verification upgrade
+    // ('full_video', earned). The LAST one is what a reader of the table
+    // (including #297's untrusted banner) actually sees.
+    expect(analysisModeUpdateCalls.length).toBeGreaterThanOrEqual(2);
     const lastCall = analysisModeUpdateCalls[analysisModeUpdateCalls.length - 1]!;
     const query = lastCall[0] as { sql: string; args: unknown[] };
     const placeholderIndexBefore = (marker: string): number => {
@@ -278,5 +366,17 @@ describe("runAnalysis — YouTube analysis_mode is EARNED, not asserted (ticket 
       return (before.match(/\?/g) ?? []).length;
     };
     expect(query.args[placeholderIndexBefore("analysis_mode = ?")]).toBe("full_video");
+
+    // M-a (PR #299 review round 2): `perf_bucket_key`/`analysis_mode`
+    // "never disagree" is a load-bearing claim (PR body). Mutation-proved
+    // to have no detector before this assertion existed — skipping the
+    // `computePerformanceBlock` recompute in the upgrade branch left the
+    // suite fully green while `perf_bucket_key` still ended in
+    // `:metadata_only` next to a persisted `analysis_mode` of 'full_video'.
+    // Asserting the LAST UPDATE's `perf_bucket_key` argument agrees with
+    // the corrected mode closes that gap.
+    const perfBucketKeyIndex = placeholderIndexBefore("perf_bucket_key = ?");
+    expect(query.args[perfBucketKeyIndex]).toMatch(/:full_video$/);
+    expect(query.args[perfBucketKeyIndex]).not.toMatch(/:metadata_only$/);
   });
 });
