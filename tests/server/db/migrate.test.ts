@@ -203,6 +203,81 @@ describe("scripts/migrate.ts — stripOuterTransaction", () => {
   });
 });
 
+// PR #305 review round 3, P1 -- every fixture above is a hand-written 3-8
+// line snippet, and every one of them happens to have zero apostrophes in
+// its comments. That is exactly why the round-2 fix shipped broken: the old
+// `stripCommentsAndStrings` ran a `'...'` string-literal regex BEFORE its
+// `--`/`/* */` comment regexes, so an apostrophe inside a real comment
+// (`don't`, `it's`, "the table's") opened a phantom string literal that
+// swallowed real SQL up to the next `'` -- deleting the reviewer's injected
+// second transaction block before `hasResidualTransactionControl` ever saw
+// it. 8 of this repo's 14 real migration files have an apostrophe in a
+// comment. These tests exercise the REAL files on disk, not synthetic
+// copies, and reproduce the reviewer's exact injection technique: insert
+// `COMMIT; BEGIN TRANSACTION; DROP TABLE analyses;` immediately after the
+// first comment line containing an apostrophe, then prove
+// `stripOuterTransaction` throws.
+describe("scripts/migrate.ts — stripOuterTransaction against real migration files with apostrophes in comments (PR #305 review round 3, P1)", () => {
+  const REAL_MIGRATIONS_DIR = join(process.cwd(), "migrations");
+
+  function injectSecondTransactionBlockAfterFirstApostropheComment(sql: string): string {
+    const lines = sql.split("\n");
+    const targetIndex = lines.findIndex((line) => /--.*'/.test(line));
+    if (targetIndex === -1) {
+      throw new Error("fixture has no line-comment line containing an apostrophe -- test setup is wrong");
+    }
+    lines.splice(targetIndex + 1, 0, "COMMIT; BEGIN TRANSACTION; DROP TABLE analyses;");
+    return lines.join("\n");
+  }
+
+  it.each(["009_analysis_mode_images_only.sql", "010_profile_style_fingerprints.sql", "012_performance_block.sql", "013_reach_unavailable_reason.sql"])(
+    "confirms %s has an apostrophe inside a `--` comment (precondition for the test below)",
+    (fileName) => {
+      const raw = readFileSync(join(REAL_MIGRATIONS_DIR, fileName), "utf8");
+      expect(raw).toMatch(/--.*'/);
+    },
+  );
+
+  it.each(["009_analysis_mode_images_only.sql", "010_profile_style_fingerprints.sql", "012_performance_block.sql", "013_reach_unavailable_reason.sql"])(
+    "MUTATION: reproduces the reviewer's injected second transaction block right after the first apostrophe-bearing comment in %s, and it is caught",
+    (fileName) => {
+      const raw = readFileSync(join(REAL_MIGRATIONS_DIR, fileName), "utf8");
+      const mutated = injectSecondTransactionBlockAfterFirstApostropheComment(raw);
+
+      // Sanity check: the injected statement really did land after real SQL
+      // both before and after it, not at the very start/end of the file --
+      // otherwise this test would trivially pass for the wrong reason.
+      expect(mutated).not.toEqual(raw);
+
+      expect(() => stripOuterTransaction(mutated, fileName)).toThrow(
+        new RegExp(`${fileName.replace(/\./g, "\\.")}[\\s\\S]*BEGIN TRANSACTION or COMMIT`),
+      );
+    },
+  );
+
+  it("the real, unmutated migration files (009/010/012/013) do NOT throw -- proves the fix does not just reject everything", () => {
+    for (const fileName of [
+      "009_analysis_mode_images_only.sql",
+      "010_profile_style_fingerprints.sql",
+      "012_performance_block.sql",
+      "013_reach_unavailable_reason.sql",
+    ]) {
+      const raw = readFileSync(join(REAL_MIGRATIONS_DIR, fileName), "utf8");
+      expect(() => stripOuterTransaction(raw, fileName)).not.toThrow();
+    }
+  });
+
+  it("MUTATION: an apostrophe inside a real file's comment does not itself trip the residual-transaction check (no false positive)", () => {
+    // 009's own comment contains a fake-looking embedded string
+    // ('["sandiuno"]') entirely inside a `--` line comment -- two
+    // apostrophes on one line. The whole line must still be treated as an
+    // inert comment, not as opening/closing a real string literal.
+    const raw = readFileSync(join(REAL_MIGRATIONS_DIR, "009_analysis_mode_images_only.sql"), "utf8");
+    expect(raw).toMatch(/--.*'\[.*\]'/);
+    expect(() => stripOuterTransaction(raw, "009_analysis_mode_images_only.sql")).not.toThrow();
+  });
+});
+
 describe("scripts/migrate.ts — runMigrations, fresh database", () => {
   it("applies every migration file and records a checksum for each", async () => {
     const db = makeDbClient();

@@ -283,13 +283,23 @@ essentially no production data to preserve as of the redesign's start. Do not bu
   driver ever sees the SQL, rather than a bare "cannot start a transaction within a transaction"
   with no indication of which file or why.
   - **The residual-token check scans statement position, not raw text.** After stripping, the
-    remaining body is comment- and string-literal-stripped (`--` line comments, `/* */` block
-    comments, and `'...'` string literals are all blanked out) and then split into statements on
-    `;`; only a statement that itself *starts* with `BEGIN TRANSACTION` or `COMMIT` trips the
-    error. A bare `COMMIT` mentioned inside a comment (`-- do not COMMIT here`) or a string literal
+    remaining body is comment- and string-literal-stripped and then split into statements on `;`;
+    only a statement that itself *starts* with `BEGIN TRANSACTION` or `COMMIT` trips the error. A
+    bare `COMMIT` mentioned inside a comment (`-- do not COMMIT here`) or a string literal
     (`INSERT INTO t VALUES ('COMMIT')`), or `commit` used as a bare column identifier
     (`CREATE TABLE t (commit TEXT)`), does **not** trip it -- only an actual second
     `BEGIN TRANSACTION`/`COMMIT` statement does.
+  - **The comment/string-literal stripper is a single left-to-right scan, not independent regex
+    passes.** `--` line comments, `/* */` block comments, `'...'` string literals (including the
+    `''` escaped-quote-inside-a-string form, e.g. `'it''s'`), `"..."`/`` `...` `` quoted
+    identifiers, and `[...]` bracketed identifiers are all recognized by tracking one "what am I
+    currently inside" state as the text is read once, left to right. This matters because an
+    apostrophe inside a `--`/`/* */` comment (`don't`, `it's`, "the table's") is common in this
+    repo's own migrations -- a naive fixed-order regex pipeline that strips string literals before
+    comments (or vice versa) treats that apostrophe as opening a real string literal and silently
+    deletes everything up to the next `'` in the file, including real SQL, before the
+    comment/string distinction is ever resolved. A migration author does not need to avoid
+    apostrophes in comments; the scanner already accounts for them.
 - Run with `npm run db:migrate`.
 
 **Current chain (001 → 012, as of ticket #139):**

@@ -72,12 +72,135 @@ export function computeChecksum(sql: string): string {
  * body is then split on `;` and only a STATEMENT that itself starts with
  * `BEGIN TRANSACTION` or `COMMIT` trips the error -- a bare mention of the
  * word mid-statement (e.g. a `commit` column name) no longer does.
+ *
+ * PR #305 review round 3, P1 -- the round-2 implementation above ran three
+ * independent regex passes in a fixed order (strings, then `--` comments,
+ * then `/* *\/` comments), and the FIRST pass (string literals) does not
+ * know a `'` can appear inside a comment. Every one of this repo's own
+ * migration comments that contains an apostrophe (`don't`, `it's`, "the
+ * table's") opens a phantom string literal that the regex then closes at
+ * the NEXT `'` anywhere later in the file -- silently deleting everything
+ * in between, including real SQL, before the comment-stripping passes ever
+ * run. Reversing the pass order does not fix it either: a `'` inside a
+ * string that itself contains `--` breaks the same way in the other
+ * direction. Any fixed-order, multi-pass regex approach has this problem,
+ * because "am I inside a string" and "am I inside a comment" are NOT
+ * independent, order-invariant properties of the text -- they are mutually
+ * exclusive STATES that can only be resolved by reading the text once,
+ * left to right, remembering which state you are currently in.
+ *
+ * Rewritten as a single left-to-right scan over the raw characters with one
+ * mutable "what am I currently inside" state, so a `'` is only ever
+ * significant when the scanner is not already inside a `--`/`/* *\/`
+ * comment (and a `--`/`/*` is only ever significant when not already inside
+ * a string). Recognizes, in one pass:
+ *   - `--` line comments (through the next `\n`, or EOF if the file's last
+ *     line is a comment).
+ *   - `/* ... *\/` block comments, including one left unterminated at EOF
+ *     (consumed to EOF rather than looping forever or throwing).
+ *   - `'...'` string literals, including SQLite's `''` escaped-quote-inside-
+ *     a-string (`'it''s'`) -- the scanner does not exit the string on the
+ *     first `'` of a `''` pair.
+ *   - `"..."` double-quoted identifiers and `` `...` `` backtick identifiers
+ *     (both accepted by SQLite), each with the same `""`/`` `` `` `` doubled-
+ *     quote escape, so a `;`, `'`, `--`, or `/*` inside either is inert --
+ *     matching the same reasoning as string literals, since SQLite lets an
+ *     identifier be quoted with any of `'`, `"`, or `` ` ``.
+ *   - `[...]` bracketed identifiers (SQL Server-style, also accepted by
+ *     SQLite), so the same applies there.
+ * Every character inside one of the above regions is replaced with a space
+ * (or kept as `\n` for an embedded newline) rather than deleted, so the
+ * cleaned string stays the same length and line/column offsets into it
+ * still line up with the original file -- useful if a future caller wants
+ * to report *where* a residual token was found, not just that one was.
+ * Quote/comment delimiter characters themselves are left in place (`'`,
+ * `"`, `` ` ``, `[`, `]`, `--`, `/ *`, `* /`) purely so the output visually
+ * still resembles the input; nothing downstream depends on that choice.
+ * CRLF files need no special handling: a line comment's terminator is `\n`
+ * either way, and a bare `\r` carried along inside a blanked region is
+ * itself replaced with a space, same as any other non-newline character.
  */
 function stripCommentsAndStrings(sql: string): string {
-  return sql
-    .replace(/'(?:[^']|'')*'/g, "''") // string literals -> empty literal
-    .replace(/--[^\n]*/g, "") // line comments
-    .replace(/\/\*[\s\S]*?\*\//g, ""); // block comments
+  const OPEN_TO_CLOSE: Record<string, string> = { '"': '"', "`": "`", "[": "]" };
+
+  let out = "";
+  let i = 0;
+  const n = sql.length;
+
+  while (i < n) {
+    const ch = sql[i];
+    const nextCh = sql[i + 1];
+
+    if (ch === "-" && nextCh === "-") {
+      out += "  ";
+      i += 2;
+      while (i < n && sql[i] !== "\n") {
+        out += " ";
+        i += 1;
+      }
+      continue;
+    }
+
+    if (ch === "/" && nextCh === "*") {
+      out += "  ";
+      i += 2;
+      while (i < n && !(sql[i] === "*" && sql[i + 1] === "/")) {
+        out += sql[i] === "\n" ? "\n" : " ";
+        i += 1;
+      }
+      if (i < n) {
+        out += "  ";
+        i += 2;
+      }
+      continue;
+    }
+
+    if (ch === "'") {
+      out += "'";
+      i += 1;
+      while (i < n) {
+        if (sql[i] === "'" && sql[i + 1] === "'") {
+          out += "  ";
+          i += 2;
+          continue;
+        }
+        if (sql[i] === "'") {
+          out += "'";
+          i += 1;
+          break;
+        }
+        out += sql[i] === "\n" ? "\n" : " ";
+        i += 1;
+      }
+      continue;
+    }
+
+    if (ch === '"' || ch === "`" || ch === "[") {
+      const close = OPEN_TO_CLOSE[ch]!;
+      out += ch;
+      i += 1;
+      while (i < n) {
+        if (ch !== "[" && sql[i] === close && sql[i + 1] === close) {
+          out += close + close;
+          i += 2;
+          continue;
+        }
+        if (sql[i] === close) {
+          out += close;
+          i += 1;
+          break;
+        }
+        out += sql[i] === "\n" ? "\n" : " ";
+        i += 1;
+      }
+      continue;
+    }
+
+    out += ch;
+    i += 1;
+  }
+
+  return out;
 }
 
 const RESIDUAL_TRANSACTION_STATEMENT = /^\s*(BEGIN\s+TRANSACTION|COMMIT)\b/i;
