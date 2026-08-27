@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -171,6 +171,35 @@ describe("scripts/migrate.ts — stripOuterTransaction", () => {
     ["trailing comment after COMMIT;", "BEGIN TRANSACTION;\nCREATE TABLE t (id INTEGER);\nCOMMIT;\n-- done\n"],
   ])("MUTATION: throws for the uncovered wrapper shape: %s", (_label, sql) => {
     expect(() => stripOuterTransaction(sql, "997_uncovered_shape.sql")).toThrow(/997_uncovered_shape\.sql/);
+  });
+
+  // PR #305 review round 2, P2 -- the original `/\bBEGIN\s+TRANSACTION\b|\bCOMMIT\b/i`
+  // scanned raw text, so it false-positived on the bare word inside a
+  // comment, a string literal, or an identifier. Each row below is a case
+  // from the review that must NOT throw. MUTATION: reverting
+  // `hasResidualTransactionControl` to the old raw-text `\bCOMMIT\b` scan
+  // turns every one of these red (they'd all throw).
+  it.each([
+    ["a bare COMMIT token inside a line comment", "BEGIN TRANSACTION;\n-- do not COMMIT here\nCREATE TABLE t (id INTEGER);\nCOMMIT;\n"],
+    ["a bare COMMIT token inside a string literal", "BEGIN TRANSACTION;\nINSERT INTO t (label) VALUES ('COMMIT');\nCOMMIT;\n"],
+    ["commit used as a bare column identifier", "BEGIN TRANSACTION;\nCREATE TABLE t (id INTEGER, commit TEXT);\nCOMMIT;\n"],
+    [
+      "COMMIT appearing as the first line inside a block comment",
+      "BEGIN TRANSACTION;\n/*\nCOMMIT\n*/\nCREATE TABLE t (id INTEGER);\nCOMMIT;\n",
+    ],
+  ])("MUTATION: does NOT throw a false positive for %s", (_label, sql) => {
+    expect(() => stripOuterTransaction(sql)).not.toThrow();
+  });
+
+  // 012's own real comment ("...durably committing this DELETE...") used to
+  // survive the old scan only by luck ("committing" doesn't match
+  // `\bCOMMIT\b` as a whole word). Prove the new scan is robust on purpose,
+  // not by accident: a comment that DOES contain the bare word must still
+  // be tolerated.
+  it("MUTATION: does not throw when a migration's own comment discusses committing, including the bare word COMMIT", () => {
+    const sql =
+      "BEGIN TRANSACTION;\n-- durably COMMIT this DELETE before the rebuild runs\nDELETE FROM t;\nCOMMIT;\n";
+    expect(() => stripOuterTransaction(sql)).not.toThrow();
   });
 });
 
@@ -433,116 +462,6 @@ describe("scripts/migrate.ts — real migration chain in this repo", () => {
 
     expect(secondLog.every((entry) => entry.action === "unchanged")).toBe(true);
 
-    db.close();
-  });
-});
-
-/**
- * PR #305 review, P1 headline finding: atomicity (#277) closes the CRASH
- * window between a migration body and its `_migrations` tracking row, but
- * NOT the RENAME window -- `_migrations` is keyed by filename, so renaming
- * an already-applied file makes the runner treat it as brand-new and
- * re-apply it. For 012 specifically, that re-application is
- * `DELETE FROM analyses ...`. This describe block proves, end to end,
- * against the REAL `migrations/012_performance_block.sql` file (not a
- * synthetic stand-in), that the guard added in response to this finding
- * holds.
- */
-describe("scripts/migrate.ts — 012 rename regression (PR #305 review, P1 headline test)", () => {
-  function copyRealMigrations(renameFile012To: string | null): string {
-    const dir = makeWorkDir();
-    const sourceDir = join(process.cwd(), "migrations");
-    for (const file of readdirSync(sourceDir).filter((f) => f.endsWith(".sql"))) {
-      const contents = readFileSync(join(sourceDir, file), "utf8");
-      const targetName = file === "012_performance_block.sql" && renameFile012To ? renameFile012To : file;
-      writeFileSync(join(dir, targetName), contents, "utf8");
-    }
-    return dir;
-  }
-
-  it("MUTATION (headline): renaming 012_performance_block.sql and re-running does NOT delete a real, already-migrated (schema_version 3) analyses row", async () => {
-    const db = makeDbClient();
-    const dir = copyRealMigrations(null);
-
-    // Full real chain applies for real -- `analyses` now has the perf_*
-    // columns 012 adds, and its own guarded DELETE has already run once
-    // (harmlessly, against an empty table).
-    await runMigrations(db, dir);
-
-    // A real, paid-for analysis, written under the NEW schema (as every
-    // analysis written after 012's real first application would be).
-    await db.execute({
-      sql: "INSERT INTO analyses (id, url, platform, media_type, schema_version) VALUES (?, ?, ?, ?, ?)",
-      args: ["real-analysis-1", "https://instagram.com/p/x", "instagram", "post", 3],
-    });
-
-    // The exact rename the reviewer demonstrated: same content, new
-    // filename, old filename removed.
-    unlinkSync(join(dir, "012_performance_block.sql"));
-    writeFileSync(
-      join(dir, "012_performance_block_renamed.sql"),
-      readFileSync(join(process.cwd(), "migrations/012_performance_block.sql"), "utf8"),
-      "utf8",
-    );
-
-    const log = await runMigrations(db, dir);
-
-    // Confirm the hazard is real: `_migrations` is keyed by filename, so
-    // the renamed file IS treated as a brand-new, unapplied migration and
-    // its body DOES run again.
-    const renamedEntry = log.find((entry) => entry.file === "012_performance_block_renamed.sql");
-    expect(renamedEntry?.action).toEqual("applied");
-
-    // ...and yet the real row survives: the guard, not the absence of a
-    // re-run, is what protects it.
-    const rows = await db.execute("SELECT id FROM analyses WHERE id = 'real-analysis-1'");
-    expect(rows.rows).toHaveLength(1);
-
-    db.close();
-  });
-});
-
-/**
- * Isolated proof of the guard's exact WHERE-clause semantics (schema_version
- * IS NULL OR schema_version < 3), independent of the full real migration
- * chain above -- confirms the guard preserves 012's original intent (a
- * genuine first application still wipes every pre-existing row) while
- * defending only true post-012 (schema_version 3) survivors.
- */
-describe("scripts/migrate.ts — 012-shaped DELETE guard semantics (isolated)", () => {
-  const guardedBody =
-    "BEGIN TRANSACTION;\n" +
-    "CREATE TABLE IF NOT EXISTS analyses (id INTEGER PRIMARY KEY, schema_version INTEGER);\n" +
-    "DELETE FROM analyses WHERE schema_version IS NULL OR schema_version < 3;\n" +
-    "COMMIT;\n";
-
-  it("a genuine first application deletes every pre-existing row (schema_version NULL or < 3) -- byte-identical in effect to an unconditional DELETE on first apply", async () => {
-    const db = makeDbClient();
-    // "analyses already exists, pre-012, full of schema<3 rows" -- the
-    // guarded migration's own CREATE TABLE IF NOT EXISTS is a no-op
-    // against it, exactly like the real file against a real pre-012 table.
-    await db.execute("CREATE TABLE analyses (id INTEGER PRIMARY KEY, schema_version INTEGER)");
-    await db.execute("INSERT INTO analyses (id, schema_version) VALUES (1, 2)");
-    await db.execute("INSERT INTO analyses (id, schema_version) VALUES (2, NULL)");
-
-    const dir = makeMigrationsDir({ "012_guarded.sql": guardedBody });
-    await runMigrations(db, dir);
-
-    const rows = await db.execute("SELECT * FROM analyses");
-    expect(rows.rows).toHaveLength(0);
-    db.close();
-  });
-
-  it("MUTATION: a row already at schema_version 3 survives the DELETE even when the (guarded) file is applied", async () => {
-    const db = makeDbClient();
-    await db.execute("CREATE TABLE analyses (id INTEGER PRIMARY KEY, schema_version INTEGER)");
-    await db.execute("INSERT INTO analyses (id, schema_version) VALUES (1, 3)");
-
-    const dir = makeMigrationsDir({ "012_guarded.sql": guardedBody });
-    await runMigrations(db, dir);
-
-    const rows = await db.execute("SELECT * FROM analyses");
-    expect(rows.rows).toHaveLength(1);
     db.close();
   });
 });

@@ -282,6 +282,14 @@ essentially no production data to preserve as of the redesign's start. Do not bu
   at runtime (never edits the file); any other shape throws a loud, file-named error before the
   driver ever sees the SQL, rather than a bare "cannot start a transaction within a transaction"
   with no indication of which file or why.
+  - **The residual-token check scans statement position, not raw text.** After stripping, the
+    remaining body is comment- and string-literal-stripped (`--` line comments, `/* */` block
+    comments, and `'...'` string literals are all blanked out) and then split into statements on
+    `;`; only a statement that itself *starts* with `BEGIN TRANSACTION` or `COMMIT` trips the
+    error. A bare `COMMIT` mentioned inside a comment (`-- do not COMMIT here`) or a string literal
+    (`INSERT INTO t VALUES ('COMMIT')`), or `commit` used as a bare column identifier
+    (`CREATE TABLE t (commit TEXT)`), does **not** trip it -- only an actual second
+    `BEGIN TRANSACTION`/`COMMIT` statement does.
 - Run with `npm run db:migrate`.
 
 **Current chain (001 → 012, as of ticket #139):**

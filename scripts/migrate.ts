@@ -59,7 +59,34 @@ export function computeChecksum(sql: string): string {
  * `migrations/`) is either the single-block shape this strips cleanly, or
  * has no wrapper at all -- so this check cannot fire against any file in
  * the repo today. It exists for the next migration author.
+ *
+ * PR #305 review round 2, P2 -- the residual-token check scans STATEMENT
+ * POSITION, not raw text. The original `/\bBEGIN\s+TRANSACTION\b|\bCOMMIT\b/i`
+ * matched the bare word anywhere in the body, including inside line comments,
+ * block comments, and string literals, so `-- do not COMMIT here`,
+ * `INSERT INTO t VALUES ('COMMIT')`, or `commit` used as a bare column
+ * identifier all threw a false positive that misdiagnosed the cause (012's
+ * own comment survived only because "committing" doesn't match `\bCOMMIT\b`
+ * as a whole word -- pure luck). `stripCommentsAndStrings` blanks out line
+ * comments, block comments, and string-literal contents first; the cleaned
+ * body is then split on `;` and only a STATEMENT that itself starts with
+ * `BEGIN TRANSACTION` or `COMMIT` trips the error -- a bare mention of the
+ * word mid-statement (e.g. a `commit` column name) no longer does.
  */
+function stripCommentsAndStrings(sql: string): string {
+  return sql
+    .replace(/'(?:[^']|'')*'/g, "''") // string literals -> empty literal
+    .replace(/--[^\n]*/g, "") // line comments
+    .replace(/\/\*[\s\S]*?\*\//g, ""); // block comments
+}
+
+const RESIDUAL_TRANSACTION_STATEMENT = /^\s*(BEGIN\s+TRANSACTION|COMMIT)\b/i;
+
+function hasResidualTransactionControl(body: string): boolean {
+  const cleaned = stripCommentsAndStrings(body);
+  return cleaned.split(";").some((statement) => RESIDUAL_TRANSACTION_STATEMENT.test(statement));
+}
+
 export function stripOuterTransaction(sql: string, fileName = "<unknown migration file>"): string {
   const beginPattern = /^\s*BEGIN\s+TRANSACTION\s*;/i;
   const commitPattern = /COMMIT\s*;\s*$/i;
@@ -69,8 +96,7 @@ export function stripOuterTransaction(sql: string, fileName = "<unknown migratio
       ? sql.replace(beginPattern, "").replace(commitPattern, "")
       : sql;
 
-  const residualTransactionControl = /\bBEGIN\s+TRANSACTION\b|\bCOMMIT\b/i;
-  if (residualTransactionControl.test(body)) {
+  if (hasResidualTransactionControl(body)) {
     throw new Error(
       `${fileName}: contains a BEGIN TRANSACTION or COMMIT statement that stripOuterTransaction ` +
         `did not remove. This is either (a) a second transaction block in the same file, which ` +
