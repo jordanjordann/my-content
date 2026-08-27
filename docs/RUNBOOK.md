@@ -261,13 +261,54 @@ essentially no production data to preserve as of the redesign's start. Do not bu
 ### Migrations
 
 - Directory `migrations/`, numbered `NNN_name.sql`, applied in filename sort order.
-- Runner `scripts/migrate.ts` creates `_migrations(name, applied_at)`, skips already-applied files,
-  executes the rest via `db.executeMultiple`. Each file runs once.
+- Runner `scripts/migrate.ts` (tickets #277/#278) tracks `_migrations(name, applied_at, checksum)`
+  by **filename**, not content. An unapplied file's body and its `_migrations` tracking row commit
+  in one interactive transaction (`client.transaction("write")`) -- no applied-but-untracked window.
+  An already-tracked row is checksum-compared: `NULL` stored checksum (pre-#278 legacy row) is
+  adopted from disk as the trusted baseline and NOT re-run; a mismatch throws and aborts the whole
+  script (deploy fails); a match is a silent no-op. **Renaming an applied file makes the runner
+  treat it as brand-new and re-apply it** -- `_migrations` is keyed by filename, and checksum
+  tracking does not protect against this (a rename has no prior row to compare against). Do not
+  rename an already-applied migration file. `runMigrations` also warns (does not error) if a
+  `_migrations` row's filename has no matching file on disk, which is the symptom of exactly that.
 - Convention: **additive only, no down-migrations.** Nothing in the repo rolls back — to undo, write
   a new forward migration.
+- **`BEGIN TRANSACTION; ... COMMIT;` wrapper contract** (enforced by `stripOuterTransaction`,
+  `scripts/migrate.ts`): a migration file either has NO transaction wrapper at all, or wraps its
+  entire body in exactly ONE `BEGIN TRANSACTION;` as its first statement and `COMMIT;` as its last
+  -- nothing before `BEGIN TRANSACTION;` (no header comment), no other wrapper form (`BEGIN;`,
+  `COMMIT TRANSACTION;`, `END;`, `BEGIN IMMEDIATE TRANSACTION;`), no second transaction block, and
+  no content after `COMMIT;`. `migrate.ts` owns the actual outer transaction and strips this wrapper
+  at runtime (never edits the file); any other recognized-but-unstripped shape throws a loud,
+  file-named error before the driver ever sees the SQL, rather than a bare "cannot start a
+  transaction within a transaction" with no indication of which file or why. **Exception: a second
+  block terminated with `END;` (SQLite's `COMMIT` synonym) or opened with a bare `BEGIN;` is NOT
+  detected** -- the residual-token scan has no vocabulary for `END`, and adding it naively would
+  false-positive on every `CREATE TRIGGER ... BEGIN ... END;`. No file in `migrations/` has this
+  shape today; tracked in #307, not fixed here (PR #305 review round 4, P2).
+  - **The residual-token check scans statement position, not raw text.** After stripping, the
+    remaining body is comment- and string-literal-stripped and then split into statements on `;`;
+    only a statement that itself *starts* with `BEGIN TRANSACTION` or `COMMIT` trips the error. A
+    bare `COMMIT` mentioned inside a comment (`-- do not COMMIT here`) or a string literal
+    (`INSERT INTO t VALUES ('COMMIT')`), or `commit` used as a bare column identifier
+    (`CREATE TABLE t (commit TEXT)`), does **not** trip it -- only an actual second
+    `BEGIN TRANSACTION`/`COMMIT` statement does.
+  - **The comment/string-literal stripper is a single left-to-right scan, not independent regex
+    passes.** `--` line comments, `/* */` block comments, `'...'` string literals (including the
+    `''` escaped-quote-inside-a-string form, e.g. `'it''s'`), `"..."`/`` `...` `` quoted
+    identifiers, and `[...]` bracketed identifiers are all recognized by tracking one "what am I
+    currently inside" state as the text is read once, left to right. This matters because an
+    apostrophe inside a `--`/`/* */` comment (`don't`, `it's`, "the table's") is common in this
+    repo's own migrations -- a naive fixed-order regex pipeline that strips string literals before
+    comments (or vice versa) treats that apostrophe as opening a real string literal and silently
+    deletes everything up to the next `'` in the file, including real SQL, before the
+    comment/string distinction is ever resolved. A migration author does not need to avoid
+    apostrophes in comments; the scanner already accounts for them.
 - Run with `npm run db:migrate`.
 
-**Current chain (001 → 012, as of ticket #139):**
+**Chain as of ticket #139 (001 → 012); `migrations/` now holds through
+`014_profile_lookup_failure.sql` -- see the directory listing for 013/014, not yet added to the
+table below:**
 
 | # | File | What it does |
 |---|---|---|
