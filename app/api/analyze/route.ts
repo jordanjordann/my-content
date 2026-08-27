@@ -5,7 +5,13 @@ import { runAnalysis } from "@/lib/server/analysis/pipeline";
 import { MAX_URLS_PER_BATCH } from "@/lib/server/analysis/constants";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+// No `maxDuration` here (ticket #279): this app is deployed via
+// `output: "standalone"` + `CMD ["node", "server.js"]` on Railway
+// (Dockerfile), not as a Next.js serverless function on a platform that
+// reads Next's build-output route-segment config — the export enforced
+// nothing on this deployment and was misleading. The real mitigation for a
+// long-running batch is a smaller `MAX_URLS_PER_BATCH` (below), not a
+// request-duration config.
 
 export async function POST(request: Request) {
   try {
