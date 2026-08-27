@@ -261,10 +261,27 @@ essentially no production data to preserve as of the redesign's start. Do not bu
 ### Migrations
 
 - Directory `migrations/`, numbered `NNN_name.sql`, applied in filename sort order.
-- Runner `scripts/migrate.ts` creates `_migrations(name, applied_at)`, skips already-applied files,
-  executes the rest via `db.executeMultiple`. Each file runs once.
+- Runner `scripts/migrate.ts` (tickets #277/#278) tracks `_migrations(name, applied_at, checksum)`
+  by **filename**, not content. An unapplied file's body and its `_migrations` tracking row commit
+  in one interactive transaction (`client.transaction("write")`) -- no applied-but-untracked window.
+  An already-tracked row is checksum-compared: `NULL` stored checksum (pre-#278 legacy row) is
+  adopted from disk as the trusted baseline and NOT re-run; a mismatch throws and aborts the whole
+  script (deploy fails); a match is a silent no-op. **Renaming an applied file makes the runner
+  treat it as brand-new and re-apply it** -- `_migrations` is keyed by filename, and checksum
+  tracking does not protect against this (a rename has no prior row to compare against). Do not
+  rename an already-applied migration file. `runMigrations` also warns (does not error) if a
+  `_migrations` row's filename has no matching file on disk, which is the symptom of exactly that.
 - Convention: **additive only, no down-migrations.** Nothing in the repo rolls back — to undo, write
   a new forward migration.
+- **`BEGIN TRANSACTION; ... COMMIT;` wrapper contract** (enforced by `stripOuterTransaction`,
+  `scripts/migrate.ts`): a migration file either has NO transaction wrapper at all, or wraps its
+  entire body in exactly ONE `BEGIN TRANSACTION;` as its first statement and `COMMIT;` as its last
+  -- nothing before `BEGIN TRANSACTION;` (no header comment), no other wrapper form (`BEGIN;`,
+  `COMMIT TRANSACTION;`, `END;`, `BEGIN IMMEDIATE TRANSACTION;`), no second transaction block, and
+  no content after `COMMIT;`. `migrate.ts` owns the actual outer transaction and strips this wrapper
+  at runtime (never edits the file); any other shape throws a loud, file-named error before the
+  driver ever sees the SQL, rather than a bare "cannot start a transaction within a transaction"
+  with no indication of which file or why.
 - Run with `npm run db:migrate`.
 
 **Current chain (001 → 012, as of ticket #139):**

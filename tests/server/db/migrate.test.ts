@@ -1,7 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createClient,
   type Client,
@@ -132,9 +132,45 @@ describe("scripts/migrate.ts — stripOuterTransaction", () => {
     expect(stripOuterTransaction(sql)).toEqual(sql);
   });
 
-  it("MUTATION: leaves a half-wrapped file (BEGIN with no matching COMMIT) untouched rather than guessing", () => {
+  // PR #305 review, P2 -- previously this left a half-wrapped file
+  // untouched and let it die downstream inside the driver with an
+  // unactionable "cannot start a transaction within a transaction" error.
+  // It now throws immediately, naming the file and the cause.
+  it("MUTATION: throws a file-named error for a half-wrapped file (BEGIN with no matching COMMIT), instead of silently leaving it untouched", () => {
     const sql = "BEGIN TRANSACTION;\nCREATE TABLE t (id INTEGER);\n";
-    expect(stripOuterTransaction(sql)).toEqual(sql);
+    expect(() => stripOuterTransaction(sql, "999_half_wrapped.sql")).toThrow(
+      /999_half_wrapped\.sql[\s\S]*BEGIN TRANSACTION or COMMIT/,
+    );
+  });
+
+  // PR #305 review, P2 (the headline case) -- a second transaction block in
+  // the same file. Without this check, `stripOuterTransaction` would strip
+  // only the outer wrapper and leave an interior `COMMIT;` in the body,
+  // which libsql accepts without error: it commits `migrate.ts`'s own
+  // outer transaction early and runs the remainder as an implicit second
+  // transaction, silently reopening the applied-but-untracked window #277
+  // exists to close.
+  it("MUTATION: throws a file-named error for a file with two transaction blocks (residual interior COMMIT/BEGIN)", () => {
+    const sql =
+      "BEGIN TRANSACTION;\nCREATE TABLE t3 (id INTEGER);\nCOMMIT;\nBEGIN TRANSACTION;\nCREATE TABLE t4 (id INTEGER);\nCOMMIT;\n";
+    expect(() => stripOuterTransaction(sql, "998_two_blocks.sql")).toThrow(
+      /998_two_blocks\.sql[\s\S]*BEGIN TRANSACTION or COMMIT/,
+    );
+  });
+
+  // PR #305 review, P2 -- every uncovered shape the reviewer probed against
+  // the real regexes: each one previously skipped stripping silently and
+  // died downstream with an unactionable driver error. Each must now throw
+  // here instead, before the SQL ever reaches the driver.
+  it.each([
+    ["header comment before BEGIN TRANSACTION;", "-- a header comment\nBEGIN TRANSACTION;\nCREATE TABLE t (id INTEGER);\nCOMMIT;\n"],
+    ["BEGIN; short form", "BEGIN;\nCREATE TABLE t (id INTEGER);\nCOMMIT;\n"],
+    ["COMMIT TRANSACTION; instead of COMMIT;", "BEGIN TRANSACTION;\nCREATE TABLE t (id INTEGER);\nCOMMIT TRANSACTION;\n"],
+    ["END; instead of COMMIT;", "BEGIN TRANSACTION;\nCREATE TABLE t (id INTEGER);\nEND;\n"],
+    ["BEGIN IMMEDIATE TRANSACTION;", "BEGIN IMMEDIATE TRANSACTION;\nCREATE TABLE t (id INTEGER);\nCOMMIT;\n"],
+    ["trailing comment after COMMIT;", "BEGIN TRANSACTION;\nCREATE TABLE t (id INTEGER);\nCOMMIT;\n-- done\n"],
+  ])("MUTATION: throws for the uncovered wrapper shape: %s", (_label, sql) => {
+    expect(() => stripOuterTransaction(sql, "997_uncovered_shape.sql")).toThrow(/997_uncovered_shape\.sql/);
   });
 });
 
@@ -398,5 +434,267 @@ describe("scripts/migrate.ts — real migration chain in this repo", () => {
     expect(secondLog.every((entry) => entry.action === "unchanged")).toBe(true);
 
     db.close();
+  });
+});
+
+/**
+ * PR #305 review, P1 headline finding: atomicity (#277) closes the CRASH
+ * window between a migration body and its `_migrations` tracking row, but
+ * NOT the RENAME window -- `_migrations` is keyed by filename, so renaming
+ * an already-applied file makes the runner treat it as brand-new and
+ * re-apply it. For 012 specifically, that re-application is
+ * `DELETE FROM analyses ...`. This describe block proves, end to end,
+ * against the REAL `migrations/012_performance_block.sql` file (not a
+ * synthetic stand-in), that the guard added in response to this finding
+ * holds.
+ */
+describe("scripts/migrate.ts — 012 rename regression (PR #305 review, P1 headline test)", () => {
+  function copyRealMigrations(renameFile012To: string | null): string {
+    const dir = makeWorkDir();
+    const sourceDir = join(process.cwd(), "migrations");
+    for (const file of readdirSync(sourceDir).filter((f) => f.endsWith(".sql"))) {
+      const contents = readFileSync(join(sourceDir, file), "utf8");
+      const targetName = file === "012_performance_block.sql" && renameFile012To ? renameFile012To : file;
+      writeFileSync(join(dir, targetName), contents, "utf8");
+    }
+    return dir;
+  }
+
+  it("MUTATION (headline): renaming 012_performance_block.sql and re-running does NOT delete a real, already-migrated (schema_version 3) analyses row", async () => {
+    const db = makeDbClient();
+    const dir = copyRealMigrations(null);
+
+    // Full real chain applies for real -- `analyses` now has the perf_*
+    // columns 012 adds, and its own guarded DELETE has already run once
+    // (harmlessly, against an empty table).
+    await runMigrations(db, dir);
+
+    // A real, paid-for analysis, written under the NEW schema (as every
+    // analysis written after 012's real first application would be).
+    await db.execute({
+      sql: "INSERT INTO analyses (id, url, platform, media_type, schema_version) VALUES (?, ?, ?, ?, ?)",
+      args: ["real-analysis-1", "https://instagram.com/p/x", "instagram", "post", 3],
+    });
+
+    // The exact rename the reviewer demonstrated: same content, new
+    // filename, old filename removed.
+    unlinkSync(join(dir, "012_performance_block.sql"));
+    writeFileSync(
+      join(dir, "012_performance_block_renamed.sql"),
+      readFileSync(join(process.cwd(), "migrations/012_performance_block.sql"), "utf8"),
+      "utf8",
+    );
+
+    const log = await runMigrations(db, dir);
+
+    // Confirm the hazard is real: `_migrations` is keyed by filename, so
+    // the renamed file IS treated as a brand-new, unapplied migration and
+    // its body DOES run again.
+    const renamedEntry = log.find((entry) => entry.file === "012_performance_block_renamed.sql");
+    expect(renamedEntry?.action).toEqual("applied");
+
+    // ...and yet the real row survives: the guard, not the absence of a
+    // re-run, is what protects it.
+    const rows = await db.execute("SELECT id FROM analyses WHERE id = 'real-analysis-1'");
+    expect(rows.rows).toHaveLength(1);
+
+    db.close();
+  });
+});
+
+/**
+ * Isolated proof of the guard's exact WHERE-clause semantics (schema_version
+ * IS NULL OR schema_version < 3), independent of the full real migration
+ * chain above -- confirms the guard preserves 012's original intent (a
+ * genuine first application still wipes every pre-existing row) while
+ * defending only true post-012 (schema_version 3) survivors.
+ */
+describe("scripts/migrate.ts — 012-shaped DELETE guard semantics (isolated)", () => {
+  const guardedBody =
+    "BEGIN TRANSACTION;\n" +
+    "CREATE TABLE IF NOT EXISTS analyses (id INTEGER PRIMARY KEY, schema_version INTEGER);\n" +
+    "DELETE FROM analyses WHERE schema_version IS NULL OR schema_version < 3;\n" +
+    "COMMIT;\n";
+
+  it("a genuine first application deletes every pre-existing row (schema_version NULL or < 3) -- byte-identical in effect to an unconditional DELETE on first apply", async () => {
+    const db = makeDbClient();
+    // "analyses already exists, pre-012, full of schema<3 rows" -- the
+    // guarded migration's own CREATE TABLE IF NOT EXISTS is a no-op
+    // against it, exactly like the real file against a real pre-012 table.
+    await db.execute("CREATE TABLE analyses (id INTEGER PRIMARY KEY, schema_version INTEGER)");
+    await db.execute("INSERT INTO analyses (id, schema_version) VALUES (1, 2)");
+    await db.execute("INSERT INTO analyses (id, schema_version) VALUES (2, NULL)");
+
+    const dir = makeMigrationsDir({ "012_guarded.sql": guardedBody });
+    await runMigrations(db, dir);
+
+    const rows = await db.execute("SELECT * FROM analyses");
+    expect(rows.rows).toHaveLength(0);
+    db.close();
+  });
+
+  it("MUTATION: a row already at schema_version 3 survives the DELETE even when the (guarded) file is applied", async () => {
+    const db = makeDbClient();
+    await db.execute("CREATE TABLE analyses (id INTEGER PRIMARY KEY, schema_version INTEGER)");
+    await db.execute("INSERT INTO analyses (id, schema_version) VALUES (1, 3)");
+
+    const dir = makeMigrationsDir({ "012_guarded.sql": guardedBody });
+    await runMigrations(db, dir);
+
+    const rows = await db.execute("SELECT * FROM analyses");
+    expect(rows.rows).toHaveLength(1);
+    db.close();
+  });
+});
+
+describe("scripts/migrate.ts — orphan _migrations row warning (PR #305 review, P3)", () => {
+  it("MUTATION: warns (does not throw) when a tracked row's file no longer exists on disk", async () => {
+    const db = makeDbClient();
+    const dir = makeMigrationsDir({ "001_first.sql": "CREATE TABLE a (id INTEGER PRIMARY KEY);\n" });
+    await runMigrations(db, dir);
+
+    // The file that was applied is gone; a new one takes its place, as in
+    // a rename or a deleted migration file.
+    unlinkSync(join(dir, "001_first.sql"));
+    writeFileSync(join(dir, "002_second.sql"), "CREATE TABLE b (id INTEGER PRIMARY KEY);\n", "utf8");
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await runMigrations(db, dir);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("001_first.sql"));
+    warnSpy.mockRestore();
+    db.close();
+  });
+});
+
+describe("scripts/migrate.ts — ensureMigrationsTable ALTER guard (PR #305 review, P2)", () => {
+  it("MUTATION: swallows a duplicate-column-name error from ALTER TABLE if PRAGMA table_info misreports hasChecksum as false", async () => {
+    const db = makeDbClient();
+    await ensureMigrationsTable(db); // the checksum column now really exists
+
+    // Force `PRAGMA table_info` to lie and omit `checksum`, simulating the
+    // untested Turso-remote-protocol divergence the review flagged.
+    // `ensureMigrationsTable` must not propagate the resulting
+    // `duplicate column name` error from the ALTER it then (wrongly)
+    // attempts.
+    const lyingClient = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === "execute") {
+          return async (stmt: InStatement) => {
+            const sql = typeof stmt === "string" ? stmt : stmt.sql;
+            if (typeof sql === "string" && sql.includes("PRAGMA table_info")) {
+              const real = await target.execute(stmt);
+              return { ...real, rows: real.rows.filter((row) => row.name !== "checksum") };
+            }
+            return target.execute(stmt);
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+    await expect(ensureMigrationsTable(lyingClient as unknown as Client)).resolves.toBeUndefined();
+    db.close();
+  });
+
+  it("still throws a real (non-duplicate-column) error from ALTER TABLE", async () => {
+    const db = makeDbClient();
+    // A client whose ALTER always fails with an unrelated error -- proves
+    // the try/catch is scoped to "duplicate column name" only, not a
+    // blanket swallow of every ALTER failure.
+    const failingClient = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === "execute") {
+          return async (stmt: InStatement) => {
+            const sql = typeof stmt === "string" ? stmt : stmt.sql;
+            if (typeof sql === "string" && sql.includes("ALTER TABLE _migrations")) {
+              throw new Error("SQLITE_ERROR: disk I/O error");
+            }
+            return target.execute(stmt);
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+    await db.execute(`
+      CREATE TABLE _migrations (
+        name TEXT PRIMARY KEY,
+        applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+
+    await expect(ensureMigrationsTable(failingClient as unknown as Client)).rejects.toThrow(/disk I\/O error/);
+    db.close();
+  });
+});
+
+describe("scripts/migrate.ts — rollback failure does not swallow the original error (PR #305 review, P3)", () => {
+  it("MUTATION: the original migration error propagates even if tx.rollback() itself throws", async () => {
+    const db = makeDbClient();
+    const dir = makeMigrationsDir({
+      "001_bad.sql": "BEGIN TRANSACTION;\nTHIS IS NOT VALID SQL;\nCOMMIT;\n",
+    });
+
+    const brokenRollbackClient = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === "transaction") {
+          return async (mode?: TransactionMode) => {
+            const tx = await target.transaction(mode);
+            return new Proxy(tx, {
+              get(txTarget, txProp, txReceiver) {
+                if (txProp === "rollback") {
+                  return async () => {
+                    throw new Error("ROLLBACK ALSO FAILED");
+                  };
+                }
+                const value = Reflect.get(txTarget, txProp, txReceiver);
+                return typeof value === "function" ? value.bind(txTarget) : value;
+              },
+            });
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let caught: unknown;
+    try {
+      await runMigrations(brokenRollbackClient as unknown as Client, dir);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).not.toMatch(/ROLLBACK ALSO FAILED/);
+    errorSpy.mockRestore();
+    db.close();
+  });
+});
+
+describe("scripts/migrate.ts — always prints a summary line, even for a full no-op run (PR #305 review, P3)", () => {
+  it("MUTATION: logs a migrations summary line on a second, fully-unchanged run", async () => {
+    const db = makeDbClient();
+    const dir = makeMigrationsDir({ "001_first.sql": "CREATE TABLE a (id INTEGER PRIMARY KEY);\n" });
+    await runMigrations(db, dir);
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await runMigrations(db, dir);
+    expect(logSpy).toHaveBeenCalledWith(
+      "migrations: 1 total, 0 applied, 1 unchanged, 0 adopted-legacy-checksum",
+    );
+    logSpy.mockRestore();
+    db.close();
+  });
+});
+
+describe("scripts/migrate.ts — lazy db import (PR #305 review, P2)", () => {
+  it("does not statically import ../lib/server/db at module top level -- only lazily inside main(), so importing this module for tests never constructs a client from TURSO_DATABASE_URL", () => {
+    const source = readFileSync(join(process.cwd(), "scripts/migrate.ts"), "utf8");
+    expect(source).not.toMatch(/^import\s*\{\s*db\s*\}\s*from\s*["']\.\.\/lib\/server\/db["'];?/m);
+    expect(source).toMatch(/await import\(\s*["']\.\.\/lib\/server\/db["']\s*\)/);
   });
 });

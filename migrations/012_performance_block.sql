@@ -54,7 +54,39 @@ BEGIN TRANSACTION;
 -- copy-forward statement further down — kept for positional-alignment
 -- symmetry with the 009 test pattern — genuinely moves zero rows, matching
 -- TDD §5.1's own description ("the copy moves nothing").
-DELETE FROM analyses;
+--
+-- PR #305 review (issue #277 follow-up) — guarded, not unconditional:
+--
+-- `_migrations` is keyed by filename. Atomicity (this same PR) closes the
+-- CRASH window between a migration body and its tracking row, but not the
+-- RENAME window: renaming this file, or losing/restoring `_migrations` to
+-- a pre-012 state, makes the runner treat this file as brand-new and
+-- re-apply it — atomically and durably committing this DELETE against a
+-- since-repopulated, real `analyses` table. `schema_version` was added in
+-- 007 and is stamped on every row; every row that existed BEFORE this
+-- migration first ran carries `schema_version` 2 or NULL (2 is "current"
+-- per 007's own comment; NULL is pre-007 legacy). Every row the pipeline
+-- writes AFTER this migration first ran carries `schema_version` 3 (the
+-- bump noted above) and depends on the `perf_*` columns this file is
+-- about to create seconds from now on a first run — deleting a
+-- schema_version-3 row would destroy a real, paid-for, already-migrated
+-- analysis.
+--
+-- On a genuine first application, no row has `schema_version` 3 yet (that
+-- value does not exist anywhere until this migration's own CREATE TABLE
+-- below ships it for the first time), so `schema_version IS NULL OR
+-- schema_version < 3` matches every existing row — byte-identical in
+-- effect to the unconditional form. On a forced re-run, only true
+-- schema-3 survivors are preserved.
+--
+-- Interaction with #278's checksum (same PR): this edit changes this
+-- file's on-disk content, but every environment's `_migrations` row for
+-- this filename is a legacy row (checksum NULL) until the first deploy
+-- after this PR merges. Per `runMigrations`'s adopt-on-first-sight policy,
+-- a NULL stored checksum is adopted from the current on-disk file, never
+-- compared — so this edit lands in the same deploy that starts
+-- checksum-tracking it, with no checksum collision and no re-execution.
+DELETE FROM analyses WHERE schema_version IS NULL OR schema_version < 3;
 
 CREATE TABLE analyses_new (
   id                     TEXT PRIMARY KEY,

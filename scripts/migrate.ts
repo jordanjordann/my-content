@@ -4,8 +4,6 @@ import { join } from "node:path";
 
 import type { Client } from "@libsql/client";
 
-import { db } from "../lib/server/db";
-
 /**
  * Ticket #278 — a migration is tracked by content hash, not just filename.
  * Normalizes CRLF -> LF before hashing so a checkout-time line-ending change
@@ -24,27 +22,68 @@ export function computeChecksum(sql: string): string {
  * Ticket #277 — strips a migration file's own `BEGIN TRANSACTION; ... COMMIT;`
  * wrapper so its body can be executed inside a transaction `migrate.ts`
  * itself owns (see `runMigrations` below). This is a RUNTIME string
- * transform only: the `.sql` files on disk are never edited. That is the
- * deliberate choice over the ticket's other suggested direction (stripping
- * `BEGIN`/`COMMIT` from the files themselves) -- editing an already-applied
- * migration file collides directly with #278's checksum, which hashes
- * exactly what's on disk. Only strips when BOTH a leading `BEGIN
- * TRANSACTION;` and a trailing `COMMIT;` are present (some migrations, e.g.
- * 001 and 003, have no wrapper at all -- historically inconsistent, so this
- * is tolerant of both shapes). Never strips just one side: a lone `BEGIN`
- * with no matching `COMMIT` is left untouched and will fail loudly with
- * SQLite's own "cannot start a transaction within a transaction" error
- * rather than silently executing a half-wrapped file inside our transaction.
+ * transform only: the `.sql` files on disk are never edited by this
+ * function. That is the deliberate choice over the ticket's other suggested
+ * direction (stripping `BEGIN`/`COMMIT` from the files themselves) -- never
+ * touching an already-applied migration file's on-disk history keeps that
+ * file's checksum meaningful (see #278) for every edit made *after* it is
+ * first checksum-tracked, without this script having to special-case which
+ * edits are "safe." (On the very first deploy of #278 itself, a NULL stored
+ * checksum is adopted from disk rather than compared -- see `runMigrations`
+ * -- so an edit landing in that same deploy would not collide either way;
+ * that is not the reason for the runtime-strip choice, see the PR
+ * description.)
+ *
+ * Only strips when BOTH a leading `BEGIN TRANSACTION;` and a trailing
+ * `COMMIT;` are present (some migrations, e.g. 001 and 003, have no wrapper
+ * at all -- historically inconsistent, so this is tolerant of both shapes).
+ * Never strips just one side: a lone `BEGIN` with no matching `COMMIT` is
+ * left untouched.
+ *
+ * PR #305 review, P2 -- after attempting the strip, throws if a transaction
+ * -control token still remains in the body, instead of silently handing a
+ * broken script to the driver:
+ *   - A SECOND `BEGIN TRANSACTION;`/`COMMIT;` block in the same file would
+ *     otherwise leave an interior `COMMIT` in the stripped body. libsql
+ *     accepts it without error -- it just commits `migrate.ts`'s own outer
+ *     transaction early and runs the remainder in an implicit second one,
+ *     silently reopening the exact applied-but-untracked window #277
+ *     exists to close.
+ *   - A wrapper shape this function does not recognize (a leading header
+ *     comment before `BEGIN TRANSACTION;`, `BEGIN;` short form, `COMMIT
+ *     TRANSACTION;`, `END;`, `BEGIN IMMEDIATE TRANSACTION;`, or trailing
+ *     content after `COMMIT;`) fails the strip silently and previously died
+ *     inside the deploy with SQLite's own "cannot start a transaction
+ *     within a transaction," naming neither the file nor the cause.
+ * Every current file's wrapper (verified against all 14 files in
+ * `migrations/`) is either the single-block shape this strips cleanly, or
+ * has no wrapper at all -- so this check cannot fire against any file in
+ * the repo today. It exists for the next migration author.
  */
-export function stripOuterTransaction(sql: string): string {
+export function stripOuterTransaction(sql: string, fileName = "<unknown migration file>"): string {
   const beginPattern = /^\s*BEGIN\s+TRANSACTION\s*;/i;
   const commitPattern = /COMMIT\s*;\s*$/i;
 
-  if (beginPattern.test(sql) && commitPattern.test(sql)) {
-    return sql.replace(beginPattern, "").replace(commitPattern, "");
+  const body =
+    beginPattern.test(sql) && commitPattern.test(sql)
+      ? sql.replace(beginPattern, "").replace(commitPattern, "")
+      : sql;
+
+  const residualTransactionControl = /\bBEGIN\s+TRANSACTION\b|\bCOMMIT\b/i;
+  if (residualTransactionControl.test(body)) {
+    throw new Error(
+      `${fileName}: contains a BEGIN TRANSACTION or COMMIT statement that stripOuterTransaction ` +
+        `did not remove. This is either (a) a second transaction block in the same file, which ` +
+        `would silently split migrate.ts's outer transaction, or (b) a wrapper shape this function ` +
+        `does not recognize -- it only strips a leading "BEGIN TRANSACTION;" paired with a trailing ` +
+        `"COMMIT;" as the file's first and last statements, not "BEGIN;", "COMMIT TRANSACTION;", ` +
+        `"END;", "BEGIN IMMEDIATE TRANSACTION;", a header comment before BEGIN, or content after ` +
+        `COMMIT. Use exactly one "BEGIN TRANSACTION; ... COMMIT;" block, or omit the wrapper ` +
+        `entirely (see docs/RUNBOOK.md § Migrations).`,
+    );
   }
 
-  return sql;
+  return body;
 }
 
 export interface MigrationLogEntry {
@@ -60,6 +99,16 @@ export interface MigrationLogEntry {
  * bookkeeping-table evolution -- not a migration of application data, and
  * not the standing no-new-migration-file prohibition (owner ruling on both
  * #277 and #278: "this is a script fix, not a schema change").
+ *
+ * PR #305 review, P2 -- `hasChecksum` is decided from `PRAGMA
+ * table_info(_migrations)`, which is only verified locally; its behavior
+ * over Turso's remote protocol is untested and untestable here. If it ever
+ * misbehaves and reports `hasChecksum: false` on a database that already
+ * has the column, the bare `ALTER TABLE ... ADD COLUMN` below would throw
+ * `duplicate column name` and block every deploy from then on. The
+ * `try/catch` is one-line insurance against exactly that single point of
+ * failure: only a "duplicate column name" error is swallowed (the column
+ * already existing is not a real failure), anything else still throws.
  */
 export async function ensureMigrationsTable(client: Client): Promise<void> {
   await client.execute(`
@@ -74,7 +123,14 @@ export async function ensureMigrationsTable(client: Client): Promise<void> {
   const hasChecksum = columns.rows.some((row) => row.name === "checksum");
 
   if (!hasChecksum) {
-    await client.execute("ALTER TABLE _migrations ADD COLUMN checksum TEXT");
+    try {
+      await client.execute("ALTER TABLE _migrations ADD COLUMN checksum TEXT");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/duplicate column name/i.test(message)) {
+        throw error;
+      }
+    }
   }
 }
 
@@ -100,8 +156,24 @@ export async function ensureMigrationsTable(client: Client): Promise<void> {
  *     - stored checksum present and mismatched: throw immediately. The
  *       whole script aborts (Railway's `preDeployCommand` fails the deploy)
  *       rather than silently re-running or silently ignoring the edit.
+ *       (Note: any migration earlier in this same run/this same array has
+ *       already committed by this point -- an abort here does not roll
+ *       those back. See the PR description.)
  *     - stored checksum present and matches: skip, no log noise beyond the
  *       returned log entry.
+ *
+ * PR #305 review, P3 -- a `_migrations` row whose file no longer exists on
+ * disk (renamed or deleted after being applied) is warned about, not
+ * silently ignored: this is the other half of the rename hazard 012's own
+ * guard defends against (see `migrations/012_performance_block.sql`) --
+ * warning here gives an operator a chance to notice the rename BEFORE it
+ * re-applies as a new file, rather than only defending the one migration
+ * (012) whose re-application is known to be destructive.
+ *
+ * PR #305 review, P3 -- always prints a one-line summary at the end, so a
+ * clean no-op run ("nothing to do") is distinguishable in the deploy log
+ * from the script silently not running at all (e.g. a future change to
+ * `isDirectRun`'s invocation-path assumption).
  */
 export async function runMigrations(client: Client, migrationsDir: string): Promise<MigrationLogEntry[]> {
   await ensureMigrationsTable(client);
@@ -109,6 +181,7 @@ export async function runMigrations(client: Client, migrationsDir: string): Prom
   const files = readdirSync(migrationsDir)
     .filter((file) => file.endsWith(".sql"))
     .sort();
+  const fileSet = new Set(files);
 
   const log: MigrationLogEntry[] = [];
 
@@ -139,7 +212,9 @@ export async function runMigrations(client: Client, migrationsDir: string): Prom
           `Migration ${file} was already applied, but its file content on disk no longer ` +
             `matches the checksum recorded when it was applied (recorded ${storedChecksum}, ` +
             `on-disk ${checksum}). Refusing to continue: editing an already-applied migration ` +
-            `is not supported. Revert the file, or write a new migration instead.`,
+            `is not supported. Revert the file, or write a new migration instead. (Any migration ` +
+            `earlier than ${file} in this same run has already been applied and committed -- the ` +
+            `database is now mid-sequence, not left exactly as it was before this run started.)`,
         );
       }
 
@@ -147,7 +222,7 @@ export async function runMigrations(client: Client, migrationsDir: string): Prom
       continue;
     }
 
-    const body = stripOuterTransaction(raw);
+    const body = stripOuterTransaction(raw, file);
 
     const tx = await client.transaction("write");
     try {
@@ -158,7 +233,15 @@ export async function runMigrations(client: Client, migrationsDir: string): Prom
       });
       await tx.commit();
     } catch (error) {
-      await tx.rollback();
+      try {
+        await tx.rollback();
+      } catch (rollbackError) {
+        // The original `error` is what a deploy operator needs to see --
+        // this scenario (a dying connection) is exactly when rollback()
+        // itself is most likely to throw. Log it, but never let it replace
+        // or swallow `error` below.
+        console.error(`Rollback also failed while handling the error above for ${file}:`, rollbackError);
+      }
       throw error;
     } finally {
       tx.close();
@@ -168,10 +251,41 @@ export async function runMigrations(client: Client, migrationsDir: string): Prom
     log.push({ file, action: "applied" });
   }
 
+  const trackedRows = await client.execute("SELECT name FROM _migrations");
+  for (const row of trackedRows.rows) {
+    const name = row.name as string;
+    if (!fileSet.has(name)) {
+      console.warn(
+        `WARNING: _migrations has a tracked row for "${name}" but no matching file exists in ` +
+          `${migrationsDir}. If this file was renamed, restore it (or add a file with this exact ` +
+          `name back) before removing the old name -- an untracked rename target re-applies as a ` +
+          `brand-new migration on the next run.`,
+      );
+    }
+  }
+
+  const applied = log.filter((entry) => entry.action === "applied").length;
+  const unchanged = log.filter((entry) => entry.action === "unchanged").length;
+  const adopted = log.filter((entry) => entry.action === "adopted-legacy-checksum").length;
+  console.log(
+    `migrations: ${log.length} total, ${applied} applied, ${unchanged} unchanged, ${adopted} adopted-legacy-checksum`,
+  );
+
   return log;
 }
 
 async function main() {
+  // Lazy, dynamic import -- PR #305 review, P2. `../lib/server/db`
+  // constructs a `createClient` from `TURSO_DATABASE_URL` at module top
+  // level. A static top-level `import { db } from "../lib/server/db"` here
+  // would mean `tests/server/db/migrate.test.ts` importing this module's
+  // other exports (`computeChecksum`, `runMigrations`, etc.) for unit
+  // testing also, as a side effect, constructs a live database client
+  // handle in the test process on any machine where `TURSO_*` env vars are
+  // set -- one careless future `db.execute` away from a migration test
+  // touching production. Deferring the import into `main()`, which only
+  // runs under `isDirectRun` below, means the test suite never triggers it.
+  const { db } = await import("../lib/server/db");
   await runMigrations(db, join(process.cwd(), "migrations"));
   db.close();
 }
