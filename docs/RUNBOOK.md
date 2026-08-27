@@ -279,9 +279,13 @@ essentially no production data to preserve as of the redesign's start. Do not bu
   -- nothing before `BEGIN TRANSACTION;` (no header comment), no other wrapper form (`BEGIN;`,
   `COMMIT TRANSACTION;`, `END;`, `BEGIN IMMEDIATE TRANSACTION;`), no second transaction block, and
   no content after `COMMIT;`. `migrate.ts` owns the actual outer transaction and strips this wrapper
-  at runtime (never edits the file); any other shape throws a loud, file-named error before the
-  driver ever sees the SQL, rather than a bare "cannot start a transaction within a transaction"
-  with no indication of which file or why.
+  at runtime (never edits the file); any other recognized-but-unstripped shape throws a loud,
+  file-named error before the driver ever sees the SQL, rather than a bare "cannot start a
+  transaction within a transaction" with no indication of which file or why. **Exception: a second
+  block terminated with `END;` (SQLite's `COMMIT` synonym) or opened with a bare `BEGIN;` is NOT
+  detected** -- the residual-token scan has no vocabulary for `END`, and adding it naively would
+  false-positive on every `CREATE TRIGGER ... BEGIN ... END;`. No file in `migrations/` has this
+  shape today; tracked in #307, not fixed here (PR #305 review round 4, P2).
   - **The residual-token check scans statement position, not raw text.** After stripping, the
     remaining body is comment- and string-literal-stripped and then split into statements on `;`;
     only a statement that itself *starts* with `BEGIN TRANSACTION` or `COMMIT` trips the error. A
@@ -302,7 +306,9 @@ essentially no production data to preserve as of the redesign's start. Do not bu
     apostrophes in comments; the scanner already accounts for them.
 - Run with `npm run db:migrate`.
 
-**Current chain (001 → 012, as of ticket #139):**
+**Chain as of ticket #139 (001 → 012); `migrations/` now holds through
+`014_profile_lookup_failure.sql` -- see the directory listing for 013/014, not yet added to the
+table below:**
 
 | # | File | What it does |
 |---|---|---|

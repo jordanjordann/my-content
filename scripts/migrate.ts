@@ -51,10 +51,17 @@ export function computeChecksum(sql: string): string {
  *     exists to close.
  *   - A wrapper shape this function does not recognize (a leading header
  *     comment before `BEGIN TRANSACTION;`, `BEGIN;` short form, `COMMIT
- *     TRANSACTION;`, `END;`, `BEGIN IMMEDIATE TRANSACTION;`, or trailing
- *     content after `COMMIT;`) fails the strip silently and previously died
- *     inside the deploy with SQLite's own "cannot start a transaction
- *     within a transaction," naming neither the file nor the cause.
+ *     TRANSACTION;`, `BEGIN IMMEDIATE TRANSACTION;`, or trailing content
+ *     after `COMMIT;`) fails the strip silently and previously died inside
+ *     the deploy with SQLite's own "cannot start a transaction within a
+ *     transaction," naming neither the file nor the cause. NOTE: `END;`
+ *     (SQLite's `COMMIT` synonym) as the terminator of a second block, or a
+ *     bare `BEGIN;` opening one, is NOT one of the recognized-and-rejected
+ *     shapes below -- `hasResidualTransactionControl`'s statement-start scan
+ *     has no vocabulary for `END`, so that combination is silently missed
+ *     (PR #305 review round 4, P2; tracked in #307, not fixed here -- naively
+ *     adding `END` to the scan would false-positive on every
+ *     `CREATE TRIGGER ... BEGIN ... END;`).
  * Every current file's wrapper (verified against all 14 files in
  * `migrations/`) is either the single-block shape this strips cleanly, or
  * has no wrapper at all -- so this check cannot fire against any file in
@@ -120,7 +127,7 @@ export function computeChecksum(sql: string): string {
  * either way, and a bare `\r` carried along inside a blanked region is
  * itself replaced with a space, same as any other non-newline character.
  */
-function stripCommentsAndStrings(sql: string): string {
+export function stripCommentsAndStrings(sql: string): string {
   const OPEN_TO_CLOSE: Record<string, string> = { '"': '"', "`": "`", "[": "]" };
 
   let out = "";
@@ -222,13 +229,16 @@ export function stripOuterTransaction(sql: string, fileName = "<unknown migratio
   if (hasResidualTransactionControl(body)) {
     throw new Error(
       `${fileName}: contains a BEGIN TRANSACTION or COMMIT statement that stripOuterTransaction ` +
-        `did not remove. This is either (a) a second transaction block in the same file, which ` +
-        `would silently split migrate.ts's outer transaction, or (b) a wrapper shape this function ` +
-        `does not recognize -- it only strips a leading "BEGIN TRANSACTION;" paired with a trailing ` +
+        `did not remove. This is either (a) a second transaction block in the same file whose ` +
+        `interior statement literally starts with "BEGIN TRANSACTION" or "COMMIT", which would ` +
+        `silently split migrate.ts's outer transaction, or (b) a wrapper shape this function does ` +
+        `not recognize -- it only strips a leading "BEGIN TRANSACTION;" paired with a trailing ` +
         `"COMMIT;" as the file's first and last statements, not "BEGIN;", "COMMIT TRANSACTION;", ` +
-        `"END;", "BEGIN IMMEDIATE TRANSACTION;", a header comment before BEGIN, or content after ` +
-        `COMMIT. Use exactly one "BEGIN TRANSACTION; ... COMMIT;" block, or omit the wrapper ` +
-        `entirely (see docs/RUNBOOK.md § Migrations).`,
+        `"BEGIN IMMEDIATE TRANSACTION;", a header comment before BEGIN, or content after COMMIT. ` +
+        `NOTE: a block terminated with "END;" (SQLite's COMMIT synonym) or opened with a bare ` +
+        `"BEGIN;" is NOT detected by this check -- see #307. Use exactly one ` +
+        `"BEGIN TRANSACTION; ... COMMIT;" block, or omit the wrapper entirely (see docs/RUNBOOK.md ` +
+        `§ Migrations).`,
     );
   }
 

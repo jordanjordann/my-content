@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -14,6 +14,7 @@ import {
   computeChecksum,
   ensureMigrationsTable,
   runMigrations,
+  stripCommentsAndStrings,
   stripOuterTransaction,
 } from "@/scripts/migrate";
 
@@ -211,13 +212,22 @@ describe("scripts/migrate.ts — stripOuterTransaction", () => {
 // (`don't`, `it's`, "the table's") opened a phantom string literal that
 // swallowed real SQL up to the next `'` -- deleting the reviewer's injected
 // second transaction block before `hasResidualTransactionControl` ever saw
-// it. 8 of this repo's 14 real migration files have an apostrophe in a
-// comment. These tests exercise the REAL files on disk, not synthetic
-// copies, and reproduce the reviewer's exact injection technique: insert
+// it. These tests exercise the REAL files on disk, not synthetic copies, and
+// reproduce the reviewer's exact injection technique: insert
 // `COMMIT; BEGIN TRANSACTION; DROP TABLE analyses;` immediately after the
 // first comment line containing an apostrophe, then prove
 // `stripOuterTransaction` throws.
-describe("scripts/migrate.ts — stripOuterTransaction against real migration files with apostrophes in comments (PR #305 review round 3, P1)", () => {
+//
+// PR #305 review round 4, P2 -- the round-3 version of this describe block
+// hard-coded the file list to `009/010/012/013`. `013` never actually
+// exhibited the bug (its apostrophe-bearing comment happened to still be
+// caught even under the round-3 regex-order bug), while `011` and `014` DID
+// exhibit it and were silently omitted from coverage. Driven from
+// `readdirSync(migrations/)` instead, filtered to files that actually
+// contain an apostrophe inside a `--` comment, so the set can't go stale as
+// migrations are added and can't accidentally include/omit the wrong files
+// again.
+describe("scripts/migrate.ts — stripOuterTransaction against real migration files with apostrophes in comments (PR #305 review round 3, P1 / round 4, P2)", () => {
   const REAL_MIGRATIONS_DIR = join(process.cwd(), "migrations");
 
   function injectSecondTransactionBlockAfterFirstApostropheComment(sql: string): string {
@@ -230,15 +240,16 @@ describe("scripts/migrate.ts — stripOuterTransaction against real migration fi
     return lines.join("\n");
   }
 
-  it.each(["009_analysis_mode_images_only.sql", "010_profile_style_fingerprints.sql", "012_performance_block.sql", "013_reach_unavailable_reason.sql"])(
-    "confirms %s has an apostrophe inside a `--` comment (precondition for the test below)",
-    (fileName) => {
-      const raw = readFileSync(join(REAL_MIGRATIONS_DIR, fileName), "utf8");
-      expect(raw).toMatch(/--.*'/);
-    },
-  );
+  const apostropheCommentFiles = readdirSync(REAL_MIGRATIONS_DIR)
+    .filter((f) => f.endsWith(".sql"))
+    .filter((f) => /--.*'/.test(readFileSync(join(REAL_MIGRATIONS_DIR, f), "utf8")))
+    .sort();
 
-  it.each(["009_analysis_mode_images_only.sql", "010_profile_style_fingerprints.sql", "012_performance_block.sql", "013_reach_unavailable_reason.sql"])(
+  it("finds at least one real migration file with an apostrophe inside a `--` comment (precondition -- this whole describe block is a no-op if this fails)", () => {
+    expect(apostropheCommentFiles.length).toBeGreaterThan(0);
+  });
+
+  it.each(apostropheCommentFiles)(
     "MUTATION: reproduces the reviewer's injected second transaction block right after the first apostrophe-bearing comment in %s, and it is caught",
     (fileName) => {
       const raw = readFileSync(join(REAL_MIGRATIONS_DIR, fileName), "utf8");
@@ -255,13 +266,8 @@ describe("scripts/migrate.ts — stripOuterTransaction against real migration fi
     },
   );
 
-  it("the real, unmutated migration files (009/010/012/013) do NOT throw -- proves the fix does not just reject everything", () => {
-    for (const fileName of [
-      "009_analysis_mode_images_only.sql",
-      "010_profile_style_fingerprints.sql",
-      "012_performance_block.sql",
-      "013_reach_unavailable_reason.sql",
-    ]) {
+  it("the real, unmutated migration files with apostrophe-bearing comments do NOT throw -- proves the fix does not just reject everything", () => {
+    for (const fileName of apostropheCommentFiles) {
       const raw = readFileSync(join(REAL_MIGRATIONS_DIR, fileName), "utf8");
       expect(() => stripOuterTransaction(raw, fileName)).not.toThrow();
     }
@@ -275,6 +281,60 @@ describe("scripts/migrate.ts — stripOuterTransaction against real migration fi
     const raw = readFileSync(join(REAL_MIGRATIONS_DIR, "009_analysis_mode_images_only.sql"), "utf8");
     expect(raw).toMatch(/--.*'\[.*\]'/);
     expect(() => stripOuterTransaction(raw, "009_analysis_mode_images_only.sql")).not.toThrow();
+  });
+});
+
+// PR #305 review round 4, P2 -- the round-4 fix's own header comment and PR
+// body advertise FIVE independent tokeniser capabilities (`''` escaped
+// quotes, `/* */` block comments, `"..."`/`` `...` `` quoted identifiers,
+// `[...]` bracketed identifiers, plus the base `--`/string-literal scan), but
+// only the base case had a test that actually exercised it. The reviewer
+// mutated each capability in isolation (deleting or disabling its branch in
+// `stripCommentsAndStrings`) and got 47/47 green every time except one --
+// removing `[...]` handling flipped `SELECT [it's] FROM t;` + an injected
+// second block from DETECTED to MISSED, and nothing else in the suite
+// noticed. Each test below is a real-shaped case that goes red under the
+// corresponding mutation; each was verified by hand: apply the mutation,
+// confirm this file's new test fails, restore, confirm green again.
+describe("scripts/migrate.ts — stripCommentsAndStrings tokeniser capability coverage (PR #305 review round 4, P2)", () => {
+  // Capability: `''` escaped-quote-inside-a-string-literal. Deleting the
+  // dedicated `sql[i] === "'" && sql[i+1] === "'"` branch in
+  // `stripCommentsAndStrings` is provably a NO-OP for `hasResidualTransactionControl`'s
+  // detection surface on any well-formed doubled-quote string -- each `''`
+  // pair is two adjacent characters, so "close then immediately reopen"
+  // (the buggy behavior) and "treat as an escape, stay in the string" (the
+  // correct behavior) leave the SAME final in-string/out-of-string parity
+  // for every character after the pair, so no injected-block detection test
+  // can distinguish them (verified directly: the reviewer's own report notes
+  // deleting this branch also left 47/47 green, for the same reason). What
+  // DOES differ is the raw blanked output at the doubled-quote's own two
+  // character positions -- correct handling blanks both to spaces (still
+  // "inside" the string), the buggy close-then-reopen instead re-emits both
+  // characters as quote delimiters. Pinned directly here.
+  it("MUTATION: blanks a `''` escaped quote to spaces, not to a close+reopen quote pair", () => {
+    const cleaned = stripCommentsAndStrings("'it''s'");
+    expect(cleaned).toBe("'     '");
+  });
+
+  it("MUTATION: does not throw on a legit block comment containing `--`, `;`, and `COMMIT` in its own text", () => {
+    const sql =
+      "\n/* note: BEGIN TRANSACTION; is not needed here; COMMIT; neither -- nor is this line */\nCREATE TABLE t (id INTEGER);\n";
+    expect(() => stripOuterTransaction(`BEGIN TRANSACTION;${sql}COMMIT;\n`)).not.toThrow();
+  });
+
+  it.each([
+    ['"..." double-quoted identifier', 'SELECT "col;COMMIT" FROM t;'],
+    ["`...` backtick identifier", "SELECT `col;COMMIT` FROM t;"],
+  ])("MUTATION: does not throw on a legit %s containing `;COMMIT` in its own name", (_label, statement) => {
+    const sql = `BEGIN TRANSACTION;\n${statement}\nCOMMIT;\n`;
+    expect(() => stripOuterTransaction(sql)).not.toThrow();
+  });
+
+  it("MUTATION: reproduces the reviewer's exact `[...]` bracketed-identifier case -- an injected second block right after `SELECT [it's] FROM t;` is caught", () => {
+    const sql = "BEGIN TRANSACTION;\nSELECT [it's] FROM t;\nCOMMIT; BEGIN TRANSACTION; DROP TABLE analyses;\nCOMMIT;\n";
+    expect(() => stripOuterTransaction(sql, "996_bracket_ident.sql")).toThrow(
+      /996_bracket_ident\.sql[\s\S]*BEGIN TRANSACTION or COMMIT/,
+    );
   });
 });
 
