@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -11,9 +11,15 @@ import {
 } from "@libsql/client";
 
 import {
+  assertNoOrderRegression,
+  assertNoRenamedMigration,
   computeChecksum,
+  diffRowCounts,
   ensureMigrationsTable,
+  formatDestructiveMigrationError,
+  parseDestructiveAllowlist,
   runMigrations,
+  snapshotRowCounts,
   stripCommentsAndStrings,
   stripOuterTransaction,
 } from "@/scripts/migrate";
@@ -742,6 +748,398 @@ describe("scripts/migrate.ts — always prints a summary line, even for a full n
     );
     logSpy.mockRestore();
     db.close();
+  });
+});
+
+/**
+ * Ticket #307 — runner-level guard: Checks A (order regression), B (renamed
+ * migration), C (measured row loss), plus the allowlist escape hatch and the
+ * error-message formatter. Every scenario below reads the REAL
+ * `migrations/` directory (copied to a tmpdir and mutated on disk when a
+ * test needs a renamed/missing file) -- never an inline hand-written SQL
+ * copy of any migration, per the TDD's binding testing standard.
+ */
+const REAL_MIGRATIONS_DIR_307 = join(process.cwd(), "migrations");
+
+function copyRealMigrationsToTmp(): string {
+  const dir = makeWorkDir();
+  for (const file of readdirSync(REAL_MIGRATIONS_DIR_307)) {
+    writeFileSync(join(dir, file), readFileSync(join(REAL_MIGRATIONS_DIR_307, file), "utf8"), "utf8");
+  }
+  return dir;
+}
+
+/** Same real files, but only through (and including) `maxFile` -- lets a
+ * test isolate a specific migration's behavior from later migrations in the
+ * real chain that are not idempotent under replay for unrelated reasons. */
+function copyRealMigrationsUpTo(maxFile: string): string {
+  const dir = makeWorkDir();
+  for (const file of readdirSync(REAL_MIGRATIONS_DIR_307).filter((f) => f <= maxFile)) {
+    writeFileSync(join(dir, file), readFileSync(join(REAL_MIGRATIONS_DIR_307, file), "utf8"), "utf8");
+  }
+  return dir;
+}
+
+/** A schema-3 (post-012) analyses row with a fully populated perf block. */
+async function seedSchema3AnalysisRow(db: Client, id = "seed-1"): Promise<void> {
+  await db.execute({
+    sql: `INSERT INTO analyses (
+      id, url, platform, media_type, schema_version,
+      perf_reach_value, perf_reach_kind, perf_reach_derived_from,
+      perf_tier1_ratio, perf_tier1_denominator, perf_multiplier, performance_score
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      id,
+      "https://instagram.com/p/abc123",
+      "instagram",
+      "reel",
+      3,
+      12345,
+      "VIEWS",
+      "TOP_LEVEL",
+      0.42,
+      "REACH",
+      1.75,
+      99,
+    ],
+  });
+}
+
+async function readPerfBlock(db: Client, id = "seed-1") {
+  const result = await db.execute({
+    sql: "SELECT perf_reach_value, perf_multiplier, performance_score, perf_unavailable_reason FROM analyses WHERE id = ?",
+    args: [id],
+  });
+  return result.rows[0];
+}
+
+describe("scripts/migrate.ts — snapshotRowCounts / diffRowCounts (Check C primitives, ticket #307)", () => {
+  it("excludes sqlite_% internals and _migrations, includes every user table", async () => {
+    const db = makeDbClient();
+    await ensureMigrationsTable(db);
+    await db.execute("CREATE TABLE widgets (id INTEGER PRIMARY KEY)");
+    await db.execute("INSERT INTO widgets (id) VALUES (1)");
+
+    const counts = await snapshotRowCounts(db);
+    expect(counts).toEqual({ widgets: 1 });
+    expect(counts).not.toHaveProperty("_migrations");
+    expect(Object.keys(counts).some((name) => name.startsWith("sqlite_"))).toBe(false);
+    db.close();
+  });
+
+  // Load-bearing per the ticket: a snapshot taken on the CLIENT reads
+  // outside an in-flight transaction and misses its uncommitted effect,
+  // silently turning Check C into a permanent no-op. This is the dedicated
+  // test the ticket brief requires for exactly that failure mode.
+  it("MUTATION: snapshotRowCounts(tx) sees an uncommitted insert made on that same tx; snapshotRowCounts(client) does not", async () => {
+    const db = makeDbClient();
+    await ensureMigrationsTable(db);
+    await db.execute("CREATE TABLE widgets (id INTEGER PRIMARY KEY)");
+
+    const tx = await db.transaction("write");
+    await tx.execute("INSERT INTO widgets (id) VALUES (1)");
+
+    const fromTx = await snapshotRowCounts(tx);
+    const fromClient = await snapshotRowCounts(db);
+
+    expect(fromTx).toEqual({ widgets: 1 });
+    expect(fromClient).toEqual({ widgets: 0 });
+
+    await tx.rollback();
+    tx.close();
+    db.close();
+  });
+
+  it("diffRowCounts: a decreased count is a loss; a dropped table (absent from `after`) counts as -> 0; a new table (absent from `before`) is ignored", () => {
+    const before = { analyses: 5, settings: 0, dropped_table: 3 };
+    const after = { analyses: 2, settings: 0, new_table: 1 };
+
+    expect(diffRowCounts(before, after)).toEqual([
+      { table: "analyses", before: 5, after: 2 },
+      { table: "dropped_table", before: 3, after: 0 },
+    ]);
+  });
+
+  it("diffRowCounts: no losses when nothing decreased", () => {
+    expect(diffRowCounts({ analyses: 0 }, { analyses: 0 })).toEqual([]);
+    expect(diffRowCounts({ analyses: 2 }, { analyses: 5 })).toEqual([]);
+  });
+});
+
+describe("scripts/migrate.ts — parseDestructiveAllowlist (ticket #307)", () => {
+  function fakeEnv(overrides: Record<string, string | undefined>): NodeJS.ProcessEnv {
+    return { ...process.env, ...overrides };
+  }
+
+  it("parses a comma-separated env value, trimming whitespace and dropping empty entries", () => {
+    const allowlist = parseDestructiveAllowlist(
+      fakeEnv({ ALLOW_DESTRUCTIVE_MIGRATIONS: "a.sql, b.sql,,  c.sql " }),
+      [],
+    );
+    expect(allowlist).toEqual(new Set(["a.sql", "b.sql", "c.sql"]));
+  });
+
+  it("returns an empty set when the env var is unset or empty", () => {
+    expect(parseDestructiveAllowlist(fakeEnv({ ALLOW_DESTRUCTIVE_MIGRATIONS: undefined }), [])).toEqual(new Set());
+    expect(parseDestructiveAllowlist(fakeEnv({ ALLOW_DESTRUCTIVE_MIGRATIONS: "" }), [])).toEqual(new Set());
+  });
+
+  it("parses the --allow-destructive=<file> CLI flag, including multiple occurrences", () => {
+    const allowlist = parseDestructiveAllowlist(fakeEnv({ ALLOW_DESTRUCTIVE_MIGRATIONS: undefined }), [
+      "node",
+      "migrate.ts",
+      "--allow-destructive=a.sql",
+      "--allow-destructive=b.sql",
+    ]);
+    expect(allowlist).toEqual(new Set(["a.sql", "b.sql"]));
+  });
+
+  it("combines env and CLI sources", () => {
+    const allowlist = parseDestructiveAllowlist(fakeEnv({ ALLOW_DESTRUCTIVE_MIGRATIONS: "a.sql" }), [
+      "--allow-destructive=b.sql",
+    ]);
+    expect(allowlist).toEqual(new Set(["a.sql", "b.sql"]));
+  });
+
+  it("ignores an unrelated CLI argument", () => {
+    expect(parseDestructiveAllowlist(fakeEnv({ ALLOW_DESTRUCTIVE_MIGRATIONS: undefined }), ["--some-other-flag=x"])).toEqual(
+      new Set(),
+    );
+  });
+});
+
+describe("scripts/migrate.ts — formatDestructiveMigrationError (ticket #307)", () => {
+  it("contains the filename, per-table N -> M with a signed delta, the rollback sentence, the literal env var opt-in, and the do-not-set warning", () => {
+    const message = formatDestructiveMigrationError("012_performance_block.sql", [
+      { table: "analyses", before: 412, after: 0 },
+    ]);
+
+    expect(message).toContain("012_performance_block.sql");
+    expect(message).toContain("analyses: 412 rows -> 0 rows (-412)");
+    expect(message).toMatch(/rolled back/i);
+    expect(message).toContain("the database is unchanged");
+    expect(message).toContain("ALLOW_DESTRUCTIVE_MIGRATIONS=012_performance_block.sql");
+    expect(message).toMatch(/do not set that variable/i);
+  });
+});
+
+describe("scripts/migrate.ts — Check A: order regression (ticket #307, catches H1)", () => {
+  it("throws naming both files when a pending file sorts before the max applied name", () => {
+    expect(() => assertNoOrderRegression(["005_old.sql"], ["001_a.sql", "010_b.sql"])).toThrow(
+      /005_old\.sql[\s\S]*010_b\.sql/,
+    );
+  });
+
+  it("does not throw for a normally-growing migrations directory (new file sorts after)", () => {
+    expect(() => assertNoOrderRegression(["011_new.sql"], ["001_a.sql", "010_b.sql"])).not.toThrow();
+  });
+
+  it("does not throw when nothing has been applied yet (fresh database)", () => {
+    expect(() => assertNoOrderRegression(["001_a.sql", "002_b.sql"], [])).not.toThrow();
+  });
+
+  it("MUTATION: a real full-chain run followed by an H1-shaped rename (012 -> 012_performance_block_v2.sql) is refused, and the seeded row + every perf_* value + the widened CHECK survive untouched", async () => {
+    const db = makeDbClient();
+    const tmpDir = copyRealMigrationsToTmp();
+
+    await runMigrations(db, tmpDir);
+    await seedSchema3AnalysisRow(db);
+
+    renameSync(join(tmpDir, "012_performance_block.sql"), join(tmpDir, "012_performance_block_v2.sql"));
+
+    await expect(runMigrations(db, tmpDir)).rejects.toThrow(
+      /012_performance_block_v2\.sql[\s\S]*014_profile_lookup_failure\.sql/,
+    );
+
+    const row = await readPerfBlock(db);
+    expect(row).toBeDefined();
+    expect(row!.perf_reach_value).toEqual(12345);
+    expect(row!.perf_multiplier).toEqual(1.75);
+    expect(row!.performance_score).toEqual(99);
+
+    // Direct probe for 013's widened CHECK still being in effect.
+    await expect(
+      db.execute({
+        sql: "INSERT INTO analyses (id, url, platform, media_type, perf_unavailable_reason) VALUES (?, ?, ?, ?, ?)",
+        args: ["reach-not-on-first-slide", "https://instagram.com/p/x", "instagram", "carousel", "REACH_NOT_ON_FIRST_SLIDE"],
+      }),
+    ).resolves.toBeDefined();
+
+    db.close();
+  });
+});
+
+describe("scripts/migrate.ts — Check B: renamed migration (ticket #307, catches H2)", () => {
+  it("throws naming the original filename for a pending file whose checksum matches an applied row under a different name", () => {
+    expect(() =>
+      assertNoRenamedMigration(
+        [{ file: "015_perf.sql", checksum: "abc" }],
+        [{ name: "012_performance_block.sql", checksum: "abc" }],
+      ),
+    ).toThrow(/015_perf\.sql[\s\S]*012_performance_block\.sql/);
+  });
+
+  it("does not throw when the checksum only matches the SAME filename (unchanged, not a rename)", () => {
+    expect(() =>
+      assertNoRenamedMigration(
+        [{ file: "012_performance_block.sql", checksum: "abc" }],
+        [{ name: "012_performance_block.sql", checksum: "abc" }],
+      ),
+    ).not.toThrow();
+  });
+
+  it("MUTATION: legacy rows with a NULL checksum carry no identity and are skipped (Check B is inert against them)", () => {
+    expect(() =>
+      assertNoRenamedMigration(
+        [{ file: "999_new.sql", checksum: "abc" }],
+        [{ name: "001_legacy.sql", checksum: null }],
+      ),
+    ).not.toThrow();
+  });
+
+  it("MUTATION: a real full-chain run followed by an H2-shaped rename (012 -> 015_perf.sql, sorts AFTER the max applied name so Check A alone would miss it) is refused naming 012_performance_block.sql as the original, and the seeded row + perf block + widened CHECK survive", async () => {
+    const db = makeDbClient();
+    const tmpDir = copyRealMigrationsToTmp();
+
+    await runMigrations(db, tmpDir);
+    await seedSchema3AnalysisRow(db);
+
+    renameSync(join(tmpDir, "012_performance_block.sql"), join(tmpDir, "015_perf.sql"));
+
+    await expect(runMigrations(db, tmpDir)).rejects.toThrow(
+      /015_perf\.sql[\s\S]*012_performance_block\.sql/,
+    );
+
+    const row = await readPerfBlock(db);
+    expect(row!.perf_reach_value).toEqual(12345);
+    expect(row!.perf_multiplier).toEqual(1.75);
+    expect(row!.performance_score).toEqual(99);
+
+    await expect(
+      db.execute({
+        sql: "INSERT INTO analyses (id, url, platform, media_type, perf_unavailable_reason) VALUES (?, ?, ?, ?, ?)",
+        args: ["reach-not-on-first-slide-2", "https://instagram.com/p/y", "instagram", "carousel", "REACH_NOT_ON_FIRST_SLIDE"],
+      }),
+    ).resolves.toBeDefined();
+
+    db.close();
+  });
+});
+
+describe("scripts/migrate.ts — Check C: measured row loss (ticket #307, catches H3)", () => {
+  it("MUTATION: an H3-shaped bookkeeping rollback (_migrations rows for 012+ deleted, files untouched) trips Check C, names analyses and 1 -> 0, and rolls back so the row + perf block + widened CHECK survive", async () => {
+    const db = makeDbClient();
+    const tmpDir = copyRealMigrationsToTmp();
+
+    await runMigrations(db, tmpDir);
+    await seedSchema3AnalysisRow(db);
+
+    await db.execute("DELETE FROM _migrations WHERE name >= '012'");
+
+    await expect(runMigrations(db, tmpDir)).rejects.toThrow(
+      /012_performance_block\.sql[\s\S]*analyses: 1 rows -> 0 rows \(-1\)/,
+    );
+
+    const row = await readPerfBlock(db);
+    expect(row!.perf_reach_value).toEqual(12345);
+    expect(row!.perf_multiplier).toEqual(1.75);
+    expect(row!.performance_score).toEqual(99);
+
+    await expect(
+      db.execute({
+        sql: "INSERT INTO analyses (id, url, platform, media_type, perf_unavailable_reason) VALUES (?, ?, ?, ?, ?)",
+        args: ["reach-not-on-first-slide-3", "https://instagram.com/p/z", "instagram", "carousel", "REACH_NOT_ON_FIRST_SLIDE"],
+      }),
+    ).resolves.toBeDefined();
+
+    db.close();
+  });
+
+  // Scoped to the real 001-012 files only (not the full 14-file chain): 013
+  // and 014 are also structural rebuilds/ALTERs that are NOT idempotent
+  // against being re-applied after their OWN tracking rows are lost in the
+  // very same run (014's `ALTER TABLE ADD COLUMN` errors "duplicate column
+  // name" the second time it runs against a database that already has that
+  // column) -- an unrelated, pre-existing limitation of "an additive
+  // migration is not safe to blindly re-run," not something Check C claims
+  // to fix (Check C's job is refusing to re-run 012 silently, not making
+  // every later migration idempotent under a bookkeeping-loss replay). This
+  // scopes the opt-in scenario to exactly what Check C's escape hatch is
+  // responsible for: 012 itself.
+  it("with the exact-file opt-in, the same H3 scenario proceeds and the destruction is allowed out loud", async () => {
+    const db = makeDbClient();
+    const tmpDir = copyRealMigrationsUpTo("012_performance_block.sql");
+
+    await runMigrations(db, tmpDir);
+    await seedSchema3AnalysisRow(db);
+    await db.execute("DELETE FROM _migrations WHERE name = '012_performance_block.sql'");
+
+    const log = await runMigrations(db, tmpDir, new Set(["012_performance_block.sql"]));
+    expect(log.find((entry) => entry.file === "012_performance_block.sql")).toEqual({
+      file: "012_performance_block.sql",
+      action: "applied",
+    });
+
+    const rows = await db.execute("SELECT * FROM analyses");
+    expect(rows.rows).toHaveLength(0);
+    db.close();
+  });
+
+  it("MUTATION: the opt-in is per-file -- allowlisting a DIFFERENT filename still throws for the H3 scenario", async () => {
+    const db = makeDbClient();
+    const tmpDir = copyRealMigrationsUpTo("012_performance_block.sql");
+
+    await runMigrations(db, tmpDir);
+    await seedSchema3AnalysisRow(db);
+    await db.execute("DELETE FROM _migrations WHERE name = '012_performance_block.sql'");
+
+    await expect(
+      runMigrations(db, tmpDir, new Set(["999_some_other_file.sql"])),
+    ).rejects.toThrow(/012_performance_block\.sql/);
+
+    db.close();
+  });
+
+  it("a fresh database never trips Check C, despite 012 containing an unconditional DELETE FROM analyses", async () => {
+    const db = makeDbClient();
+    const log = await runMigrations(db, REAL_MIGRATIONS_DIR_307);
+
+    expect(log.length).toEqual(readdirSync(REAL_MIGRATIONS_DIR_307).filter((f) => f.endsWith(".sql")).length);
+    expect(log.every((entry) => entry.action === "applied")).toBe(true);
+    db.close();
+  });
+
+  it("MUTATION: 008's DELETE FROM analyses WHERE schema_version IS NULL deletes 0 rows on a fresh database and does not trip Check C", async () => {
+    const db = makeDbClient();
+    const partialDir = copyRealMigrationsUpTo("008_delete_legacy_pre_redesign_analyses.sql");
+
+    const log = await runMigrations(db, partialDir);
+    expect(log.some((entry) => entry.file === "008_delete_legacy_pre_redesign_analyses.sql")).toBe(true);
+    expect(log.every((entry) => entry.action === "applied")).toBe(true);
+    db.close();
+  });
+});
+
+describe("scripts/migrate.ts — real migration chain, full end-to-end guard behavior (ticket #307)", () => {
+  it("the full real chain on a fresh database applies every file with no check tripping", async () => {
+    const db = makeDbClient();
+    const log = await runMigrations(db, REAL_MIGRATIONS_DIR_307);
+
+    const fileCount = readdirSync(REAL_MIGRATIONS_DIR_307).filter((f) => f.endsWith(".sql")).length;
+    expect(fileCount).toEqual(14);
+    expect(log).toHaveLength(14);
+    expect(log.every((entry) => entry.action === "applied")).toBe(true);
+    db.close();
+  });
+
+  // TDD §7.1 / ticket acceptance criteria -- this PR must edit zero `.sql`
+  // files. 012 must remain the in-repo, unconditional-DELETE version;
+  // protection lives entirely in the runner, not inside any migration file.
+  it("migrations/012_performance_block.sql has no in-file destructive guard (protection lives in the runner, not the file)", () => {
+    const contents = readFileSync(join(REAL_MIGRATIONS_DIR_307, "012_performance_block.sql"), "utf8");
+    // Unconditional -- no WHERE clause guarding the DELETE (an in-file guard
+    // would look like `DELETE FROM analyses WHERE schema_version ...;`).
+    expect(contents).toMatch(/^DELETE FROM analyses;$/m);
   });
 });
 
