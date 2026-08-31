@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { Client } from "@libsql/client";
+import type { Client, Transaction } from "@libsql/client";
 
 /**
  * Ticket #278 — a migration is tracked by content hash, not just filename.
@@ -294,6 +294,250 @@ export async function ensureMigrationsTable(client: Client): Promise<void> {
 }
 
 /**
+ * Ticket #307 — runner-level guard against a migration being re-presented
+ * under a new name (Checks A/B) or destroying rows in a non-empty database
+ * (Check C). See docs/TDD-migration-runner-guard.md for the full design and
+ * docs/RUNBOOK.md § Migrations for the operator-facing recovery flow.
+ */
+export interface TableRowCounts {
+  [table: string]: number;
+}
+
+export interface RowLoss {
+  table: string;
+  before: number;
+  after: number;
+}
+
+/**
+ * Check C's measurement primitive. Snapshots `COUNT(*)` for every user
+ * table -- every table in `sqlite_master` except SQLite's own `sqlite_%`
+ * internals and `_migrations` itself (the runner's own bookkeeping, updated
+ * inside the same transaction it is measuring). No config, no hard-coded
+ * table names: a table with 0 rows before a migration runs cannot lose
+ * rows, so a fresh database is self-scoping and never trips anything here.
+ *
+ * MUST be called with the in-flight `Transaction`, not the `Client`. A
+ * snapshot taken on the client reads outside the transaction and would
+ * silently miss every uncommitted effect of the migration body currently
+ * running inside `tx` -- turning this into a permanent no-op against the
+ * exact case (a pending migration's own body) it exists to observe. Both
+ * `Transaction` and `Client` expose the same `execute` shape, so nothing
+ * about the type signature stops this mistake -- it's a runtime footgun, not
+ * a compile-time one. See `tests/server/db/migrate.test.ts`'s dedicated
+ * "snapshot reads inside tx" test.
+ */
+export async function snapshotRowCounts(executor: Transaction | Client): Promise<TableRowCounts> {
+  const tables = await executor.execute(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> '_migrations'",
+  );
+
+  const counts: TableRowCounts = {};
+  for (const row of tables.rows) {
+    const table = row.name as string;
+    // Table names come from sqlite_master itself, not user input -- still
+    // quoted as a double-quoted identifier rather than interpolated bare,
+    // since SQLite table names may contain characters that are not valid
+    // unquoted (e.g. this repo's own tables never do, but a future one
+    // could).
+    const result = await executor.execute(`SELECT COUNT(*) AS count FROM "${table}"`);
+    counts[table] = Number(result.rows[0]!.count);
+  }
+  return counts;
+}
+
+/**
+ * Check C's decision primitive. A table present in `before` whose count
+ * decreased is a loss -- a table dropped entirely by the migration (absent
+ * from `after`) counts as decreasing to 0. A table `after` has that `before`
+ * does not (created by the migration) is ignored: nothing was lost, there
+ * was nothing to lose from.
+ */
+export function diffRowCounts(before: TableRowCounts, after: TableRowCounts): RowLoss[] {
+  const losses: RowLoss[] = [];
+  for (const [table, beforeCount] of Object.entries(before)) {
+    const afterCount = after[table] ?? 0;
+    if (afterCount < beforeCount) {
+      losses.push({ table, before: beforeCount, after: afterCount });
+    }
+  }
+  return losses;
+}
+
+/**
+ * Escape hatch for Check C. Deliberately a comma-separated list of EXACT
+ * filenames, not a boolean -- `ALLOW_DESTRUCTIVE_MIGRATIONS=012_x.sql`
+ * authorises only that one file to lose rows on this run; it does not
+ * pre-authorise any future destructive migration. `--allow-destructive=<f>`
+ * (repeatable) is the CLI equivalent for a local developer resetting a
+ * local DB, so they never have to touch env vars for a one-off run.
+ */
+export function parseDestructiveAllowlist(env: NodeJS.ProcessEnv, argv: string[]): Set<string> {
+  const allowlist = new Set<string>();
+
+  const envValue = env.ALLOW_DESTRUCTIVE_MIGRATIONS;
+  if (envValue) {
+    for (const name of envValue.split(",")) {
+      const trimmed = name.trim();
+      if (trimmed) allowlist.add(trimmed);
+    }
+  }
+
+  for (const arg of argv) {
+    const match = /^--allow-destructive=(.+)$/.exec(arg);
+    if (match) {
+      const trimmed = match[1]!.trim();
+      if (trimmed) allowlist.add(trimmed);
+    }
+  }
+
+  return allowlist;
+}
+
+/**
+ * Check A (catches H1: rename to a lower/equal sort key). A pending file
+ * that sorts before the highest already-applied filename is a regression --
+ * someone re-added, restored, or renamed an old migration to look new.
+ * `appliedNames` is read from `_migrations` BEFORE the apply loop starts, so
+ * this does not compare a file against itself or against migrations applied
+ * earlier in the very same run.
+ */
+export function assertNoOrderRegression(pendingFiles: string[], appliedNames: string[]): void {
+  if (appliedNames.length === 0) return;
+
+  const maxApplied = appliedNames.reduce((max, name) => (name > max ? name : max));
+
+  for (const file of pendingFiles) {
+    if (file < maxApplied) {
+      throw new Error(
+        `Migration order regression detected: pending file "${file}" sorts before the most ` +
+          `recently applied migration "${maxApplied}". This is the signature of a migration file ` +
+          `being renamed, restored, or re-added under a name that sorts earlier than migrations ` +
+          `already applied to this database. Refusing to run "${file}" -- if this is genuinely a ` +
+          `new migration, give it a filename that sorts after "${maxApplied}". See ` +
+          `docs/RUNBOOK.md § Migrations.`,
+      );
+    }
+  }
+}
+
+/**
+ * Check B (catches H2: rename to a higher sort key, which Check A misses).
+ * A pending file whose checksum already exists in `_migrations` under a
+ * DIFFERENT filename is provably the same migration, renamed -- not a new
+ * migration that happens to produce identical bytes. Rows with a NULL
+ * checksum (legacy, pre-#278) carry no identity to match against and are
+ * skipped: Check B is therefore inert on the very first deploy after #278
+ * ships, and fully effective from the second deploy onward (see
+ * docs/RUNBOOK.md § Migrations).
+ *
+ * This is also the upgrade of PR #305's orphan-row `console.warn` to a hard
+ * abort for exactly the case where the orphan is provably a rename (its
+ * checksum matches a pending file); the warning is left as-is for a
+ * genuinely deleted migration (no matching pending checksum).
+ */
+export function assertNoRenamedMigration(
+  pending: { file: string; checksum: string }[],
+  applied: { name: string; checksum: string | null }[],
+): void {
+  const checksumToName = new Map<string, string>();
+  for (const row of applied) {
+    if (row.checksum !== null) {
+      checksumToName.set(row.checksum, row.name);
+    }
+  }
+
+  for (const { file, checksum } of pending) {
+    const originalName = checksumToName.get(checksum);
+    if (originalName && originalName !== file) {
+      throw new Error(
+        `Migration "${file}" is byte-identical (checksum ${checksum}) to already-applied ` +
+          `migration "${originalName}". This is a renamed or re-presented migration, not a new ` +
+          `one, and re-running it against a non-empty database is exactly the hazard this guard ` +
+          `exists to stop. Refusing to run "${file}" -- restore the original filename ` +
+          `"${originalName}" (and delete "${file}"), or if this is genuinely intended to be a new ` +
+          `migration, change its content. See docs/RUNBOOK.md § Migrations.`,
+      );
+    }
+  }
+}
+
+/**
+ * Check C's abort message.
+ *
+ * PR #309 review round 2, P2 -- the original version of this message
+ * unconditionally claimed "Nothing has been committed... the database is
+ * unchanged." That is true when the tripping migration is the FIRST pending
+ * file in this run (Checks A and B are a genuine preflight -- nothing has
+ * run yet when they fire). It is FALSE whenever an earlier pending file in
+ * the SAME run already applied: Check C runs per-migration, inside the apply
+ * loop, so an earlier file's body and its `_migrations` tracking row have
+ * already committed in their own transaction by the time a LATER file trips
+ * Check C. Reviewer-verified: a 3-file run tripping on the 3rd left two
+ * `_migrations` rows written and a table grown, while this message told the
+ * operator nothing had changed.
+ *
+ * Owner ruling (round 2): make the message honest rather than restructure
+ * the apply loop into one giant transaction (rejected -- see the PR
+ * description). Fixed here by (a) scoping the "rolled back, committed
+ * nothing" claim to THIS migration's own transaction only, matching the
+ * sibling checksum-mismatch error's existing convention in this same file
+ * ("Any migration earlier than X in this same run has already been applied
+ * and committed -- the database is now mid-sequence..."), and (b) per
+ * explicit owner instruction, NAMING which migrations already committed in
+ * this run, so the operator does not have to go check `_migrations` by hand
+ * to know where they stand.
+ *
+ * Discoverability is still a design requirement (TDD §2.3), now amended:
+ * must contain, in order, (1) the filename, (2) per-table
+ * `table: N rows -> M rows (delta)`, (3) confirmation THIS migration's own
+ * transaction was rolled back and committed nothing, PLUS -- if any earlier
+ * migration in this run already committed -- the exact list of those
+ * filenames and a statement that the database is mid-sequence, not
+ * unchanged, (4) the literal opt-in env var and value to set, (5) a
+ * plain-language warning not to set it if this loss was unexpected.
+ *
+ * NOTE: this amends the ticket's (#307) original mandated error-string
+ * contract, which required the literal sentence "Nothing has been
+ * committed. The transaction was rolled back; the database is unchanged."
+ * unconditionally. That sentence's first half is right and its second half
+ * is provably wrong for any non-first pending migration -- see the PR body
+ * for the correction.
+ */
+export function formatDestructiveMigrationError(
+  file: string,
+  losses: RowLoss[],
+  committedThisRun: string[] = [],
+): string {
+  const lines: string[] = [`Migration "${file}" would delete rows from an existing database:`, ""];
+
+  for (const loss of losses) {
+    const delta = loss.after - loss.before;
+    lines.push(`  ${loss.table}: ${loss.before} rows -> ${loss.after} rows (${delta})`);
+  }
+
+  lines.push(
+    "",
+    `This migration's own transaction was rolled back; "${file}" itself committed nothing.`,
+    committedThisRun.length > 0
+      ? `However, earlier migrations already applied and committed in this same run: ` +
+          `${committedThisRun.join(", ")}. The database is now mid-sequence, not left exactly as ` +
+          `it was before this run started.`
+      : `No earlier migration in this run committed anything before this one -- the database is ` +
+          `unchanged.`,
+    "",
+    `If this migration is genuinely meant to delete this data, set ` +
+      `ALLOW_DESTRUCTIVE_MIGRATIONS=${file} (or pass --allow-destructive=${file} for a local run) ` +
+      `and re-run the migration.`,
+    "",
+    "If you did not expect this migration to delete data, do not set that variable -- this is " +
+      "very likely a renamed or re-presented migration; see docs/RUNBOOK.md § Migrations.",
+  );
+
+  return lines.join("\n");
+}
+
+/**
  * Runs every `.sql` file in `migrationsDir` against `client`, in filename
  * order. Ticket #277 + #278 combined:
  *
@@ -333,14 +577,44 @@ export async function ensureMigrationsTable(client: Client): Promise<void> {
  * clean no-op run ("nothing to do") is distinguishable in the deploy log
  * from the script silently not running at all (e.g. a future change to
  * `isDirectRun`'s invocation-path assumption).
+ *
+ * Ticket #307 -- before any file is applied, runs Checks A and B (see
+ * `assertNoOrderRegression` / `assertNoRenamedMigration` above) as a single
+ * preflight pass over every currently-pending file, using `_migrations`
+ * state read once, before the loop starts. Then, for each pending
+ * migration, Check C snapshots row counts on the SAME transaction the body
+ * runs in (before and after `tx.executeMultiple`) and aborts -- rolling
+ * back via the existing catch block below, nothing new needed there -- if
+ * rows were lost and the file is not in `allowlist`.
  */
-export async function runMigrations(client: Client, migrationsDir: string): Promise<MigrationLogEntry[]> {
+export async function runMigrations(
+  client: Client,
+  migrationsDir: string,
+  allowlist: Set<string> = new Set(),
+): Promise<MigrationLogEntry[]> {
   await ensureMigrationsTable(client);
 
   const files = readdirSync(migrationsDir)
     .filter((file) => file.endsWith(".sql"))
     .sort();
   const fileSet = new Set(files);
+
+  const trackedBeforeRun = await client.execute("SELECT name, checksum FROM _migrations");
+  const appliedRows = trackedBeforeRun.rows.map((row) => ({
+    name: row.name as string,
+    checksum: row.checksum as string | null,
+  }));
+  const appliedNames = appliedRows.map((row) => row.name);
+  const appliedNameSet = new Set(appliedNames);
+
+  const pendingFiles = files.filter((file) => !appliedNameSet.has(file));
+  assertNoOrderRegression(pendingFiles, appliedNames);
+
+  const pendingWithChecksum = pendingFiles.map((file) => ({
+    file,
+    checksum: computeChecksum(readFileSync(join(migrationsDir, file), "utf8")),
+  }));
+  assertNoRenamedMigration(pendingWithChecksum, appliedRows);
 
   const log: MigrationLogEntry[] = [];
 
@@ -385,7 +659,29 @@ export async function runMigrations(client: Client, migrationsDir: string): Prom
 
     const tx = await client.transaction("write");
     try {
+      // Ticket #307, Check C -- snapshot on `tx`, NOT `client`. A snapshot
+      // on the client would read outside this transaction and miss the
+      // migration body's uncommitted effect entirely.
+      const before = await snapshotRowCounts(tx);
       await tx.executeMultiple(body);
+      const after = await snapshotRowCounts(tx);
+      const losses = diffRowCounts(before, after);
+
+      if (losses.length > 0 && !allowlist.has(file)) {
+        // Throwing here (rather than rolling back inline) reuses the
+        // catch block below, which already rolls back, logs a rollback
+        // failure without swallowing this error, and closes `tx` --
+        // exactly the guarantee proven by the existing crash-mutation test.
+        //
+        // PR #309 review round 2, P2 -- pass the filenames of migrations
+        // already `applied` earlier IN THIS RUN (not `unchanged`/
+        // `adopted-legacy-checksum` entries, which committed nothing new
+        // this run) so the abort message can honestly say which ones
+        // already committed, instead of claiming the database is unchanged.
+        const committedThisRun = log.filter((entry) => entry.action === "applied").map((entry) => entry.file);
+        throw new Error(formatDestructiveMigrationError(file, losses, committedThisRun));
+      }
+
       await tx.execute({
         sql: "INSERT INTO _migrations (name, checksum) VALUES (?, ?)",
         args: [file, checksum],
@@ -445,7 +741,8 @@ async function main() {
   // touching production. Deferring the import into `main()`, which only
   // runs under `isDirectRun` below, means the test suite never triggers it.
   const { db } = await import("../lib/server/db");
-  await runMigrations(db, join(process.cwd(), "migrations"));
+  const allowlist = parseDestructiveAllowlist(process.env, process.argv);
+  await runMigrations(db, join(process.cwd(), "migrations"), allowlist);
   db.close();
 }
 
