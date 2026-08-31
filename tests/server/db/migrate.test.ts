@@ -908,8 +908,8 @@ describe("scripts/migrate.ts — parseDestructiveAllowlist (ticket #307)", () =>
   });
 });
 
-describe("scripts/migrate.ts — formatDestructiveMigrationError (ticket #307)", () => {
-  it("contains the filename, per-table N -> M with a signed delta, the rollback sentence, the literal env var opt-in, and the do-not-set warning", () => {
+describe("scripts/migrate.ts — formatDestructiveMigrationError (ticket #307; amended contract, PR #309 review round 2, P2)", () => {
+  it("with no earlier migration committed this run: contains the filename, per-table N -> M with a signed delta, the rollback sentence, 'the database is unchanged', the literal env var opt-in, and the do-not-set warning", () => {
     const message = formatDestructiveMigrationError("012_performance_block.sql", [
       { table: "analyses", before: 412, after: 0 },
     ]);
@@ -920,6 +920,27 @@ describe("scripts/migrate.ts — formatDestructiveMigrationError (ticket #307)",
     expect(message).toContain("the database is unchanged");
     expect(message).toContain("ALLOW_DESTRUCTIVE_MIGRATIONS=012_performance_block.sql");
     expect(message).toMatch(/do not set that variable/i);
+  });
+
+  // PR #309 review round 2, P2 -- the original unconditional "Nothing has
+  // been committed... the database is unchanged" is FALSE whenever an
+  // earlier pending migration in the same run already applied and
+  // committed before this one trips Check C. This is the corrected,
+  // amended contract: it must name every migration that already committed
+  // this run and say the database is mid-sequence, NOT claim "unchanged".
+  it("MUTATION: with earlier migrations already committed this run, names them and says the database is mid-sequence, NOT 'unchanged'", () => {
+    const message = formatDestructiveMigrationError(
+      "003_wipe.sql",
+      [{ table: "a", before: 2, after: 0 }],
+      ["001_base.sql", "002_marker.sql"],
+    );
+
+    expect(message).toContain("003_wipe.sql");
+    expect(message).toContain("a: 2 rows -> 0 rows (-2)");
+    expect(message).toMatch(/003_wipe\.sql[\s\S]*rolled back/i);
+    expect(message).toContain("001_base.sql, 002_marker.sql");
+    expect(message).toMatch(/mid-sequence/i);
+    expect(message).not.toContain("the database is unchanged");
   });
 });
 
@@ -1055,17 +1076,14 @@ describe("scripts/migrate.ts — Check C: measured row loss (ticket #307, catche
     db.close();
   });
 
-  // Scoped to the real 001-012 files only (not the full 14-file chain): 013
-  // and 014 are also structural rebuilds/ALTERs that are NOT idempotent
-  // against being re-applied after their OWN tracking rows are lost in the
-  // very same run (014's `ALTER TABLE ADD COLUMN` errors "duplicate column
-  // name" the second time it runs against a database that already has that
-  // column) -- an unrelated, pre-existing limitation of "an additive
-  // migration is not safe to blindly re-run," not something Check C claims
-  // to fix (Check C's job is refusing to re-run 012 silently, not making
-  // every later migration idempotent under a bookkeeping-loss replay). This
-  // scopes the opt-in scenario to exactly what Check C's escape hatch is
-  // responsible for: 012 itself.
+  // Scoped to the real 001-012 files only (not the full 14-file chain), as a
+  // narrow unit-shaped check of exactly what the opt-in mechanism itself is
+  // responsible for: authorizing 012's own row loss, nothing more. This is
+  // deliberately NOT the end-to-end proof that the escape hatch gets an
+  // operator back to a working database on the REAL chain -- see the
+  // "full real chain" describe block below for that (PR #309 review round
+  // 1: scoping the ONLY end-to-end test to this subset was the wrong
+  // remedy, because it hid exactly the finding in that block).
   it("with the exact-file opt-in, the same H3 scenario proceeds and the destruction is allowed out loud", async () => {
     const db = makeDbClient();
     const tmpDir = copyRealMigrationsUpTo("012_performance_block.sql");
@@ -1118,6 +1136,115 @@ describe("scripts/migrate.ts — Check C: measured row loss (ticket #307, catche
     expect(log.every((entry) => entry.action === "applied")).toBe(true);
     db.close();
   });
+
+  // PR #309 review round 2, P2 -- exact reproduction of the reviewer's own
+  // repro: three files, the third trips Check C. Proves the abort message
+  // names 001 and 002 as already-committed-this-run and does NOT claim the
+  // database is unchanged, matching the amended contract in
+  // formatDestructiveMigrationError. MUTATION: if the call site regressed to
+  // passing an empty/omitted `committedThisRun` list, this test's
+  // "001_base.sql, 002_marker.sql" assertion goes red.
+  it("MUTATION: when the tripping migration is not the first pending file, the abort message names the earlier migrations that already committed this run, and does not claim the database is unchanged", async () => {
+    const db = makeDbClient();
+    const dir = makeMigrationsDir({
+      "001_base.sql": "BEGIN TRANSACTION;\nCREATE TABLE a (id INTEGER PRIMARY KEY);\nINSERT INTO a (id) VALUES (1);\nCOMMIT;\n",
+      "002_marker.sql":
+        "BEGIN TRANSACTION;\nCREATE TABLE marker_committed_by_002 (id INTEGER PRIMARY KEY);\nINSERT INTO a (id) VALUES (2);\nCOMMIT;\n",
+      "003_wipe.sql": "BEGIN TRANSACTION;\nDELETE FROM a;\nCOMMIT;\n",
+    });
+
+    await expect(runMigrations(db, dir)).rejects.toThrow(
+      /003_wipe\.sql[\s\S]*a: 2 rows -> 0 rows \(-2\)[\s\S]*001_base\.sql, 002_marker\.sql[\s\S]*mid-sequence/,
+    );
+
+    // And the database really is mid-sequence, not unchanged: 001 and 002's
+    // effects are durably committed.
+    const migrations = await db.execute("SELECT name FROM _migrations ORDER BY name");
+    expect(migrations.rows.map((r) => r.name)).toEqual(["001_base.sql", "002_marker.sql"]);
+    await expect(db.execute("SELECT * FROM marker_committed_by_002")).resolves.toBeDefined();
+    const rows = await db.execute("SELECT COUNT(*) as c FROM a");
+    expect(rows.rows[0]!.c).toEqual(2);
+    db.close();
+  });
+
+  // PR #309 review round 2 -- the tx-vs-client mutation is genuinely killed,
+  // but only incidentally by integration tests that assert on Check C's
+  // observable BEHAVIOR, not on the call site itself. This test makes the
+  // call-site invariant deliberate: it spies on the CLIENT (not any
+  // Transaction obtained from it) and asserts Check C's `SELECT COUNT(*)`
+  // queries never reach the client directly while a pending migration is
+  // being applied. MUTATION: reverting either `snapshotRowCounts(tx)` call
+  // in `runMigrations` to `snapshotRowCounts(client)` makes this spy
+  // observe a `SELECT COUNT(*)` call and turns this test red.
+  it("MUTATION: Check C's row-count queries are issued against the transaction, never against the client directly", async () => {
+    const db = makeDbClient();
+    const dir = makeMigrationsDir({
+      "001_first.sql": "BEGIN TRANSACTION;\nCREATE TABLE a (id INTEGER PRIMARY KEY);\nINSERT INTO a (id) VALUES (1);\nCOMMIT;\n",
+    });
+    // 001 must already be applied and COMMITTED before the spy is attached:
+    // a pending migration whose target table doesn't exist yet at the
+    // "before" snapshot would give both `client` and `tx` an identically
+    // empty `sqlite_master` listing (no COUNT query issued either way),
+    // which would pass under the mutation too -- a false negative. With `a`
+    // already committed, `sqlite_master` lists it regardless of which
+    // executor is used, so the mutation is forced to show itself.
+    await runMigrations(db, dir);
+    writeFileSync(join(dir, "002_second.sql"), "BEGIN TRANSACTION;\nINSERT INTO a (id) VALUES (2);\nCOMMIT;\n", "utf8");
+
+    const clientLevelCountQueries: string[] = [];
+    const spiedClient = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === "execute") {
+          return async (stmt: InStatement) => {
+            const sql = typeof stmt === "string" ? stmt : stmt.sql;
+            if (typeof sql === "string" && /SELECT COUNT\(\*\)/.test(sql)) {
+              clientLevelCountQueries.push(sql);
+            }
+            return target.execute(stmt);
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+    await runMigrations(spiedClient as unknown as Client, dir);
+
+    expect(clientLevelCountQueries).toEqual([]);
+    db.close();
+  });
+
+  // PR #309 review round 2, P3 (non-blocking, addressed here) -- the
+  // `after[table] ?? 0` dropped-table branch in `diffRowCounts` had unit
+  // coverage only; no integration case exercised a real DROP TABLE
+  // migration end to end through `runMigrations`.
+  it("MUTATION: an integration case for a DROP TABLE migration -- Check C catches the drop as a loss to 0, rolls back, and the table survives", async () => {
+    const db = makeDbClient();
+    const dir = makeMigrationsDir({
+      "001_seed.sql": "BEGIN TRANSACTION;\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\nINSERT INTO widgets (id) VALUES (1);\nCOMMIT;\n",
+    });
+    await runMigrations(db, dir);
+    writeFileSync(join(dir, "002_drop.sql"), "BEGIN TRANSACTION;\nDROP TABLE widgets;\nCOMMIT;\n", "utf8");
+
+    await expect(runMigrations(db, dir)).rejects.toThrow(/widgets: 1 rows -> 0 rows \(-1\)/);
+    await expect(db.execute("SELECT * FROM widgets")).resolves.toBeDefined();
+    db.close();
+  });
+
+  it("with the opt-in, the same DROP TABLE migration proceeds and the table is genuinely gone", async () => {
+    const db = makeDbClient();
+    const dir = makeMigrationsDir({
+      "001_seed.sql": "BEGIN TRANSACTION;\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\nINSERT INTO widgets (id) VALUES (1);\nCOMMIT;\n",
+    });
+    await runMigrations(db, dir);
+    writeFileSync(join(dir, "002_drop.sql"), "BEGIN TRANSACTION;\nDROP TABLE widgets;\nCOMMIT;\n", "utf8");
+
+    const log = await runMigrations(db, dir, new Set(["002_drop.sql"]));
+    expect(log.find((entry) => entry.file === "002_drop.sql")).toEqual({ file: "002_drop.sql", action: "applied" });
+
+    await expect(db.execute("SELECT * FROM widgets")).rejects.toThrow(/no such table/i);
+    db.close();
+  });
 });
 
 describe("scripts/migrate.ts — real migration chain, full end-to-end guard behavior (ticket #307)", () => {
@@ -1140,6 +1267,110 @@ describe("scripts/migrate.ts — real migration chain, full end-to-end guard beh
     // Unconditional -- no WHERE clause guarding the DELETE (an in-file guard
     // would look like `DELETE FROM analyses WHERE schema_version ...;`).
     expect(contents).toMatch(/^DELETE FROM analyses;$/m);
+  });
+});
+
+/**
+ * PR #309 review round 1, P1 -- restored (not narrowed) end-to-end proof of
+ * the escape hatch against the REAL 14-file chain. The earlier version of
+ * this suite scoped its only "opt-in succeeds" scenario to a synthetic
+ * 001-012 subset, which hid the actual finding below: on the real chain, the
+ * documented recovery flow (opt-in for 012 alone, redeploy) does NOT reach a
+ * working database -- it dies on 014. Both facts are pinned here, by
+ * execution, exactly as the RUNBOOK's "destructive opt-in" section now
+ * documents:
+ *   1. opt-in for 012 ALONE, on the real chain, reaches a BROKEN end state
+ *      (this is the real limitation the earlier narrow test hid -- pinned as
+ *      a regression guard, not treated as a design goal to silently work
+ *      around).
+ *   2. the corrected two-deploy recovery (opt-in deploy, THEN manually
+ *      restore 014's bookkeeping row, THEN redeploy) reaches a genuinely
+ *      working database -- this is the actual proof that the escape hatch is
+ *      useful, not merely permissive.
+ */
+describe("scripts/migrate.ts — full real chain through the escape hatch (ticket #307; restored per PR #309 review round 1, P1)", () => {
+  it("MUTATION: opt-in for 012 alone, on the full real chain, destroys the data and then dies on 014 -- this pins the documented dead end, not a design goal", async () => {
+    const db = makeDbClient();
+    const tmpDir = copyRealMigrationsToTmp();
+
+    await runMigrations(db, tmpDir);
+    await seedSchema3AnalysisRow(db);
+    await db.execute("DELETE FROM _migrations WHERE name >= '012'");
+
+    await expect(runMigrations(db, tmpDir, new Set(["012_performance_block.sql"]))).rejects.toThrow(
+      /duplicate column name: lookup_failed_at/,
+    );
+
+    // 012 and 013 committed (data really is gone); 014 is untracked while
+    // its column already exists on `profiles` -- the documented stuck state.
+    const tracked = await db.execute("SELECT name FROM _migrations ORDER BY name");
+    expect(tracked.rows.map((r) => r.name)).not.toContain("014_profile_lookup_failure.sql");
+    expect(tracked.rows.map((r) => r.name)).toContain("013_reach_unavailable_reason.sql");
+
+    const analysesRows = await db.execute("SELECT COUNT(*) as c FROM analyses");
+    expect(analysesRows.rows[0]!.c).toEqual(0);
+
+    const profileCols = await db.execute("PRAGMA table_info(profiles)");
+    expect(profileCols.rows.some((c) => c.name === "lookup_failed_at")).toBe(true);
+
+    // And the deploy pipeline is now stuck: a bare redeploy (no new opt-in)
+    // fails identically, forever, until a human intervenes.
+    await expect(runMigrations(db, tmpDir)).rejects.toThrow(/duplicate column name: lookup_failed_at/);
+
+    db.close();
+  });
+
+  it("the corrected two-deploy recovery (opt-in deploy, then restore 014's bookkeeping row, then redeploy) reaches a genuinely working database", async () => {
+    const db = makeDbClient();
+    const tmpDir = copyRealMigrationsToTmp();
+
+    await runMigrations(db, tmpDir);
+    await seedSchema3AnalysisRow(db);
+    await db.execute("DELETE FROM _migrations WHERE name >= '012'");
+
+    // Deploy 1: the opt-in for 012, exactly as an operator would set it.
+    // Dies on 014, as pinned above -- expected here, not asserted as a
+    // failure of this test.
+    await expect(runMigrations(db, tmpDir, new Set(["012_performance_block.sql"]))).rejects.toThrow(
+      /duplicate column name/,
+    );
+
+    // Manual step, per the RUNBOOK: restore 014's bookkeeping row with its
+    // real on-disk checksum, AFTER the crash (not before -- Check A would
+    // reject restoring a later file's row while 012/013 were still pending).
+    const checksum014 = computeChecksum(
+      readFileSync(join(tmpDir, "014_profile_lookup_failure.sql"), "utf8"),
+    );
+    await db.execute({
+      sql: "INSERT INTO _migrations (name, checksum) VALUES (?, ?)",
+      args: ["014_profile_lookup_failure.sql", checksum014],
+    });
+
+    // Deploy 2: no env var needed. This is the actual proof the escape
+    // hatch, combined with the documented follow-up, gets an operator to a
+    // working database -- not just a permissive one.
+    const log = await runMigrations(db, tmpDir);
+    expect(log.find((e) => e.file === "014_profile_lookup_failure.sql")).toEqual({
+      file: "014_profile_lookup_failure.sql",
+      action: "unchanged",
+    });
+
+    const tracked = await db.execute("SELECT name FROM _migrations");
+    expect(tracked.rows).toHaveLength(14);
+
+    const analysesRows = await db.execute("SELECT COUNT(*) as c FROM analyses");
+    expect(analysesRows.rows[0]!.c).toEqual(0);
+
+    // The database is genuinely usable afterward: schema-3 inserts,
+    // including 013's widened CHECK, work.
+    await expect(
+      db.execute({
+        sql: "INSERT INTO analyses (id, url, platform, media_type, perf_unavailable_reason) VALUES (?, ?, ?, ?, ?)",
+        args: ["post-recovery", "https://instagram.com/p/post", "instagram", "carousel", "REACH_NOT_ON_FIRST_SLIDE"],
+      }),
+    ).resolves.toBeDefined();
+
+    db.close();
   });
 });
 

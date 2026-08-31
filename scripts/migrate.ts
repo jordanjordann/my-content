@@ -463,14 +463,52 @@ export function assertNoRenamedMigration(
 }
 
 /**
- * Check C's abort message. Discoverability is a design requirement (TDD
- * §2.3): must contain, in order, (1) the filename, (2) per-table
- * `table: N rows -> M rows (delta)`, (3) confirmation the transaction was
- * rolled back and nothing committed, (4) the literal opt-in env var and
- * value to set, (5) a plain-language warning not to set it if this loss was
- * unexpected.
+ * Check C's abort message.
+ *
+ * PR #309 review round 2, P2 -- the original version of this message
+ * unconditionally claimed "Nothing has been committed... the database is
+ * unchanged." That is true when the tripping migration is the FIRST pending
+ * file in this run (Checks A and B are a genuine preflight -- nothing has
+ * run yet when they fire). It is FALSE whenever an earlier pending file in
+ * the SAME run already applied: Check C runs per-migration, inside the apply
+ * loop, so an earlier file's body and its `_migrations` tracking row have
+ * already committed in their own transaction by the time a LATER file trips
+ * Check C. Reviewer-verified: a 3-file run tripping on the 3rd left two
+ * `_migrations` rows written and a table grown, while this message told the
+ * operator nothing had changed.
+ *
+ * Owner ruling (round 2): make the message honest rather than restructure
+ * the apply loop into one giant transaction (rejected -- see the PR
+ * description). Fixed here by (a) scoping the "rolled back, committed
+ * nothing" claim to THIS migration's own transaction only, matching the
+ * sibling checksum-mismatch error's existing convention in this same file
+ * ("Any migration earlier than X in this same run has already been applied
+ * and committed -- the database is now mid-sequence..."), and (b) per
+ * explicit owner instruction, NAMING which migrations already committed in
+ * this run, so the operator does not have to go check `_migrations` by hand
+ * to know where they stand.
+ *
+ * Discoverability is still a design requirement (TDD §2.3), now amended:
+ * must contain, in order, (1) the filename, (2) per-table
+ * `table: N rows -> M rows (delta)`, (3) confirmation THIS migration's own
+ * transaction was rolled back and committed nothing, PLUS -- if any earlier
+ * migration in this run already committed -- the exact list of those
+ * filenames and a statement that the database is mid-sequence, not
+ * unchanged, (4) the literal opt-in env var and value to set, (5) a
+ * plain-language warning not to set it if this loss was unexpected.
+ *
+ * NOTE: this amends the ticket's (#307) original mandated error-string
+ * contract, which required the literal sentence "Nothing has been
+ * committed. The transaction was rolled back; the database is unchanged."
+ * unconditionally. That sentence's first half is right and its second half
+ * is provably wrong for any non-first pending migration -- see the PR body
+ * for the correction.
  */
-export function formatDestructiveMigrationError(file: string, losses: RowLoss[]): string {
+export function formatDestructiveMigrationError(
+  file: string,
+  losses: RowLoss[],
+  committedThisRun: string[] = [],
+): string {
   const lines: string[] = [`Migration "${file}" would delete rows from an existing database:`, ""];
 
   for (const loss of losses) {
@@ -480,7 +518,13 @@ export function formatDestructiveMigrationError(file: string, losses: RowLoss[])
 
   lines.push(
     "",
-    "Nothing has been committed. The transaction was rolled back; the database is unchanged.",
+    `This migration's own transaction was rolled back; "${file}" itself committed nothing.`,
+    committedThisRun.length > 0
+      ? `However, earlier migrations already applied and committed in this same run: ` +
+          `${committedThisRun.join(", ")}. The database is now mid-sequence, not left exactly as ` +
+          `it was before this run started.`
+      : `No earlier migration in this run committed anything before this one -- the database is ` +
+          `unchanged.`,
     "",
     `If this migration is genuinely meant to delete this data, set ` +
       `ALLOW_DESTRUCTIVE_MIGRATIONS=${file} (or pass --allow-destructive=${file} for a local run) ` +
@@ -628,7 +672,14 @@ export async function runMigrations(
         // catch block below, which already rolls back, logs a rollback
         // failure without swallowing this error, and closes `tx` --
         // exactly the guarantee proven by the existing crash-mutation test.
-        throw new Error(formatDestructiveMigrationError(file, losses));
+        //
+        // PR #309 review round 2, P2 -- pass the filenames of migrations
+        // already `applied` earlier IN THIS RUN (not `unchanged`/
+        // `adopted-legacy-checksum` entries, which committed nothing new
+        // this run) so the abort message can honestly say which ones
+        // already committed, instead of claiming the database is unchanged.
+        const committedThisRun = log.filter((entry) => entry.action === "applied").map((entry) => entry.file);
+        throw new Error(formatDestructiveMigrationError(file, losses, committedThisRun));
       }
 
       await tx.execute({

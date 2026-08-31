@@ -347,10 +347,62 @@ Three checks, run in this order, plus one escape hatch. Full design: `docs/TDD-m
 **Escape hatch:** `ALLOW_DESTRUCTIVE_MIGRATIONS` — a comma-separated list of exact filenames, e.g.
 `ALLOW_DESTRUCTIVE_MIGRATIONS=012_performance_block.sql`. Authorizes only that file to lose rows on
 this run; a future `015_wipe.sql` still aborts even in the same run. Local-run equivalent:
-`--allow-destructive=<file>` (repeatable). Deploys are manual (owner-driven) — the recovery flow
-when a deploy fails on Check C is: read the error (it names the file and the exact per-table
-counts), confirm the loss is actually expected, set the env var in Railway naming the exact file,
-redeploy manually, then unset the variable again.
+`--allow-destructive=<file>` (repeatable).
+
+**Recovery flow when a deploy fails on Check C — lead with the non-destructive fix, PR #309 review
+round 1.** Check C firing almost always means `_migrations` bookkeeping is stale relative to the
+actual schema/data (the H3 shape: a backup restore, a hand-edited table, etc.) — not that you
+actually want the data gone. **Restoring the bookkeeping, not opting into destruction, is the
+first-line remedy:**
+
+1. Read the error — it names the exact file and the per-table counts, and (per the message
+   contract below) lists any migration that already committed earlier in this same run.
+2. For each migration file the error implicates whose *effects are already present* in the
+   database (this is the common case — the schema/data is already ahead of `_migrations`, that's
+   the whole H3 shape), compute its on-disk checksum and insert the bookkeeping row directly,
+   without letting the runner re-execute the body:
+   ```
+   sha256sum migrations/012_performance_block.sql   # repo files are LF-only; this equals computeChecksum()
+   turso db shell <db-name> "INSERT INTO _migrations (name, checksum) VALUES ('012_performance_block.sql', '<sha256>');"
+   ```
+   Repeat for every affected file, in filename order.
+3. Redeploy normally, with **no** `ALLOW_DESTRUCTIVE_MIGRATIONS` set. Every restored file is now a
+   checksum-matching tracked row, so the runner skips it (`unchanged`) instead of re-running it, and
+   continues from whatever is genuinely still pending. No data lost, no destructive opt-in needed.
+
+**Only if you have confirmed the schema/data is genuinely NOT already ahead of `_migrations` --
+i.e. you actually want this migration's destructive effect to happen for real** — is
+`ALLOW_DESTRUCTIVE_MIGRATIONS=<file>` the right tool: set it naming the exact file in Railway,
+redeploy manually, then unset it again.
+
+**Do not treat the destructive opt-in as a first-line remedy on this repo's current chain — it has
+a documented dead end that requires a specific follow-up to escape.** Verified by execution against
+the real 14-file `migrations/` directory (PR #309 review round 1, re-verified round 2): setting
+`ALLOW_DESTRUCTIVE_MIGRATIONS=012_performance_block.sql` and redeploying after an H3-shaped
+bookkeeping loss (`_migrations` rows for 012+ missing) does apply and commit 012 (destroying
+`analyses`'s current rows for real), then 013 harmlessly re-applies (it's a full-table rebuild,
+safely re-runnable), but **014 then throws `SQLITE_ERROR: duplicate column name: lookup_failed_at`
+and dies** — `014_profile_lookup_failure.sql` is a plain `ALTER TABLE ADD COLUMN`, which is not
+idempotent under replay, and its column already exists from before the bookkeeping was lost. The
+opt-in only bypasses Check C; it does nothing about a hard SQL error from re-running a
+non-idempotent migration. End state after this first deploy: data destroyed, 014 untracked while
+its column already exists, and **every subsequent deploy fails identically forever**
+(`preDeployCommand` + restart policy `ON_FAILURE` means production cannot deploy at all from that
+point) — until a human intervenes.
+
+**The follow-up, verified by execution: restore 014's bookkeeping row AFTER this first deploy
+fails, not before.** Pre-restoring 014's row before the opt-in deploy does NOT work — Check A
+(order regression) throws immediately, because 012/013 are still pending and sort *before* 014,
+which would already be marked applied; restoring an later file's bookkeeping while an earlier file
+is still pending is exactly the shape Check A exists to reject. The working sequence is:
+1. Deploy with `ALLOW_DESTRUCTIVE_MIGRATIONS=012_performance_block.sql` set. It dies on 014 as
+   described above — expected.
+2. Only now, with 012 and 013 already applied and tracked, restore 014's bookkeeping row the same
+   way as the non-destructive recipe above (`sha256sum` + `INSERT INTO _migrations`). 014 now sorts
+   after both applied rows, so Check A does not object.
+3. Redeploy again, with **no** env var needed this time — 014 reads as checksum-matching and
+   unchanged, and the deploy completes. `analyses` is empty (the data really is gone); everything
+   else is intact.
 
 **Known, accepted gaps (not fixed by #307):**
 - A rename to a higher sort key **with edited content** defeats both Check A and Check B — a human
@@ -359,6 +411,11 @@ redeploy manually, then unset the variable again.
 - The `stripOuterTransaction` residual-token scan still has no vocabulary for a second block
   terminated with `END;` or opened with a bare `BEGIN;` (see the "wrapper contract" bullet above) —
   adding `END` to the scan naively false-positives on every `CREATE TRIGGER ... BEGIN ... END;`.
+  No file in `migrations/` has this shape today.
+- An unmatched, unterminated `[` bracketed identifier in a migration file makes
+  `stripCommentsAndStrings` blank everything from that `[` to end-of-file (fail-open, the same
+  shape as an unterminated `/* */` block comment) — a residual `COMMIT`/`BEGIN TRANSACTION` after
+  the unmatched `[` would go undetected (PR #305 review round 4, P2; carried over, not fixed here).
   No file in `migrations/` has this shape today.
 
 **Chain as of ticket #139 (001 → 012); `migrations/` now holds through
