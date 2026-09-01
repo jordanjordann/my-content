@@ -35,6 +35,15 @@
  * so the message is guaranteed to have left the process before exit.
  * Verified with stderr piped through `cat` (non-TTY) against the real
  * standalone `server.js` — the full message arrives intact.
+ *
+ * #313 / #280 — the stranded-`pending`-analysis reaper also runs here, in
+ * the SAME positive `NEXT_RUNTIME === "nodejs"` block (not a new one — see
+ * the Turbopack note above). Crucial difference from the env guard above:
+ * the reaper must NEVER `process.exit()`. It is wrapped in its own
+ * try/catch that logs and swallows — a reaper failure (a cosmetic row
+ * status) must not prevent the server from booting. `register()` must
+ * complete before requests are served, so the sweep is a single fast
+ * `UPDATE` statement.
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
@@ -46,6 +55,20 @@ export async function register() {
       const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
       writeSync(2, `${message}\n`);
       process.exit(1);
+      // `process.exit` never returns in production. This `return` exists so
+      // a test-mocked `process.exit` (which DOES return) can't fall through
+      // into the reaper block below and hit a real database.
+      return;
+    }
+
+    try {
+      const { reapStrandedAnalyses } = await import("./lib/server/analysis/reaper");
+      const { reaped } = await reapStrandedAnalyses();
+      if (reaped > 0) {
+        console.log(`reaper: marked ${reaped} stranded pending analysis row(s) as failed`);
+      }
+    } catch (error) {
+      console.error("reaper: failed to sweep stranded pending analyses", error);
     }
   }
 }
