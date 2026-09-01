@@ -32,10 +32,26 @@ async function makeMigratedDb(): Promise<Client> {
   return db;
 }
 
+// `createdAgeMinutes` and `updatedAgeMinutes` default to `ageMinutes` when
+// omitted, so most callers can pass one uniform age. Tests that need to
+// distinguish the two columns (e.g. a re-analysed row: ancient `created_at`,
+// fresh `updated_at`) pass them independently.
 async function seedAnalysis(
   db: Client,
-  args: { id: string; status: "pending" | "completed" | "failed"; ageMinutes: number },
+  args: {
+    id: string;
+    status: "pending" | "completed" | "failed";
+    ageMinutes?: number;
+    createdAgeMinutes?: number;
+    updatedAgeMinutes?: number;
+  },
 ): Promise<void> {
+  const createdAgeMinutes = args.createdAgeMinutes ?? args.ageMinutes;
+  const updatedAgeMinutes = args.updatedAgeMinutes ?? args.ageMinutes;
+  if (createdAgeMinutes === undefined || updatedAgeMinutes === undefined) {
+    throw new Error("seedAnalysis: must supply ageMinutes, or both createdAgeMinutes and updatedAgeMinutes");
+  }
+
   await db.execute({
     sql: `
       INSERT INTO analyses (id, status, url, platform, media_type, created_at, updated_at)
@@ -47,18 +63,18 @@ async function seedAnalysis(
       "https://instagram.com/p/abc123",
       "instagram",
       "reel",
-      `-${args.ageMinutes} minutes`,
-      `-${args.ageMinutes} minutes`,
+      `-${createdAgeMinutes} minutes`,
+      `-${updatedAgeMinutes} minutes`,
     ],
   });
 }
 
 async function readRow(db: Client, id: string) {
   const result = await db.execute({
-    sql: "SELECT status, updated_at FROM analyses WHERE id = ?",
+    sql: "SELECT status, created_at, updated_at FROM analyses WHERE id = ?",
     args: [id],
   });
-  return result.rows[0] as unknown as { status: string; updated_at: string } | undefined;
+  return result.rows[0] as unknown as { status: string; created_at: string; updated_at: string } | undefined;
 }
 
 describe("reapStrandedAnalyses", () => {
@@ -215,5 +231,45 @@ describe("reapStrandedAnalyses", () => {
   // one-line, reviewable diff and this suite documents the boundary.
   it("the threshold constant is exactly 30 minutes", () => {
     expect(STRANDED_PENDING_THRESHOLD_MINUTES).toEqual(30);
+  });
+
+  // MUTATION: this is the test that distinguishes `updated_at` from
+  // `created_at`. `seedAnalysis` used to write the same age into both
+  // columns, so a reaper mistakenly keyed on `created_at` still passed every
+  // other test in this file. A row re-queued for re-analysis gets a fresh
+  // `updated_at` but keeps its original (possibly ancient) `created_at`
+  // (see lib/server/analysis/pipeline/index.ts:113) -- a `created_at`-keyed
+  // reaper would incorrectly kill that healthy in-flight re-analysis.
+  it("MUTATION: does NOT reap a row with an ancient created_at but a fresh updated_at (pins the reaper to updated_at)", async () => {
+    const db = await makeMigratedDb();
+    await seedAnalysis(db, {
+      id: "re-analysed",
+      status: "pending",
+      createdAgeMinutes: 30 * 24 * 60, // 30 days old
+      updatedAgeMinutes: 1, // 1 minute into a fresh re-analysis run
+    });
+
+    const result = await reapStrandedAnalyses(db);
+    expect(result).toEqual({ reaped: 0 });
+
+    const after = await readRow(db, "re-analysed");
+    expect(after!.status).toEqual("pending");
+
+    db.close();
+  });
+
+  // Pins the exact boundary: strictly `<` the threshold, not `<=`. 29
+  // minutes stays pending; 31 minutes is failed.
+  it("boundary: 29 minutes old stays pending, 31 minutes old is failed (strict <)", async () => {
+    const db = await makeMigratedDb();
+    await seedAnalysis(db, { id: "boundary-under", status: "pending", ageMinutes: 29 });
+    await seedAnalysis(db, { id: "boundary-over", status: "pending", ageMinutes: 31 });
+
+    await reapStrandedAnalyses(db);
+
+    expect((await readRow(db, "boundary-under"))!.status).toEqual("pending");
+    expect((await readRow(db, "boundary-over"))!.status).toEqual("failed");
+
+    db.close();
   });
 });

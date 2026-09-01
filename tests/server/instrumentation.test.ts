@@ -16,12 +16,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  *   (b) no exit when `assertProductionEnv` returns normally.
  *   (c) `process.exit(1)` (via `writeSync(2, ...)`) when `assertProductionEnv`
  *       throws.
- *   (d) `process.exit(1)` when the dynamic `import` of `productionEnv`
- *       itself rejects — the #241 tracing failure mode.
+ *
+ * (d) `process.exit(1)` when the dynamic `import` of `productionEnv` itself
+ * rejects (the #241 tracing failure mode) lives in its own file,
+ * `instrumentation-dynamic-import-failure.test.ts`, NOT in this one. That
+ * test uses `vi.doMock`, which registers a module override that survives
+ * `vi.resetModules()` (resetModules only clears the resolved-module cache,
+ * not the mock registry). Keeping it "last in the describe block" was tried
+ * and disproven: it is a tripwire, not a fix — the next test appended to
+ * this file after it would get a silent false pass (`assertProductionEnv`
+ * never actually called, because the overridden module throws on import
+ * before real registration happens) with no ordering safeguard stopping a
+ * future author from appending below it. A separate file gives it its own
+ * module registry (Vitest's default `isolate: true`), which is the only
+ * thing that actually contains a `vi.doMock` leak.
  *
  * Proven by mutation: removing the `catch` block in `instrumentation.ts`
- * turns (c) and (d) red (the rejection becomes an unhandled promise
- * rejection instead of a caught, asserted exit).
+ * turns (c) red here and the #241 case red in the other file (the rejection
+ * becomes an unhandled promise rejection instead of a caught, asserted exit).
  *
  * #313 boot-integration cases added below:
  *   (e) the stranded-pending reaper runs on a normal (nodejs, env-valid) boot.
@@ -163,22 +175,5 @@ describe("register", () => {
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     expect(reapStrandedAnalyses).not.toHaveBeenCalled();
-  });
-
-  // Kept LAST in this describe block: `vi.doMock` registers a module
-  // override that survives `vi.resetModules()` (resetModules only clears
-  // the resolved-module cache, not the mock registry), so it would leak
-  // into every test declared after it in this file if placed earlier.
-  it("exits with code 1 when the dynamic import of productionEnv itself rejects (#241)", async () => {
-    process.env.NEXT_RUNTIME = "nodejs";
-    vi.doMock("@/lib/server/env/productionEnv", () => {
-      throw new Error("Cannot find module '@/lib/server/env/productionEnv'");
-    });
-    const { register } = await import("@/instrumentation");
-
-    await register();
-
-    expect(writeSync).toHaveBeenCalledTimes(1);
-    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 });
