@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/server/auth";
 import { runAnalysis } from "@/lib/server/analysis/pipeline";
 import { MAX_URLS_PER_BATCH } from "@/lib/server/analysis/constants";
+import { analysisExists } from "@/lib/server/db";
 
 export const runtime = "nodejs";
 // No `maxDuration` here (ticket #279): this app is deployed via
@@ -50,6 +51,21 @@ export async function POST(request: Request) {
         },
         { status: 400 },
       );
+    }
+
+    // Ticket #312 (#281 audit finding): validate `existingId` BEFORE the
+    // batch loop, i.e. before any paid ScrapeCreators/Gemini call. libsql
+    // resolves a 0-row UPDATE as success without throwing, so without this
+    // check a re-analysis of a deleted id ran a full paid pipeline and still
+    // reported 200 OK (docs/TDD-analysis-write-verification.md §4.1, check
+    // A). This is a READ, not the whole fix — the pipeline's own
+    // `rowsAffected === 1` assertion on the re-analysis UPDATE (check B)
+    // closes the TOCTOU window between this SELECT and that write.
+    if (typeof existingId === "string" && existingId.length > 0) {
+      const exists = await analysisExists(existingId);
+      if (!exists) {
+        return NextResponse.json({ error: "Analysis not found." }, { status: 404 });
+      }
     }
 
     const analysisPrompt = typeof prompt === "string" ? prompt : "";

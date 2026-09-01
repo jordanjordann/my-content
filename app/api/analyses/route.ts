@@ -255,7 +255,13 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Missing analysis ID." }, { status: 400 });
     }
 
-    await deleteAnalysis(id);
+    // Ticket #312 (#281 audit P2): `deleteAnalysis` now inspects
+    // `rowsAffected` instead of assuming success — a DELETE that matched no
+    // row must not report `{ success: true }`.
+    const { deleted } = await deleteAnalysis(id);
+    if (!deleted) {
+      return NextResponse.json({ error: "Analysis not found." }, { status: 404 });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

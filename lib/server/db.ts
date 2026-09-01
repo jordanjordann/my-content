@@ -322,9 +322,32 @@ export async function getAnalysisDetail(analysisId: string) {
   };
 }
 
-export async function deleteAnalysis(analysisId: string) {
-  await db.execute({
+/**
+ * Ticket #312 (#281 audit finding) — existence check used by
+ * `POST /api/analyze`'s route-level 404 guard, BEFORE any paid external
+ * call. `SELECT 1 ... LIMIT 1`, not `getAnalysisDetail`: the detail reader
+ * hydrates dozens of columns and parses JSON for a question that only needs
+ * a row-exists boolean.
+ */
+export async function analysisExists(analysisId: string): Promise<boolean> {
+  const result = await db.execute({
+    sql: "SELECT 1 FROM analyses WHERE id = ? LIMIT 1",
+    args: [analysisId],
+  });
+  return result.rows.length > 0;
+}
+
+/**
+ * Ticket #312 (#281 audit P2) — libsql resolves a 0-row DELETE as success
+ * without throwing, so the caller must inspect `rowsAffected` itself rather
+ * than assuming the row existed. Returns `{ deleted: true }` only when a row
+ * actually matched, letting `DELETE /api/analyses` distinguish "removed" from
+ * "nothing there to remove" and return 404 for the latter.
+ */
+export async function deleteAnalysis(analysisId: string): Promise<{ deleted: boolean }> {
+  const result = await db.execute({
     sql: "DELETE FROM analyses WHERE id = ?",
     args: [analysisId],
   });
+  return { deleted: result.rowsAffected > 0 };
 }
