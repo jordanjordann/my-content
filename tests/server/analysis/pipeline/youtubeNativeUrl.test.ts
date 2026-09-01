@@ -13,7 +13,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * caption-only result.
  */
 
-const dbExecute = vi.fn().mockResolvedValue({ rows: [] });
+// rowsAffected: 1 — ticket #312 added write-verification assertions in the
+// pipeline (re-analysis UPDATE, completion UPDATE) that throw on 0. This
+// mock isn't exercising those assertions, so it must report a "normal"
+// 1-row write to stay green.
+const dbExecute = vi.fn().mockResolvedValue({ rows: [], rowsAffected: 1 });
 
 vi.mock("@/lib/server/db", () => ({
   db: { execute: (...args: unknown[]) => dbExecute(...args) },

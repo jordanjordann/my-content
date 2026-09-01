@@ -106,7 +106,7 @@ export async function runAnalysis({
 
   try {
     if (isReAnalyze) {
-      await db.execute({
+      const reAnalyzeResult = await db.execute({
         sql: `
           UPDATE analyses
           SET prompt = ?, status = 'pending', raw_gemini = NULL, result_content = NULL,
@@ -115,6 +115,16 @@ export async function runAnalysis({
         `,
         args: [prompt, analysisId],
       });
+      // Ticket #312 (#281 audit finding), check B: closes the TOCTOU window
+      // between the route's existence SELECT and this write — the row can be
+      // deleted in that window. libsql resolves a 0-row UPDATE as success
+      // without throwing, so this must be checked explicitly. Sits above
+      // `fetchMetadata`, so a vanished row is caught before any paid call.
+      if (reAnalyzeResult.rowsAffected !== 1) {
+        throw new Error(
+          `Re-analysis target not found: analysis ${analysisId} no longer exists (0 rows updated).`,
+        );
+      }
     } else {
       await db.execute({
         sql: `
@@ -552,7 +562,7 @@ export async function runAnalysis({
     // Step 5: `performance_score` is promoted to its own column (TDD §5.2,
     // OR-8 — 3C paginates/sorts server-side, so it cannot live only inside
     // the `result_content` JSON blob).
-    await db.execute({
+    const completionResult = await db.execute({
       sql: `
         UPDATE analyses
         SET raw_gemini = ?, result_content = ?, result_created_at = datetime('now'),
@@ -567,6 +577,15 @@ export async function runAnalysis({
         analysisId,
       ],
     });
+
+    // Ticket #312 (#281 audit finding), §4.2: 0 rows means the row was
+    // deleted mid-run (the paid Gemini call already happened) — throw rather
+    // than report success for an analysis that was written nowhere.
+    if (completionResult.rowsAffected !== 1) {
+      throw new Error(
+        `Analysis ${analysisId} vanished before its completed write landed (0 rows updated).`,
+      );
+    }
 
     report("complete", 1, "Analysis complete");
 
@@ -589,16 +608,30 @@ export async function runAnalysis({
     };
   } catch (error) {
     report("error", 0, error instanceof Error ? error.message : "Analysis failed");
+    // Ticket #312 (#281 audit finding), §4.2: both branches below assert
+    // rowsAffected but LOG ONLY, never throw — this runs inside a `catch`,
+    // and throwing here would replace the real, diagnostic `error` with a
+    // bookkeeping error, destroying the actual failure cause.
     if (!isReAnalyze) {
-      await db.execute({
+      const deleteResult = await db.execute({
         sql: "DELETE FROM analyses WHERE id = ?",
         args: [analysisId],
       });
+      if (deleteResult.rowsAffected !== 1) {
+        console.warn(
+          `[PIPELINE] Expected to delete failed new-analysis row ${analysisId}, but rowsAffected=${deleteResult.rowsAffected}.`,
+        );
+      }
     } else {
-      await db.execute({
+      const failResult = await db.execute({
         sql: "UPDATE analyses SET status = 'failed', updated_at = datetime('now') WHERE id = ?",
         args: [analysisId],
       });
+      if (failResult.rowsAffected !== 1) {
+        console.warn(
+          `[PIPELINE] Expected to mark analysis ${analysisId} failed, but rowsAffected=${failResult.rowsAffected}.`,
+        );
+      }
     }
     throw error;
   } finally {
