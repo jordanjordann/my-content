@@ -88,4 +88,16 @@ describe("POST /api/analyze — existingId validation (#312/#281)", () => {
     expect(analysisExistsMock).not.toHaveBeenCalled();
     expect(runAnalysisMock).toHaveBeenCalledTimes(1);
   });
+
+  it("never calls analysisExists when existingId is an empty string (R2)", async () => {
+    const { POST } = await import("@/app/api/analyze/route");
+
+    const response = await POST(
+      makePostRequest({ urls: ["https://instagram.com/reel/x"], prompt: "", existingId: "" }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(analysisExistsMock).not.toHaveBeenCalled();
+    expect(runAnalysisMock).toHaveBeenCalledTimes(1);
+  });
 });
