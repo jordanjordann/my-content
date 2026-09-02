@@ -170,3 +170,148 @@ describe("UrlChipInput — input-level validation error (ticket #285)", () => {
     expect(screen.getByRole("status")).toHaveTextContent("");
   });
 });
+
+/**
+ * Ticket #322 — `handlePaste` looped over every accepted URL and called `onAdd` synchronously,
+ * so `maxChips` (only consumed by `isFull`, which gates the next render) never stopped a single
+ * paste from exceeding the cap. These tests assert the cap is enforced within the paste itself,
+ * and that over-cap URLs are put back in the input rather than dropped.
+ */
+describe("UrlChipInput — paste respects maxChips (ticket #322)", () => {
+  function makeInstagramUrls(count: number): string[] {
+    return Array.from({ length: count }, (_, i) => `https://www.instagram.com/reel/url${i}/`);
+  }
+
+  it("pastes 20 valid URLs into an empty field: exactly 10 chips, cap message, 10 preserved for when space frees up", () => {
+    render(<Harness maxChips={10} />);
+    const input = screen.getByPlaceholderText("Paste or type URLs...");
+    const urls = makeInstagramUrls(20);
+
+    const clipboardData = { getData: vi.fn().mockReturnValue(urls.join(" ")) };
+    fireEvent.paste(input, { clipboardData });
+
+    expect(screen.getAllByRole("button")).toHaveLength(10);
+    expect(screen.getByText("Maximum 10 URLs reached")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Only 10 more URL(s) can be added — maximum is 10",
+    );
+
+    // The input unmounts while full (existing isFull behaviour, untouched by this fix), but
+    // the leftover value is preserved in state -- removing a chip re-mounts the input with the
+    // 10 over-cap URLs still there, proving they were not silently dropped.
+    fireEvent.click(screen.getAllByRole("button")[0]);
+    expect(screen.getByPlaceholderText("Paste or type URLs...")).toHaveValue(
+      urls.slice(10).join(" "),
+    );
+  });
+
+  it("adds 8 chips then pastes 5 valid URLs: 10 total, 3 left in the input, message names the remaining count", () => {
+    function EightThenPasteHarness() {
+      const [chips, setChips] = useState<UrlChip[]>(
+        makeInstagramUrls(8).map((url) => ({ url })),
+      );
+      return (
+        <UrlChipInput
+          chips={chips}
+          onAdd={(url) => setChips((prev) => [...prev, { url }])}
+          onRemove={(i) => setChips((prev) => prev.filter((_, idx) => idx !== i))}
+          maxChips={10}
+        />
+      );
+    }
+
+    render(<EightThenPasteHarness />);
+    const input = screen.getByPlaceholderText("Paste or type URLs...");
+    const urls = [
+      "https://www.instagram.com/reel/new0/",
+      "https://www.instagram.com/reel/new1/",
+      "https://www.instagram.com/reel/new2/",
+      "https://www.instagram.com/reel/new3/",
+      "https://www.instagram.com/reel/new4/",
+    ];
+
+    const clipboardData = { getData: vi.fn().mockReturnValue(urls.join(" ")) };
+    fireEvent.paste(input, { clipboardData });
+
+    expect(screen.getAllByRole("button")).toHaveLength(10);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Only 2 more URL(s) can be added — maximum is 10",
+    );
+
+    fireEvent.click(screen.getAllByRole("button")[0]);
+    expect(screen.getByPlaceholderText("Paste or type URLs...")).toHaveValue(
+      urls.slice(2).join(" "),
+    );
+  });
+
+  it("pastes exactly 10 valid URLs into an empty field: 10 chips, empty input, no cap message", () => {
+    render(<Harness maxChips={10} />);
+    const input = screen.getByPlaceholderText("Paste or type URLs...");
+    const urls = makeInstagramUrls(10);
+
+    const clipboardData = { getData: vi.fn().mockReturnValue(urls.join(" ")) };
+    fireEvent.paste(input, { clipboardData });
+
+    expect(screen.getAllByRole("button")).toHaveLength(10);
+    expect(input).toHaveValue("");
+    expect(screen.getByRole("status")).toHaveTextContent("");
+  });
+
+  it("pastes 3 valid URLs into an empty field: 3 chips, no message (no regression)", () => {
+    render(<Harness maxChips={10} />);
+    const input = screen.getByPlaceholderText("Paste or type URLs...");
+    const urls = makeInstagramUrls(3);
+
+    const clipboardData = { getData: vi.fn().mockReturnValue(urls.join(" ")) };
+    fireEvent.paste(input, { clipboardData });
+
+    expect(screen.getAllByRole("button")).toHaveLength(3);
+    expect(screen.getByRole("status")).toHaveTextContent("");
+  });
+
+  it("shows only the cap message (not the invalid-URL message) when a paste is both over-cap and mixed with invalid URLs", () => {
+    function NineThenPasteHarness() {
+      const [chips, setChips] = useState<UrlChip[]>(
+        makeInstagramUrls(9).map((url) => ({ url })),
+      );
+      return (
+        <UrlChipInput
+          chips={chips}
+          onAdd={(url) => setChips((prev) => [...prev, { url }])}
+          onRemove={(i) => setChips((prev) => prev.filter((_, idx) => idx !== i))}
+          maxChips={10}
+        />
+      );
+    }
+
+    render(<NineThenPasteHarness />);
+    const input = screen.getByPlaceholderText("Paste or type URLs...");
+    // 1 slot remaining. Paste 3 valid (only 1 fits) plus 1 invalid.
+    const text = [
+      "https://www.instagram.com/reel/mixA/",
+      "https://www.instagram.com/reel/mixB/",
+      "https://www.instagram.com/reel/mixC/",
+      "not-a-url",
+    ].join(" ");
+
+    const clipboardData = { getData: vi.fn().mockReturnValue(text) };
+    fireEvent.paste(input, { clipboardData });
+
+    expect(screen.getAllByRole("button")).toHaveLength(10);
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Only 1 more URL(s) can be added — maximum is 10",
+    );
+  });
+
+  it("submits only the capped set after an over-cap paste", () => {
+    render(<Harness maxChips={10} />);
+    const input = screen.getByPlaceholderText("Paste or type URLs...");
+    const urls = makeInstagramUrls(20);
+
+    const clipboardData = { getData: vi.fn().mockReturnValue(urls.join(" ")) };
+    fireEvent.paste(input, { clipboardData });
+
+    expect(screen.getAllByRole("button")).toHaveLength(10);
+  });
+});
