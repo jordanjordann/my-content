@@ -41,6 +41,18 @@ describe("toAnalyzeOutcome", () => {
     expect(outcome.failures[0].reason).toBe("Analysis failed.");
   });
 
+  it("falls back to a generic reason when the server sends a whitespace-only string", () => {
+    const response: AnalyzeResponse = {
+      analysisIds: [],
+      analysesCreated: 0,
+      failedUrls: [{ url: "https://www.instagram.com/reel/abc", index: 0, error: "   " }],
+    };
+
+    const outcome = toAnalyzeOutcome(response, ["https://www.instagram.com/reel/abc"]);
+
+    expect(outcome.failures[0].reason).toBe("Analysis failed.");
+  });
+
   it("reconciliation guard — synthesizes a failure for a URL neither created nor reported failed", () => {
     const requestedUrls = [
       "https://www.instagram.com/reel/a",
@@ -61,6 +73,7 @@ describe("toAnalyzeOutcome", () => {
 
     const outcome = toAnalyzeOutcome(response, requestedUrls);
 
+    expect(outcome.requested).toBe(requestedUrls.length);
     expect(outcome.failures).toHaveLength(2);
     const synthetic = outcome.failures.find(
       (f) => f.url === "https://www.instagram.com/reel/c",
