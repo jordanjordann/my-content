@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 
 import type { UrlChipInputProps } from "./types";
 import { validateUrl, partitionPastedUrls } from "./helpers";
@@ -10,26 +10,12 @@ export function UrlChipInput({
   chips,
   onAdd,
   onRemove,
-  onDismissError,
   maxChips = 10,
   disabled,
 }: UrlChipInputProps) {
   const [value, setValue] = useState("");
   const [inputError, setInputError] = useState<string | null>(null);
   const errorId = useId();
-
-  useEffect(() => {
-    const timers: NodeJS.Timeout[] = [];
-
-    chips.forEach((chip, i) => {
-      if (chip.error && onDismissError) {
-        const timer = setTimeout(() => onDismissError(i), 3000);
-        timers.push(timer);
-      }
-    });
-
-    return () => timers.forEach(clearTimeout);
-  }, [chips, onDismissError]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setValue(e.target.value);

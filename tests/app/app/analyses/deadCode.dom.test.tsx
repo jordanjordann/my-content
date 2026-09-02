@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { render } from "@testing-library/react";
@@ -32,5 +32,37 @@ describe("dead-code deletion (ticket #149)", () => {
     // Real behavioural assertion, not just "the import succeeded" — three shimmer
     // placeholders, matching the component's own `Array.from({ length: 3 })`.
     expect(document.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3);
+  });
+});
+
+/**
+ * Ticket #323 / TDD-url-error-surfacing.md §7 — the per-chip `chip.error` / `onDismissError`
+ * channel (plus its 3s auto-dismiss timer and `Chip.tsx`'s destructive `isError` variant) was
+ * dead code: no caller ever set `chip.error` or passed `onDismissError`. Removed after #318
+ * replaced it with the component-level `inputError` + `aria-live` region.
+ */
+describe("dead-code deletion (ticket #323)", () => {
+  const chipInputDir = path.join(
+    process.cwd(),
+    "app/app/analyses/components/chips/UrlChipInput",
+  );
+
+  it("types.ts no longer declares onDismissError or a chip-level error field", () => {
+    const source = readFileSync(path.join(chipInputDir, "types.ts"), "utf-8");
+    expect(source).not.toContain("onDismissError");
+    expect(source).not.toContain("error?:");
+  });
+
+  it("UrlChipInput.tsx no longer references onDismissError or the auto-dismiss timer", () => {
+    const source = readFileSync(path.join(chipInputDir, "UrlChipInput.tsx"), "utf-8");
+    expect(source).not.toContain("onDismissError");
+    expect(source).not.toContain("chip.error");
+  });
+
+  it("Chip.tsx no longer renders the destructive isError variant", () => {
+    const source = readFileSync(path.join(chipInputDir, "Chip.tsx"), "utf-8");
+    expect(source).not.toContain("isError");
+    expect(source).not.toContain("chip.error");
+    expect(source).not.toContain("bg-destructive/10");
   });
 });

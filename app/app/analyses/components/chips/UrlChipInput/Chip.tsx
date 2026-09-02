@@ -4,25 +4,13 @@ import { X } from "lucide-react";
 import type { UrlChip } from "./types";
 import { shortenUrl } from "./helpers";
 
-/** Individual URL chip with error state and remove action. */
+/** Individual URL chip with a remove action. */
 export function Chip({ chip, onRemove }: { chip: UrlChip; onRemove: () => void }) {
-  const isError = !!chip.error;
   const displayUrl = shortenUrl(chip.url);
 
   return (
-    <div
-      className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-        isError
-          ? "bg-destructive/10 text-destructive"
-          : "bg-secondary text-secondary-foreground"
-      }`}
-    >
+    <div className="inline-flex items-center gap-1 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground transition-colors">
       <span className="max-w-[200px] truncate">{displayUrl}</span>
-      {isError && (
-        <span className="ml-1 max-w-[120px] truncate opacity-70">
-          ({chip.error})
-        </span>
-      )}
       <button
         type="button"
         onClick={onRemove}
