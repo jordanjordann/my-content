@@ -1,3 +1,5 @@
+import type { PasteResult } from "./types";
+
 export const URL_REGEX =
   /^https?:\/\/(www\.)?(instagram\.com\/(reel|p)\/[\w-]+|youtube\.com\/shorts\/[\w-]+)/i;
 
@@ -13,6 +15,23 @@ export function splitPastedUrls(text: string): string[] {
     .split(/[\s\n]+/)
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+/** Ticket #285 — partitions pasted URLs into accepted/rejected without discarding rejects. */
+export function partitionPastedUrls(text: string): PasteResult {
+  const urls = splitPastedUrls(text);
+  const accepted: string[] = [];
+  const rejected: string[] = [];
+
+  for (const url of urls) {
+    if (validateUrl(url) === null) {
+      accepted.push(url);
+    } else {
+      rejected.push(url);
+    }
+  }
+
+  return { accepted, rejected };
 }
 
 export function shortenUrl(url: string): string {

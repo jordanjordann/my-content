@@ -1,3 +1,3 @@
 export { UrlChipInput } from "./UrlChipInput";
-export type { UrlChipInputProps, UrlChip } from "./types";
-export { validateUrl, splitPastedUrls, URL_REGEX } from "./helpers";
+export type { UrlChipInputProps, UrlChip, PasteResult } from "./types";
+export { validateUrl, splitPastedUrls, partitionPastedUrls, URL_REGEX } from "./helpers";
