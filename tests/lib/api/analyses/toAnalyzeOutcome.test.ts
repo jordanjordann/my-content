@@ -74,6 +74,7 @@ describe("toAnalyzeOutcome", () => {
     const outcome = toAnalyzeOutcome(response, requestedUrls);
 
     expect(outcome.requested).toBe(requestedUrls.length);
+    expect(outcome.created).toBe(1);
     expect(outcome.failures).toHaveLength(2);
     const synthetic = outcome.failures.find(
       (f) => f.url === "https://www.instagram.com/reel/c",
