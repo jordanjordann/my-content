@@ -4,5 +4,6 @@ export const INVALID_URL_MESSAGE = "Must be an Instagram Reel/Post or YouTube Sh
 
 /** Summary shown when a paste rejects more than one URL. */
 export function buildRejectedUrlsMessage(count: number): string {
-  return `${count} URLs were not added — must be an Instagram Reel/Post or YouTube Short URL`;
+  const noun = count === 1 ? "URL was" : "URLs were";
+  return `${count} ${noun} not added — must be an Instagram Reel/Post or YouTube Short URL`;
 }

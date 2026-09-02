@@ -63,7 +63,10 @@ export function UrlChipInput({
       onAdd(url);
     }
 
-    setValue(rejected.join(" "));
+    // Merge with whatever was already typed (but not yet submitted) rather than
+    // overwrite it -- a paste should never silently destroy text the user typed
+    // before pasting.
+    setValue((prev) => [prev.trim(), rejected.join(" ")].filter(Boolean).join(" "));
 
     if (rejected.length === 0) {
       setInputError(null);

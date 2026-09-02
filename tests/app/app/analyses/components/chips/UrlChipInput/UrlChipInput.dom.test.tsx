@@ -52,6 +52,7 @@ describe("UrlChipInput — input-level validation error (ticket #285)", () => {
     expect(screen.getByRole("status")).toHaveTextContent(INVALID_URL_MESSAGE);
     expect(input).toHaveValue(url);
     expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAttribute("aria-describedby", screen.getByRole("status").id);
     expect(screen.queryAllByRole("button")).toHaveLength(0);
   });
 
@@ -127,6 +128,35 @@ describe("UrlChipInput — input-level validation error (ticket #285)", () => {
 
     expect(input).toHaveValue("https://vimeo.com/2");
     expect(screen.getByRole("status")).toHaveTextContent(INVALID_URL_MESSAGE);
+  });
+
+  it("does not destroy already-typed text when a URL is pasted in", () => {
+    render(<Harness />);
+    const input = screen.getByPlaceholderText("Paste or type URLs...");
+
+    const typedText = "https://www.instagram.com/reel/abc123/";
+    fireEvent.change(input, { target: { value: typedText } });
+
+    const clipboardData = {
+      getData: vi.fn().mockReturnValue("https://www.youtube.com/shorts/bbb"),
+    };
+    fireEvent.paste(input, { clipboardData });
+
+    expect(screen.getByText("/shorts/bbb")).toBeInTheDocument();
+    expect(input).toHaveValue(typedText);
+  });
+
+  it("merges already-typed text with a rejected pasted URL instead of dropping either", () => {
+    render(<Harness />);
+    const input = screen.getByPlaceholderText("Paste or type URLs...");
+
+    const typedText = "not-a-url-yet";
+    fireEvent.change(input, { target: { value: typedText } });
+
+    const clipboardData = { getData: vi.fn().mockReturnValue("https://vimeo.com/2") };
+    fireEvent.paste(input, { clipboardData });
+
+    expect(input).toHaveValue(`${typedText} https://vimeo.com/2`);
   });
 
   it("keeps the live region mounted (empty text) when the input is full", () => {
