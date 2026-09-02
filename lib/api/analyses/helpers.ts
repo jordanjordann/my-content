@@ -9,6 +9,9 @@ import type {
   AnalysisTableEngagementCell,
   AnalysisTableMultiplierCell,
   AnalysisTablePerformanceCell,
+  AnalyzeFailure,
+  AnalyzeOutcome,
+  AnalyzeResponse,
   Confidence,
   CountState,
   PerformanceComputed,
@@ -16,6 +19,12 @@ import type {
   Tier,
   UnavailableReason,
 } from "@/lib/api/analyses/types";
+
+/** Ticket #289 — used only when the server sends an empty-string reason. */
+const ANALYZE_FAILURE_FALLBACK_REASON = "Analysis failed.";
+
+/** Ticket #289 — reconciliation-guard synthetic reason (§4.2 rule 3). */
+const ANALYZE_FAILURE_NO_RESULT_REASON = "No result was returned for this URL.";
 
 /**
  * Video-bearing media types, per `AnalysisListItem["mediaType"]` — the only content-kind
@@ -548,6 +557,53 @@ export function isUntrustedYoutubeMetadataOnly(
  * `AnalysisTableRow`. `null` iff `performance` is `null` (failed/pending rows never reach this
  * — `AnalysisTableRow` renders the whole-row failed treatment for those instead).
  */
+/**
+ * Ticket #289 (TDD §4.2) — transforms the raw `/api/analyze` response into the shape
+ * `AnalysesContent`'s `onSuccess` consumes. Pure: no `Date`, no I/O, no logging.
+ *
+ * The reconciliation guard (rule 3) covers the case where `created + failedUrls.length <
+ * requested` — some URL was neither reported as created nor reported as failed by the
+ * server. `failedUrls[].index` tells us which requested positions already have an explicit
+ * failure; walking the remaining positions in order and treating the first `created` of them
+ * as the (unindexed) successes leaves exactly the unaccounted position(s) at the end, each of
+ * which gets a synthetic failure entry rather than silently vanishing from the outcome.
+ */
+export function toAnalyzeOutcome(
+  response: AnalyzeResponse,
+  requestedUrls: string[],
+): AnalyzeOutcome {
+  const created = response.analysesCreated;
+  const requested = requestedUrls.length;
+  const failedIndexes = new Set(response.failedUrls.map((f) => f.index));
+
+  const failures: AnalyzeFailure[] = response.failedUrls.map((f) => ({
+    url: f.url,
+    reason: f.error?.trim() || ANALYZE_FAILURE_FALLBACK_REASON,
+  }));
+
+  const unaccounted = requested - created - response.failedUrls.length;
+  if (unaccounted > 0) {
+    let successesSeen = 0;
+    let remaining = unaccounted;
+    for (let index = 0; index < requestedUrls.length && remaining > 0; index++) {
+      if (failedIndexes.has(index)) continue;
+      if (successesSeen < created) {
+        successesSeen++;
+        continue;
+      }
+      failures.push({ url: requestedUrls[index], reason: ANALYZE_FAILURE_NO_RESULT_REASON });
+      remaining--;
+    }
+  }
+
+  return {
+    analysisIds: response.analysisIds,
+    created,
+    requested,
+    failures,
+  };
+}
+
 export function deriveAnalysisTablePerformance(
   performance: AnalysisPerformance,
   mediaType: AnalysisListItem["mediaType"],
