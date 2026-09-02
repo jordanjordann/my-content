@@ -105,7 +105,7 @@ export function AnalysesContent() {
       { urls, prompt },
       {
         onSuccess: (result) => {
-          if (result.analysesCreated === 0) {
+          if (result.created === 0) {
             setProgress({
               step: "error",
               current: 0,
@@ -113,19 +113,19 @@ export function AnalysesContent() {
               message: "No analyses were created",
             });
             toast.error("Analysis failed", {
-              description: `${result.failedUrls.length} URL${result.failedUrls.length !== 1 ? "s" : ""} failed`,
+              description: `${result.failures.length} URL${result.failures.length !== 1 ? "s" : ""} failed`,
             });
             return;
           }
 
           setProgress({
             step: "complete",
-            current: result.analysesCreated,
+            current: result.created,
             total: urls.length,
-            message: `Analysis complete — ${result.analysesCreated} analyses created`,
+            message: `Analysis complete — ${result.created} analyses created`,
           });
           toast.success("Analysis complete", {
-            description: `${result.analysesCreated} analyses created${result.failedUrls.length > 0 ? `, ${result.failedUrls.length} failed` : ""}`,
+            description: `${result.created} analyses created${result.failures.length > 0 ? `, ${result.failures.length} failed` : ""}`,
           });
         },
         onError: (error) => {

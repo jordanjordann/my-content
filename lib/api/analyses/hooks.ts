@@ -18,6 +18,7 @@ import {
   deriveAnalysisTablePerformance,
   isUntrustedYoutubeMetadataOnly,
   normalize,
+  toAnalyzeOutcome,
   toProxiedThumbnail,
 } from "@/lib/api/analyses/helpers";
 
@@ -128,12 +129,18 @@ export function useAnalysisQuery(id: string) {
   });
 }
 
+/**
+ * Ticket #289 (TDD §4.2) — `useMutation` has no `select`, so `mutationFn` is the
+ * transformation seam: it awaits the raw response and returns an already-shaped
+ * `AnalyzeOutcome` (`toAnalyzeOutcome`, `lib/api/analyses/helpers.ts`), so `AnalysesContent`'s
+ * `onSuccess` consumes a finished object and does zero reshaping.
+ */
 export function useAnalyzeContentMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ urls, prompt }: { urls: string[]; prompt: string }) =>
-      analyzeContent(urls, prompt),
+    mutationFn: async ({ urls, prompt }: { urls: string[]; prompt: string }) =>
+      toAnalyzeOutcome(await analyzeContent(urls, prompt), urls),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ANALYSIS_KEYS.lists() });
     },

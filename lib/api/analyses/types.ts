@@ -467,4 +467,24 @@ export type AnalyzeResponse = {
   error?: string;
 };
 
+/** One failed URL, normalised for display. Ticket #289. */
+export type AnalyzeFailure = {
+  url: string;
+  /** The server's own reason from `AnalyzeResponse.failedUrls[].error`, never a generic stand-in. */
+  reason: string;
+};
+
+/**
+ * `AnalyzeResponse` after hook-layer transformation (`toAnalyzeOutcome`,
+ * `lib/api/analyses/helpers.ts`). Ticket #289 — the shape `AnalysesContent`'s `onSuccess`
+ * consumes; no further reshaping happens in the UI layer.
+ */
+export type AnalyzeOutcome = {
+  analysisIds: string[];
+  created: number;
+  /** Number of URLs submitted — the denominator the progress panel shows. */
+  requested: number;
+  failures: AnalyzeFailure[];
+};
+
 export type DeleteResponse = { success: true };
