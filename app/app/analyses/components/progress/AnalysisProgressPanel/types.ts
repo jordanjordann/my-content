@@ -1,3 +1,5 @@
+import type { AnalyzeFailure } from "@/lib/api/analyses/types";
+
 export type AnalysisStep =
   | "classifying"
   | "fetching"
@@ -14,6 +16,8 @@ export interface ProgressState {
   current: number;
   total: number;
   message: string;
+  /** Ticket #289 — per-URL server reasons. Empty/absent on the happy path. */
+  failures?: AnalyzeFailure[];
 }
 
 export interface AnalysisProgressPanelProps {

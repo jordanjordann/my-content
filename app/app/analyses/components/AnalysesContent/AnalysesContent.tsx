@@ -14,6 +14,7 @@ import { NewAnalysisModal } from "@/app/app/analyses/components/modals/NewAnalys
 import { AnalysisProgressPanel } from "@/app/app/analyses/components/progress/AnalysisProgressPanel";
 import { AnalysisDetailModal } from "@/app/app/analyses/components/modals/AnalysisDetailModal";
 import { useAnalysisFilters, useFilteredAnalyses } from "@/app/app/analyses/hooks";
+import { buildFailureSummary } from "./helpers";
 
 /** Displays the analyses list and coordinates its creation, filtering, and detail modals. */
 export function AnalysesContent() {
@@ -109,11 +110,12 @@ export function AnalysesContent() {
             setProgress({
               step: "error",
               current: 0,
-              total: urls.length,
+              total: result.requested,
               message: "No analyses were created",
+              failures: result.failures,
             });
             toast.error("Analysis failed", {
-              description: `${result.failures.length} URL${result.failures.length !== 1 ? "s" : ""} failed`,
+              description: buildFailureSummary(result.failures),
             });
             return;
           }
@@ -121,17 +123,22 @@ export function AnalysesContent() {
           setProgress({
             step: "complete",
             current: result.created,
-            total: urls.length,
+            total: result.requested,
             message: `Analysis complete — ${result.created} analyses created`,
+            failures: result.failures,
           });
+          const failureSummary = buildFailureSummary(result.failures);
           toast.success("Analysis complete", {
-            description: `${result.created} analyses created${result.failures.length > 0 ? `, ${result.failures.length} failed` : ""}`,
+            description:
+              result.failures.length > 0
+                ? `${result.created} analyses created. ${failureSummary}`
+                : `${result.created} analyses created`,
           });
         },
         onError: (error) => {
           setProgress((prev) =>
             prev
-              ? { ...prev, step: "error", message: error.message || "Analysis failed" }
+              ? { ...prev, step: "error", message: error.message || "Analysis failed", failures: [] }
               : null,
           );
           toast.error("Analysis failed", {
