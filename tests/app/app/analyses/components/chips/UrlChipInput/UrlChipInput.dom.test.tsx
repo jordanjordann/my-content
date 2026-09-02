@@ -299,19 +299,18 @@ describe("UrlChipInput — paste respects maxChips (ticket #322)", () => {
 
     expect(screen.getAllByRole("button")).toHaveLength(10);
     expect(screen.getAllByRole("status")).toHaveLength(1);
-    expect(screen.getByRole("status")).toHaveTextContent(
+    // Exact match (not substring) proves the cap message is the ONLY thing rendered --
+    // it is not stacked with the invalid-URL message even though both would otherwise apply.
+    expect(screen.getByRole("status").textContent).toBe(
       "Only 1 more URL(s) can be added — maximum is 10",
     );
-  });
 
-  it("submits only the capped set after an over-cap paste", () => {
-    render(<Harness maxChips={10} />);
-    const input = screen.getByPlaceholderText("Paste or type URLs...");
-    const urls = makeInstagramUrls(20);
-
-    const clipboardData = { getData: vi.fn().mockReturnValue(urls.join(" ")) };
-    fireEvent.paste(input, { clipboardData });
-
-    expect(screen.getAllByRole("button")).toHaveLength(10);
+    // Free a slot to re-mount the input and pin the exact merged leftover value: the
+    // over-cap accepted URLs (mixB, mixC) followed by the rejected URL (not-a-url), proving
+    // none of the three paste operands (typed text, over-cap accepted, rejected) were dropped.
+    fireEvent.click(screen.getAllByRole("button")[0]);
+    expect(screen.getByPlaceholderText("Paste or type URLs...")).toHaveValue(
+      "https://www.instagram.com/reel/mixB/ https://www.instagram.com/reel/mixC/ not-a-url",
+    );
   });
 });

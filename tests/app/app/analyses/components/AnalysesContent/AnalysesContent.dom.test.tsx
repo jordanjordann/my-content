@@ -243,3 +243,52 @@ describe("AnalysesContent — per-URL failure reasons (#320)", () => {
     expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Ticket #322, verification criterion "submit after an over-cap paste" — a component-level
+ * `UrlChipInput` test cannot observe the request body sent by the container's mutation, so this
+ * drives the real `AnalysesContent` -> `NewAnalysisModal` -> `useAnalyzeContentMutation` chain
+ * against a mocked `/api/analyze` and asserts the actual payload, not just the rendered chip
+ * count.
+ */
+describe("AnalysesContent — paste-cap payload reaches /api/analyze capped (#322)", () => {
+  it("pasting 20 URLs then submitting sends exactly the first 10 to /api/analyze, not 20", async () => {
+    const twentyUrls = Array.from(
+      { length: 20 },
+      (_, i) => `https://www.instagram.com/reel/cap${i}/`,
+    );
+
+    let analyzeRequestBody: unknown = null;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/analyze") && init?.method === "POST") {
+        analyzeRequestBody = JSON.parse(init.body as string);
+        const response: AnalyzeResponse = {
+          analysisIds: twentyUrls.slice(0, 10).map((_, i) => `id-${i}`),
+          analysesCreated: 10,
+          failedUrls: [],
+        };
+        return new Response(JSON.stringify(response), { status: 200 });
+      }
+      const listBody: AnalysesListResponse = {
+        analyses: [],
+        accounts: [],
+        pagination: { page: 1, pageSize: 5000, total: 0, totalPages: 0 },
+      };
+      return new Response(JSON.stringify(listBody), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    render(<AnalysesContent />, { wrapper: Wrapper });
+
+    fireEvent.click(screen.getByRole("button", { name: "New Analysis" }));
+    const input = await screen.findByPlaceholderText(/paste.*url/i);
+    const clipboardData = { getData: vi.fn().mockReturnValue(twentyUrls.join(" ")) };
+    fireEvent.paste(input, { clipboardData });
+    fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
+
+    await waitFor(() => expect(analyzeRequestBody).not.toBeNull());
+    expect(analyzeRequestBody).toEqual(
+      expect.objectContaining({ urls: twentyUrls.slice(0, 10) }),
+    );
+  });
+});
