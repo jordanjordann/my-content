@@ -98,6 +98,23 @@ async function submitOneUrl() {
   fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
 }
 
+const FIVE_URLS = [
+  "https://www.instagram.com/reel/req0",
+  "https://www.instagram.com/reel/req1",
+  "https://www.instagram.com/reel/req2",
+  "https://www.youtube.com/shorts/req3",
+  "https://www.youtube.com/shorts/req4",
+];
+
+/** Adds five valid URL chips via a single paste (all accepted by `validateUrl`) and submits. */
+async function submitFiveUrls() {
+  fireEvent.click(screen.getByRole("button", { name: "New Analysis" }));
+  const input = await screen.findByPlaceholderText(/paste.*url/i);
+  const clipboardData = { getData: vi.fn().mockReturnValue(FIVE_URLS.join(" ")) };
+  fireEvent.paste(input, { clipboardData });
+  fireEvent.click(screen.getByRole("button", { name: "Analyze" }));
+}
+
 describe("AnalysesContent — full-corpus fetch is not doubled (PR #203 review, blocker 1)", () => {
   it("mounting the real page fires exactly ONE full-corpus network request, not two", async () => {
     let fetchCallCount = 0;
@@ -172,6 +189,41 @@ describe("AnalysesContent — per-URL failure reasons (#320)", () => {
       "Analysis failed",
       expect.objectContaining({
         description: "Content not found — it may be deleted or the URL is wrong.",
+      }),
+    );
+  });
+
+  it("partial success (ticket #320 scenario — 5 requested, 3 created, 2 failed): denominator uses `requested` not `created`, panel pairs each failure with its own reason, and the toast description carries the failure summary", async () => {
+    mockFetchWithAnalyzeResponse({
+      analysisIds: ["id-0", "id-1", "id-2"],
+      analysesCreated: 3,
+      failedUrls: [
+        { url: FIVE_URLS[2], index: 2, error: "Content not found." },
+        { url: FIVE_URLS[4], index: 4, error: "Video is private." },
+      ],
+    });
+
+    render(<AnalysesContent />, { wrapper: Wrapper });
+
+    await submitFiveUrls();
+
+    // B2: the denominator must be `requested` (5), not `created` (3).
+    await screen.findByText("3/5 URLs processed");
+
+    // B1 at the wiring layer: each failure row is paired with its OWN reason, not just
+    // "both values exist somewhere in the document".
+    const items = screen.getAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    expect(items[0].textContent).toBe("www.instagram.com/reel/req2 — Content not found.");
+    expect(items[1].textContent).toBe("www.youtube.com/shorts/req4 — Video is private.");
+
+    // B4: the success toast's description must carry `buildFailureSummary`'s text, not just a
+    // bare failure count.
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    expect(toastSuccess).toHaveBeenCalledWith(
+      "Analysis complete",
+      expect.objectContaining({
+        description: "3 analyses created. Content not found. · Video is private.",
       }),
     );
   });

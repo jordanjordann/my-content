@@ -36,4 +36,18 @@ describe("buildFailureSummary", () => {
       "5 URLs failed — see the progress panel for details",
     );
   });
+
+  it("boundary: exactly 3 failures (MAX_TOAST_FAILURE_REASONS) -> still joined, not the count summary", () => {
+    const failures = makeFailures(3, "Video is private.");
+    expect(buildFailureSummary(failures)).toBe(
+      "Video is private. · Video is private. · Video is private.",
+    );
+  });
+
+  it("boundary: exactly 4 failures (MAX_TOAST_FAILURE_REASONS + 1) -> the count summary, not joined", () => {
+    const failures = makeFailures(4, "Video is private.");
+    expect(buildFailureSummary(failures)).toBe(
+      "4 URLs failed — see the progress panel for details",
+    );
+  });
 });

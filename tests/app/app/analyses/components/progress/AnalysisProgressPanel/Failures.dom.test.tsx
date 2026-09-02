@@ -10,7 +10,7 @@ import type { ProgressState } from "@/app/app/analyses/components/progress/Analy
  * mocked beyond the props.
  */
 describe("AnalysisProgressPanel — failure list (#320)", () => {
-  it("renders both URLs and both reasons for a partial-success outcome", () => {
+  it("pins each URL to its own reason — not just 'both exist somewhere' (#320 acceptance criterion)", () => {
     const progress: ProgressState = {
       step: "complete",
       current: 3,
@@ -24,10 +24,32 @@ describe("AnalysisProgressPanel — failure list (#320)", () => {
 
     render(<AnalysisProgressPanel progress={progress} onDismiss={vi.fn()} />);
 
-    expect(screen.getByText("www.instagram.com/reel/abc")).toBeInTheDocument();
-    expect(screen.getByText("Content not found.")).toBeInTheDocument();
-    expect(screen.getByText("www.youtube.com/shorts/def")).toBeInTheDocument();
-    expect(screen.getByText("Video is private.")).toBeInTheDocument();
+    const items = screen.getAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    expect(items[0].textContent).toBe("www.instagram.com/reel/abc — Content not found.");
+    expect(items[1].textContent).toBe("www.youtube.com/shorts/def — Video is private.");
+  });
+
+  it("lists every failure individually, uncapped, for a larger batch", () => {
+    const failures = Array.from({ length: 5 }, (_, i) => ({
+      url: `https://www.instagram.com/reel/item${i}`,
+      reason: `Reason ${i}`,
+    }));
+    const progress: ProgressState = {
+      step: "complete",
+      current: 0,
+      total: 5,
+      message: "No analyses were created",
+      failures,
+    };
+
+    render(<AnalysisProgressPanel progress={progress} onDismiss={vi.fn()} />);
+
+    const items = screen.getAllByRole("listitem");
+    expect(items).toHaveLength(5);
+    failures.forEach((f, i) => {
+      expect(items[i].textContent).toBe(`www.instagram.com/reel/item${i} — Reason ${i}`);
+    });
   });
 
   it("renders the failure list for the all-failed (step: error) case too", () => {
