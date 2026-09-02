@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp, X, RotateCcw, CheckCircle2, AlertCircle } from 
 import { useState } from "react";
 
 import { Progress } from "@/components/ui/progress";
+import { formatFailedUrl } from "./helpers";
 import type { AnalysisProgressPanelProps } from "./types";
 
 /** Collapsible panel showing real-time analysis progress with step indicators. */
@@ -19,6 +20,7 @@ export function AnalysisProgressPanel({
   const isError = progress.step === "error";
   const isComplete = progress.step === "complete";
   const pct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+  const failures = progress.failures ?? [];
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -63,9 +65,27 @@ export function AnalysisProgressPanel({
           </div>
         </div>
         {!collapsed && (
-          <div className="mt-2 text-xs text-muted-foreground">
-            {progress.current}/{progress.total} URLs processed
-          </div>
+          <>
+            <div className="mt-2 text-xs text-muted-foreground">
+              {progress.current}/{progress.total} URLs processed
+            </div>
+            {/* Ticket #289 — always mounted (risk 3: some screen readers drop announcements
+                from a live region that appears at the same time as its content). Only the
+                `<ul>` inside toggles. */}
+            <div aria-live="polite">
+              {failures.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {failures.map((f, i) => (
+                    <li key={`${f.url}-${i}`} className="text-xs">
+                      <span className="text-muted-foreground">{formatFailedUrl(f.url)}</span>
+                      {" — "}
+                      <span className="text-destructive">{f.reason}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>
