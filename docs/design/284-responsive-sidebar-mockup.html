@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>#284 Rev 2 — Compact/Expanded Rail Prototype</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .device-frame { transition: width 260ms ease; overflow: hidden; }
+  .rail { transition: width 200ms ease, transform 200ms ease; }
+  .scrim { transition: opacity 200ms ease; }
+  .main-pad { transition: padding-left 200ms ease; }
+  @media (prefers-reduced-motion: reduce) {
+    .rail, .scrim, .device-frame, .main-pad { transition: none !important; }
+  }
+  .label-fade { transition: opacity 120ms ease 60ms; }
+</style>
+</head>
+<body class="bg-slate-100 text-slate-900 p-6">
+
+  <div class="max-w-6xl mx-auto mb-6">
+    <h1 class="text-xl font-bold mb-1">Issue #284 (Rev 2) — Compact / Expanded Rail Prototype</h1>
+    <p class="text-sm text-slate-600 mb-1">Below <code>lg</code> (1024px) the sidebar is a two-state rail: <strong>compact</strong> (64px icon-only, pushes content) and <strong>expanded</strong> (256px overlay with scrim, does not close on nav tap). At 1440 it's the persistent 256px sidebar, unchanged from today. Try: click the rail toggle, tap a nav link while expanded (it stays open), press Esc, tab through with keyboard, click "Simulate hard reload".</p>
+    <div class="flex flex-wrap gap-2 items-center mt-3">
+      <span class="text-xs font-semibold uppercase text-slate-500 mr-1">Viewport</span>
+      <button onclick="setWidth(375)" id="btn-375" class="viewport-btn px-3 py-2 rounded-md border text-sm font-medium">375 · Phone</button>
+      <button onclick="setWidth(768)" id="btn-768" class="viewport-btn px-3 py-2 rounded-md border text-sm font-medium">768 · Tablet</button>
+      <button onclick="setWidth(1440)" id="btn-1440" class="viewport-btn px-3 py-2 rounded-md border text-sm font-medium">1440 · Desktop</button>
+      <span class="mx-2 text-slate-300">|</span>
+      <span class="text-xs font-semibold uppercase text-slate-500 mr-1">Content</span>
+      <button onclick="setState('data')" id="btn-data" class="state-btn px-3 py-2 rounded-md border text-sm font-medium">With data</button>
+      <button onclick="setState('empty')" id="btn-empty" class="state-btn px-3 py-2 rounded-md border text-sm font-medium">Empty state</button>
+      <span class="mx-2 text-slate-300">|</span>
+      <button onclick="simulateReload()" class="px-3 py-2 rounded-md border text-sm font-medium bg-amber-50 border-amber-300 text-amber-800">Simulate hard reload (resets rail to compact)</button>
+    </div>
+    <p id="railStateLabel" class="text-xs text-slate-500 mt-2 font-mono"></p>
+  </div>
+
+  <!-- DEVICE FRAME -->
+  <div class="max-w-6xl mx-auto">
+    <div id="frame" class="device-frame relative mx-auto border-4 border-slate-800 rounded-xl bg-slate-950" style="width:1440px; height:760px;">
+
+      <div class="relative w-full h-full overflow-hidden flex text-slate-200">
+
+        <!-- RAIL (compact/expanded, below lg) / PERSISTENT SIDEBAR (>=lg) -->
+        <aside id="rail"
+          class="rail absolute lg:static inset-y-0 left-0 z-40 flex flex-col bg-slate-900 border-r border-slate-800 w-16"
+          aria-hidden="false">
+
+          <!-- toggle: first item, only visible below lg -->
+          <div class="lg:hidden flex items-center justify-center h-16 border-b border-slate-800 shrink-0">
+            <button id="toggleBtn" onclick="toggleRail()" aria-label="Expand navigation" aria-expanded="false" aria-controls="app-nav"
+              class="w-11 h-11 flex items-center justify-center rounded-md hover:bg-slate-800 text-slate-300 font-bold">»</button>
+          </div>
+
+          <!-- brand: icon only in compact, icon+wordmark in expanded/persistent -->
+          <div class="hidden lg:flex items-center gap-3 px-5 py-5 border-b border-slate-800 shrink-0">
+            <div class="w-9 h-9 rounded-lg bg-orange-500/20 flex items-center justify-center text-orange-400 shrink-0">▦</div>
+            <div class="label-fade">
+              <div class="text-[10px] uppercase tracking-wide text-slate-500">My</div>
+              <div class="text-sm font-bold text-white">Content</div>
+            </div>
+          </div>
+          <div id="brandCompact" class="flex lg:hidden items-center justify-center h-14 border-b border-slate-800 shrink-0">
+            <div class="w-9 h-9 rounded-lg bg-orange-500/20 flex items-center justify-center text-orange-400">▦</div>
+          </div>
+
+          <nav id="app-nav" aria-label="Main" class="px-2 lg:px-4 py-4 flex-1">
+            <div id="navHeader" class="hidden text-[10px] uppercase tracking-wide text-slate-500 px-2 mb-2">Analysis</div>
+            <a href="#" onclick="onNavClick(event, this)" aria-current="page"
+              class="nav-link flex items-center gap-2 justify-center lg:justify-start px-3 py-3 rounded-md bg-slate-800 text-white text-sm font-medium mb-1 relative"
+              aria-label="Analyses">
+              <span class="absolute left-0 top-1 bottom-1 w-[3px] bg-orange-400 rounded-full active-bar"></span>
+              <span class="text-orange-400 text-lg">📊</span>
+              <span class="label-fade hidden lg:inline">Analyses</span>
+            </a>
+            <!-- illustrative extra items to show icon-rail legibility at scale; app has only 1 nav item today -->
+            <a href="#" onclick="onNavClick(event, this)"
+              class="nav-link flex items-center gap-2 justify-center lg:justify-start px-3 py-3 rounded-md text-slate-400 hover:bg-slate-800 hover:text-slate-200 text-sm font-medium mb-1"
+              aria-label="Creators (illustrative — not in app today)">
+              <span class="text-lg">👤</span>
+              <span class="label-fade hidden lg:inline">Creators</span>
+            </a>
+            <a href="#" onclick="onNavClick(event, this)"
+              class="nav-link flex items-center gap-2 justify-center lg:justify-start px-3 py-3 rounded-md text-slate-400 hover:bg-slate-800 hover:text-slate-200 text-sm font-medium"
+              aria-label="Settings (illustrative — not in app today)">
+              <span class="text-lg">⚙</span>
+              <span class="label-fade hidden lg:inline">Settings</span>
+            </a>
+          </nav>
+          <p id="illustrativeNote" class="hidden lg:hidden px-3 pb-3 text-[10px] text-slate-600 leading-snug">Creators/Settings are illustrative only — today's app has one nav item.</p>
+        </aside>
+
+        <!-- SCRIM (EXPANDED only) -->
+        <div id="scrim" onclick="collapseRail()" class="scrim hidden absolute inset-0 bg-black/60 z-30 opacity-0"></div>
+
+        <!-- MAIN -->
+        <main id="main" class="main-pad flex-1 min-w-0 overflow-y-auto" style="padding-left:0">
+          <div class="px-5 sm:px-6 py-5">
+            <!-- header row: no hamburger anymore, toggle lives in the rail -->
+            <div class="flex items-center gap-3 mb-5">
+              <h1 class="text-2xl font-bold text-white flex-1">Analyses</h1>
+              <button class="px-4 py-2.5 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold shrink-0">New Analysis</button>
+            </div>
+
+            <!-- EMPTY STATE -->
+            <div id="emptyState" class="hidden flex-col items-center justify-center text-center py-24 border border-dashed border-slate-800 rounded-lg">
+              <div class="text-4xl mb-3">📊</div>
+              <div class="text-white font-semibold mb-1">No analyses yet</div>
+              <div class="text-slate-500 text-sm mb-4">Run your first analysis to see results here.</div>
+              <button class="px-4 py-2.5 rounded-md bg-blue-600 text-white text-sm font-semibold">New Analysis</button>
+            </div>
+
+            <!-- DATA STATE -->
+            <div id="dataState">
+              <div class="flex flex-wrap gap-2 mb-4">
+                <button class="filter-chip">Creator ▾</button>
+                <button class="filter-chip">Platform ▾</button>
+                <button class="filter-chip">Content kind ▾</button>
+                <button class="filter-chip">Tier ▾</button>
+                <button class="filter-chip">Status ▾</button>
+                <input placeholder="Search title, caption, prompt..." class="flex-1 min-w-[160px] bg-slate-900 border border-slate-700 rounded-md px-3 py-2.5 text-sm placeholder:text-slate-500" />
+              </div>
+
+              <div class="border border-slate-800 rounded-lg overflow-hidden">
+                <div class="flex flex-wrap items-center gap-2 justify-end px-4 py-3 border-b border-slate-800">
+                  <button class="filter-chip">Columns ▾</button>
+                  <span class="text-xs text-slate-500 mr-1">Density</span>
+                  <button class="px-3 py-2 rounded-md bg-slate-700 text-white text-xs font-semibold">Comfortable</button>
+                  <button class="px-3 py-2 rounded-md border border-slate-700 text-slate-300 text-xs font-semibold">Compact</button>
+                </div>
+
+                <!-- CARD LIST: < 640px -->
+                <div id="cardList" class="hidden divide-y divide-slate-800">
+                  <div class="card-row"><div class="font-semibold text-white text-sm mb-1">Bukan MacBook, Ini yang Perlu Kamu Dengar!</div><div class="text-xs text-slate-400">@giorrando · Instagram</div></div>
+                  <div class="card-row"><div class="font-semibold text-white text-sm mb-1">Untitled</div><div class="text-xs text-slate-400">@kevin · Instagram</div></div>
+                  <div class="card-row"><div class="font-semibold text-white text-sm mb-1">Ngopi Malam Ini: Bahas Bareng Masterful!</div><div class="text-xs text-slate-400">@giorrando · Instagram</div></div>
+                </div>
+
+                <!-- TABLE: >= 640px, horizontal-scroll below lg, sticky first column -->
+                <div id="tableWrap" class="overflow-x-auto relative">
+                  <table class="w-full text-sm min-w-[760px]">
+                    <thead>
+                      <tr class="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-800">
+                        <th class="sticky-col px-4 py-3 font-medium bg-slate-900">Content</th>
+                        <th class="px-4 py-3 font-medium">Creator</th>
+                        <th class="px-4 py-3 font-medium">Platform</th>
+                        <th class="px-4 py-3 font-medium">Tier</th>
+                        <th class="px-4 py-3 font-medium">Status</th>
+                        <th class="px-4 py-3 font-medium">Views</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800">
+                      <tr><td class="sticky-col px-4 py-3 text-white bg-slate-950">Bukan MacBook, Ini yang Perlu...</td><td class="px-4 py-3 text-slate-300">@giorrando</td><td class="px-4 py-3 text-slate-300">Instagram</td><td class="px-4 py-3 text-slate-300">—</td><td class="px-4 py-3 text-slate-300">Done</td><td class="px-4 py-3 text-slate-300">12.4k</td></tr>
+                      <tr><td class="sticky-col px-4 py-3 text-white bg-slate-950">Untitled</td><td class="px-4 py-3 text-slate-300">@kevin</td><td class="px-4 py-3 text-slate-300">Instagram</td><td class="px-4 py-3 text-slate-300">—</td><td class="px-4 py-3 text-slate-300">Done</td><td class="px-4 py-3 text-slate-300">3.1k</td></tr>
+                      <tr><td class="sticky-col px-4 py-3 text-white bg-slate-950">Ngopi Malam Ini: Bahas Bareng...</td><td class="px-4 py-3 text-slate-300">@giorrando</td><td class="px-4 py-3 text-slate-300">Instagram</td><td class="px-4 py-3 text-slate-300">—</td><td class="px-4 py-3 text-slate-300">Done</td><td class="px-4 py-3 text-slate-300">8.7k</td></tr>
+                    </tbody>
+                  </table>
+                  <p class="text-[10px] text-slate-600 px-4 py-2 border-t border-slate-800 lg:hidden">↔ scroll for more columns — "Content" column stays pinned (sticky, in scope this round)</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+    <p class="text-center text-xs text-slate-500 mt-3">Frame outline for illustration only — not part of the UI.</p>
+  </div>
+
+<script>
+  const frame = document.getElementById('frame');
+  const rail = document.getElementById('rail');
+  const scrim = document.getElementById('scrim');
+  const toggleBtn = document.getElementById('toggleBtn');
+  const main = document.getElementById('main');
+  const navHeader = document.getElementById('navHeader');
+  const illustrativeNote = document.getElementById('illustrativeNote');
+  const railStateLabel = document.getElementById('railStateLabel');
+
+  let currentWidth = 1440;
+  let railState = 'compact'; // 'compact' | 'expanded' — only meaningful below lg
+
+  function isDesktop() { return currentWidth >= 1024; }
+
+  function setWidth(w) {
+    currentWidth = w;
+    frame.style.width = w + 'px';
+    document.querySelectorAll('.viewport-btn').forEach(b => b.classList.remove('bg-slate-900','text-white'));
+    document.getElementById('btn-' + w).classList.add('bg-slate-900','text-white');
+    if (isDesktop()) {
+      // PERSISTENT: full 256px, static, no toggle, no scrim
+      railState = 'compact'; // irrelevant at desktop, reset for when we come back down
+      rail.classList.remove('w-16');
+      rail.classList.add('w-64');
+      rail.style.transform = '';
+      rail.setAttribute('role', '');
+      rail.removeAttribute('aria-modal');
+      navHeader.classList.remove('hidden');
+      illustrativeNote.classList.remove('hidden');
+      illustrativeNote.classList.add('hidden'); // keep hidden at desktop too (illustrative note is a below-lg aid)
+      hideScrim(true);
+      main.style.paddingLeft = '0px'; // lg:pl-64 equivalent handled by static flex layout at desktop
+      document.removeEventListener('keydown', onKeydown);
+    } else {
+      // resize crossing back below lg always resets to COMPACT (per spec §3.2)
+      applyRailState('compact', { skipFocus: true });
+    }
+    updateTableLayout(w);
+  }
+
+  function applyRailState(state, opts) {
+    opts = opts || {};
+    railState = state;
+    if (state === 'compact') {
+      rail.classList.remove('w-64');
+      rail.classList.add('w-16');
+      rail.style.transform = '';
+      rail.removeAttribute('role');
+      rail.removeAttribute('aria-modal');
+      navHeader.classList.add('hidden');
+      illustrativeNote.classList.add('hidden');
+      toggleBtn.textContent = '»';
+      toggleBtn.setAttribute('aria-label', 'Expand navigation');
+      toggleBtn.setAttribute('aria-expanded', 'false');
+      main.style.paddingLeft = '64px';
+      hideScrim();
+      main.removeAttribute('inert');
+      main.removeAttribute('aria-hidden');
+      document.removeEventListener('keydown', onKeydown);
+      if (!opts.skipFocus) toggleBtn.focus();
+    } else {
+      rail.classList.remove('w-16');
+      rail.classList.add('w-64');
+      rail.setAttribute('role', 'dialog');
+      rail.setAttribute('aria-modal', 'true');
+      rail.setAttribute('aria-label', 'Navigation');
+      navHeader.classList.remove('hidden');
+      illustrativeNote.classList.remove('hidden');
+      toggleBtn.textContent = '«';
+      toggleBtn.setAttribute('aria-label', 'Collapse navigation');
+      toggleBtn.setAttribute('aria-expanded', 'true');
+      main.style.paddingLeft = '64px'; // stays at compact reservation — expanded OVERLAYS, doesn't push
+      showScrim();
+      main.setAttribute('inert', '');
+      main.setAttribute('aria-hidden', 'true');
+      if (!opts.skipFocus) toggleBtn.focus();
+      document.addEventListener('keydown', onKeydown);
+    }
+    railStateLabel.textContent = isDesktop()
+      ? 'Rail state: PERSISTENT (>=1024px, matches today, no toggle)'
+      : 'Rail state: ' + state.toUpperCase() + (state === 'expanded' ? ' (overlay, scrim, focus-trapped, background inert)' : ' (pushes content, background live)');
+  }
+
+  function toggleRail() {
+    if (isDesktop()) return;
+    applyRailState(railState === 'compact' ? 'expanded' : 'compact');
+  }
+  function collapseRail() { if (!isDesktop()) applyRailState('compact'); }
+
+  function showScrim() {
+    scrim.classList.remove('hidden');
+    requestAnimationFrame(() => scrim.classList.remove('opacity-0'));
+  }
+  function hideScrim(instant) {
+    scrim.classList.add('opacity-0');
+    if (instant) { scrim.classList.add('hidden'); }
+    else { setTimeout(() => scrim.classList.add('hidden'), 200); }
+  }
+
+  function onNavClick(e, el) {
+    e.preventDefault();
+    document.querySelectorAll('.nav-link').forEach(a => {
+      a.classList.remove('bg-slate-800','text-white');
+      a.classList.add('text-slate-400');
+      a.removeAttribute('aria-current');
+      const bar = a.querySelector('.active-bar');
+      if (bar) bar.remove();
+    });
+    el.classList.add('bg-slate-800','text-white');
+    el.classList.remove('text-slate-400');
+    el.setAttribute('aria-current', 'page');
+    if (!el.querySelector('.active-bar')) {
+      const bar = document.createElement('span');
+      bar.className = 'absolute left-0 top-1 bottom-1 w-[3px] bg-orange-400 rounded-full active-bar';
+      el.prepend(bar);
+    }
+    // Decision 3: EXPANDED does NOT auto-collapse on nav tap.
+    // (COMPACT has nothing to collapse — it's already resting.)
+  }
+
+  function onKeydown(e) {
+    if (railState !== 'expanded' || isDesktop()) return;
+    if (e.key === 'Escape') { collapseRail(); return; }
+    if (e.key === 'Tab') {
+      const focusables = rail.querySelectorAll('button, a');
+      const first = focusables[0], last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  }
+
+  function updateTableLayout(w) {
+    const cardList = document.getElementById('cardList');
+    const tableWrap = document.getElementById('tableWrap');
+    if (w < 640) {
+      cardList.classList.remove('hidden');
+      tableWrap.classList.add('hidden');
+    } else {
+      cardList.classList.add('hidden');
+      tableWrap.classList.remove('hidden');
+    }
+  }
+
+  function setState(state) {
+    document.querySelectorAll('.state-btn').forEach(b => b.classList.remove('bg-slate-900','text-white'));
+    document.getElementById('btn-' + state).classList.add('bg-slate-900','text-white');
+    document.getElementById('emptyState').classList.toggle('hidden', state !== 'empty');
+    document.getElementById('emptyState').classList.toggle('flex', state === 'empty');
+    document.getElementById('dataState').classList.toggle('hidden', state === 'empty');
+  }
+
+  function simulateReload() {
+    // Per spec §3.2: hard reload always resets to COMPACT, unlike SPA nav which preserves EXPANDED.
+    if (!isDesktop()) applyRailState('compact', { skipFocus: true });
+  }
+
+  // init
+  setWidth(1440);
+  setState('data');
+</script>
+
+<style type="text/tailwindcss">
+  .filter-chip { @apply px-3 py-2.5 rounded-md border border-slate-700 text-slate-300 text-xs font-medium hover:bg-slate-800; }
+  .card-row { @apply px-4 py-3; }
+  .sticky-col { @apply sticky left-0 z-10 shadow-[2px_0_4px_rgba(0,0,0,0.4)]; min-width: 200px; max-width: 220px; }
+</style>
+</body>
+</html>
