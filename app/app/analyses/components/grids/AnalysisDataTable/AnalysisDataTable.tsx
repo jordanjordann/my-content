@@ -235,7 +235,9 @@ export function AnalysisDataTable({
     <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
       {/* Ticket #335 (TDD §6.1) — `flex-wrap` so the toolbar drops to a second line below `lg`
           instead of clipping/overflowing, with >=44px touch targets below `lg` only (`h-11
-          lg:h-8` on each button, desktop height unchanged). The density segmented control's
+          lg:h-7` on each button — `lg:h-7` restores `Button size="sm"`'s own `h-7`, which
+          `cn()`/`twMerge` strips once `h-11` is present, so desktop height is unchanged).
+          The density segmented control's
           `rounded-r-none`/`rounded-l-none` pairing must never wrap between its two halves, so
           its `inline-flex` wrapper is kept as one unwrappable flex item alongside the Columns
           menu and the "Density" label. */}
@@ -248,7 +250,7 @@ export function AnalysisDataTable({
               type="button"
               variant={density === "comfortable" ? "secondary" : "ghost"}
               size="sm"
-              className="h-11 rounded-r-none lg:h-8"
+              className="h-11 rounded-r-none lg:h-7"
               aria-pressed={density === "comfortable"}
               onClick={() => setDensity("comfortable")}
             >
@@ -258,7 +260,7 @@ export function AnalysisDataTable({
               type="button"
               variant={density === "compact" ? "secondary" : "ghost"}
               size="sm"
-              className="h-11 rounded-l-none lg:h-8"
+              className="h-11 rounded-l-none lg:h-7"
               aria-pressed={density === "compact"}
               onClick={() => setDensity("compact")}
             >

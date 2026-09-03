@@ -553,16 +553,21 @@ describe("AnalysisDataTable — default render (OR-1, OR-7, OR-8)", () => {
   // MAY now wrap (`flex-wrap`, unprefixed) — that is the owner-ruled fix for the 768px
   // overflow, not a regression. Both literal utility classes are asserted so a "fix" that
   // drops either the base `flex-wrap` (mobile branch) or the `lg:flex-nowrap` override
-  // (desktop branch) fails this test — consistent with the toolbar's `h-11 lg:h-8` pattern.
-  it("R-D11 (lg+) — the footer bar does not wrap to a second row at lg and above; the pagination side shrinks via min-w-0 instead, staying right-aligned", async () => {
+  // (desktop branch) fails this test — consistent with the toolbar's `h-11 lg:h-7` pattern.
+  //
+  // The full class attribute is asserted with a literal `toBe`, not a substring match — a
+  // mutant that keeps `flex-wrap`/`lg:flex-nowrap`/`justify-between` present but changes other
+  // cosmetic classes (border, gap, text size/colour) is desktop-visible and must be caught.
+  // See PR #340 review F2.
+  it("R-D11 (lg+) — the footer bar's full class attribute is exactly the flex-wrap + lg:flex-nowrap variant, literally", async () => {
     renderTable();
     const sentence = await screen.findByText(
       "No totals — some posts are measured against views or plays, others against follower count. The two can't be added or averaged.",
     );
     const footerBar = sentence.parentElement;
-    expect(footerBar?.className).toMatch(/(?:^|\s)flex-wrap(?:\s|$)/);
-    expect(footerBar?.className).toMatch(/lg:flex-nowrap/);
-    expect(footerBar?.className).toMatch(/justify-between/);
+    expect(footerBar?.getAttribute("class")).toBe(
+      "flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 border-t p-3 text-sm text-muted-foreground",
+    );
 
     const paginationSide = screen.getByText(/^Page \d+ of \d+/).closest("div");
     expect(paginationSide?.className).toMatch(/min-w-0/);
