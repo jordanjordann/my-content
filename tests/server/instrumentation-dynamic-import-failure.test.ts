@@ -4,9 +4,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * #241 tracing failure mode, split into its own file (round-2 fix on PR
  * #314's P2(b)).
  *
- * This test uses `vi.doMock`, which registers a module override that
- * survives `vi.resetModules()` (`resetModules` only clears the
- * resolved-module cache, not the mock registry). Living in the same file as
+ * Mocking shape for `@/lib/server/env/productionEnv`: it is registered with
+ * exactly ONE hoisted `vi.mock`, whose factory reads a mutable
+ * `productionEnvImportShouldFail` flag. The test that needs the import to
+ * fail flips that flag instead of registering a second, competing mock for
+ * the same path via `vi.doMock`. This is deliberate, not incidental:
+ * Vitest 4.1.10's `resolveMocks` resolves consecutive same-action
+ * mock-queue entries for the SAME module path in parallel (`Promise.all`),
+ * and the registry ends up with whichever `resolveId()` settles last
+ * (last-writer-wins). A hoisted `vi.mock` plus an in-test `vi.doMock` for
+ * that same path therefore raced each other non-deterministically (~40%
+ * failure rate reproduced in isolation, always manifesting as
+ * `writeSync` "expected 1, got 0" because the harmless hoisted mock won the
+ * race instead of the throwing one). Do not reintroduce a second
+ * `vi.mock`/`vi.doMock` for `@/lib/server/env/productionEnv` in this file.
+ *
+ * The general `vi.doMock` leakage warning below still applies to this file
+ * as a whole (it no longer applies to `productionEnv` specifically, since
+ * that path is no longer doMock'd):
+ *
+ * `vi.doMock`, in general, registers a module override that survives
+ * `vi.resetModules()` (`resetModules` only clears the resolved-module
+ * cache, not the mock registry). Living in the same file as
  * `instrumentation.test.ts`'s other `register()` tests -- even "kept last in
  * the describe block" -- was a tripwire, not a fix: any test appended after
  * it in that file would silently get `assertProductionEnv` never actually
@@ -37,9 +56,16 @@ const assertProductionEnv = vi.fn();
 const writeSync = vi.fn();
 const reapStrandedAnalyses = vi.fn();
 
-vi.mock("@/lib/server/env/productionEnv", () => ({
-  assertProductionEnv: (...args: unknown[]) => assertProductionEnv(...args),
-}));
+let productionEnvImportShouldFail = false;
+
+vi.mock("@/lib/server/env/productionEnv", () => {
+  if (productionEnvImportShouldFail) {
+    throw new Error("Cannot find module '@/lib/server/env/productionEnv'");
+  }
+  return {
+    assertProductionEnv: (...args: unknown[]) => assertProductionEnv(...args),
+  };
+});
 
 vi.mock("node:fs", () => ({
   writeSync: (...args: unknown[]) => writeSync(...args),
@@ -55,6 +81,7 @@ describe("register - dynamic import failure (#241)", () => {
 
   beforeEach(() => {
     originalRuntime = process.env.NEXT_RUNTIME;
+    productionEnvImportShouldFail = false;
     assertProductionEnv.mockReset();
     writeSync.mockReset();
     reapStrandedAnalyses.mockReset();
@@ -64,15 +91,14 @@ describe("register - dynamic import failure (#241)", () => {
 
   afterEach(() => {
     process.env.NEXT_RUNTIME = originalRuntime;
+    productionEnvImportShouldFail = false;
     vi.restoreAllMocks();
     vi.resetModules();
   });
 
   it("exits with code 1 when the dynamic import of productionEnv itself rejects (#241)", async () => {
     process.env.NEXT_RUNTIME = "nodejs";
-    vi.doMock("@/lib/server/env/productionEnv", () => {
-      throw new Error("Cannot find module '@/lib/server/env/productionEnv'");
-    });
+    productionEnvImportShouldFail = true;
     const { register } = await import("@/instrumentation");
 
     await register();
