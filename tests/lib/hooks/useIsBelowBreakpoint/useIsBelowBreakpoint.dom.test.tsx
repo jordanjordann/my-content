@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { useIsBelowBreakpoint } from "@/lib/hooks/useIsBelowBreakpoint";
+import type { BreakpointName } from "@/lib/hooks/useIsBelowBreakpoint";
 import { installMatchMediaStub } from "@/tests/setup/matchMediaStub";
 
 /**
@@ -41,24 +42,55 @@ describe("useIsBelowBreakpoint", () => {
     ]);
   });
 
-  it("returns literal false on the very first render, even when the stub is pre-set to match", () => {
+  it("returns literal false on the very first render, then syncs to the current match state after mount, even when the stub is pre-set to match", () => {
     stub = installMatchMediaStub();
     const query = "(max-width: 1023.98px)";
 
-    // Pre-register the query as matching before the hook ever renders, so a
-    // mutation that seeds state synchronously from `matchMedia().matches`
-    // would observe `true` on first render instead of the required `false`.
-    stub.setMatches(query, false);
+    // Pre-register the query as already matching *before* the hook ever
+    // renders. `renderedValues` is populated during the render phase
+    // itself (not after `renderHook`'s automatic effect flush), so
+    // `renderedValues[0]` captures the value the hook returned on its very
+    // first render, before `useEffect` has run. A mutation that seeds
+    // state synchronously from `matchMedia().matches` would observe `true`
+    // here instead of the required literal `false`.
+    stub.setMatches(query, true);
 
-    const { result } = renderHook(() => useIsBelowBreakpoint("lg"));
-
-    expect(result.current).toBe(false);
-
-    act(() => {
-      stub!.setMatches(query, true);
+    const renderedValues: boolean[] = [];
+    const { result } = renderHook(() => {
+      const value = useIsBelowBreakpoint("lg");
+      renderedValues.push(value);
+      return value;
     });
 
+    expect(renderedValues[0]).toBe(false);
+
+    // After the mount effect flushes, the hook must sync to the
+    // already-matching state on its own — without any explicit
+    // `setMatches` call or dispatched `change` event. A mutation that
+    // deletes the mount-time initial sync would leave this `false`.
     expect(result.current).toBe(true);
+
+    act(() => {
+      stub!.setMatches(query, false);
+    });
+
+    expect(result.current).toBe(false);
+  });
+
+  it("re-subscribes to the correct media query when the breakpoint name changes", () => {
+    stub = installMatchMediaStub();
+
+    const { rerender } = renderHook(
+      ({ name }: { name: BreakpointName }) => useIsBelowBreakpoint(name),
+      { initialProps: { name: "lg" as BreakpointName } },
+    );
+
+    expect(stub.listenerCount("(max-width: 1023.98px)")).toBe(1);
+
+    rerender({ name: "sm" });
+
+    expect(stub.listenerCount("(max-width: 1023.98px)")).toBe(0);
+    expect(stub.listenerCount("(max-width: 639.98px)")).toBe(1);
   });
 
   it("updates to true when the media query starts matching", () => {

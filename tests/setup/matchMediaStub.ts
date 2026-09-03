@@ -90,9 +90,15 @@ export function installMatchMediaStub(): MatchMediaStub {
   return {
     queries,
     setMatches(query: string, matches: boolean) {
-      const entry = entriesByQuery.get(query);
+      let entry = entriesByQuery.get(query);
       if (!entry) {
-        return;
+        // Lazily create the entry so a query can be pre-set to matching
+        // *before* `matchMedia(query)` is ever called (e.g. before the
+        // first render of a hook under test). When `matchMedia` is later
+        // called for this query, it reuses this entry rather than
+        // resetting `matches` back to `false`.
+        entry = { matches: false, listeners: new Set() };
+        entriesByQuery.set(query, entry);
       }
 
       entry.matches = matches;
