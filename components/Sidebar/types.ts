@@ -23,4 +23,5 @@ export type SidebarNavLinkProps = {
     "aria-hidden"?: boolean | "true" | "false";
   }>;
   isActive: boolean;
+  isModal: boolean;
 };

@@ -161,6 +161,7 @@ export function Sidebar({ children }: SidebarProps) {
             label="Analyses"
             icon={BarChart3Icon}
             isActive={isActive}
+            isModal={isModal}
           />
         </nav>
       </aside>

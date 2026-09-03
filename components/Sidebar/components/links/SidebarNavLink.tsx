@@ -3,13 +3,18 @@ import { cn } from "@/lib/utils";
 import type { SidebarNavLinkProps } from "@/components/Sidebar/types";
 
 /**
- * A single rail nav link. Always renders icon + label; below `lg` the label
- * is visually hidden (`sr-only`) but stays in the accessibility tree, and an
- * explicit `aria-label` keeps the accessible name stable across both
- * states. Active state relies on three redundant, non-colour-only cues:
- * filled vs. outline icon, accent colour, and a 3px accent left bar.
+ * A single rail nav link. Always renders icon + label; the label is visually
+ * hidden (`sr-only`) only in COMPACT (below `lg`, not `isModal`) — hidden by
+ * pure CSS `lg:not-sr-only` so it is correct even in the one frame before
+ * hydration, since the real breakpoint state is unknown until then.
+ * `isModal` additionally forces the label visible with `not-sr-only`: safe
+ * to gate on JS state here because EXPANDED can only ever be reached via a
+ * post-hydration user click on the toggle, so there is no flash risk. An
+ * explicit `aria-label` keeps the accessible name stable in every state.
+ * Active state relies on three redundant, non-colour-only cues: filled vs.
+ * outline icon, accent colour, and a 3px accent left bar.
  */
-export function SidebarNavLink({ href, label, icon: Icon, isActive }: SidebarNavLinkProps) {
+export function SidebarNavLink({ href, label, icon: Icon, isActive, isModal }: SidebarNavLinkProps) {
   return (
     <Link
       href={href}
@@ -25,7 +30,7 @@ export function SidebarNavLink({ href, label, icon: Icon, isActive }: SidebarNav
         fill={isActive ? "currentColor" : "none"}
         aria-hidden="true"
       />
-      <span className="sr-only lg:not-sr-only">{label}</span>
+      <span className={isModal ? "not-sr-only" : "sr-only lg:not-sr-only"}>{label}</span>
     </Link>
   );
 }

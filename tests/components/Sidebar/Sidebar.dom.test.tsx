@@ -78,6 +78,28 @@ describe("Sidebar", () => {
     expect(document.querySelectorAll('[aria-hidden="true"].fixed.inset-0').length).toBe(0);
   });
 
+  it("the nav link label's visibility class flips COMPACT -> EXPANDED -> PERSISTENT, in that literal order", () => {
+    stub = installMatchMediaStub();
+    renderSidebar();
+
+    const getLabelClass = () => screen.getByText("Analyses").getAttribute("class");
+
+    setBelowLg(true);
+    const compactClass = getLabelClass();
+
+    fireEvent.click(screen.getByRole("button", { name: /navigation/i }));
+    const expandedClass = getLabelClass();
+
+    setBelowLg(false);
+    const persistentClass = getLabelClass();
+
+    expect([compactClass, expandedClass, persistentClass]).toEqual([
+      "sr-only lg:not-sr-only",
+      "not-sr-only",
+      "sr-only lg:not-sr-only",
+    ]);
+  });
+
   it("expanding sets all six coupled dialog/toggle/main attributes in one paired assertion", () => {
     stub = installMatchMediaStub();
     renderSidebar();
