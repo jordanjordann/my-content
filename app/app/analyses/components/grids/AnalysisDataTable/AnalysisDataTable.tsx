@@ -233,30 +233,38 @@ export function AnalysisDataTable({
 
   return (
     <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
-      <div className="flex items-center justify-end gap-2 border-b p-2">
+      {/* Ticket #335 (TDD §6.1) — `flex-wrap` so the toolbar drops to a second line below `lg`
+          instead of clipping/overflowing, with >=44px touch targets below `lg` only (`h-11
+          lg:h-8` on each button, desktop height unchanged). The density segmented control's
+          `rounded-r-none`/`rounded-l-none` pairing must never wrap between its two halves, so
+          its `inline-flex` wrapper is kept as one unwrappable flex item alongside the Columns
+          menu and the "Density" label. */}
+      <div className="flex flex-wrap items-center justify-end gap-2 border-b p-2">
         <AnalysisColumnsMenu columns={menuColumns} visibleColumnIds={visibleColumnIds} onToggle={toggleColumn} />
-        <span className="text-xs text-muted-foreground">Density</span>
-        <div className="inline-flex rounded-md border">
-          <Button
-            type="button"
-            variant={density === "comfortable" ? "secondary" : "ghost"}
-            size="sm"
-            className="rounded-r-none"
-            aria-pressed={density === "comfortable"}
-            onClick={() => setDensity("comfortable")}
-          >
-            Comfortable
-          </Button>
-          <Button
-            type="button"
-            variant={density === "compact" ? "secondary" : "ghost"}
-            size="sm"
-            className="rounded-l-none"
-            aria-pressed={density === "compact"}
-            onClick={() => setDensity("compact")}
-          >
-            Compact
-          </Button>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Density</span>
+          <div className="inline-flex rounded-md border">
+            <Button
+              type="button"
+              variant={density === "comfortable" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-11 rounded-r-none lg:h-8"
+              aria-pressed={density === "comfortable"}
+              onClick={() => setDensity("comfortable")}
+            >
+              Comfortable
+            </Button>
+            <Button
+              type="button"
+              variant={density === "compact" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-11 rounded-l-none lg:h-8"
+              aria-pressed={density === "compact"}
+              onClick={() => setDensity("compact")}
+            >
+              Compact
+            </Button>
+          </div>
         </div>
       </div>
 
