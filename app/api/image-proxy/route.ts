@@ -16,6 +16,35 @@ export const runtime = "nodejs";
 const DEFAULT_CONTENT_TYPE = "image/jpeg";
 const CACHE_CONTROL_HEADER = "public, max-age=2592000, immutable"; // 30 days
 
+/**
+ * The route's own tighter security headers (issue #283 follow-up, P2 gap).
+ * `next.config.ts` deliberately excludes `/api/image-proxy` from the
+ * site-wide `headers()` rule because this route serves untrusted upstream
+ * bytes and needs `default-src 'none'` rather than the site-wide policy —
+ * see the comment on that exclusion for why merging them is unsafe.
+ *
+ * Every response this route returns — success (image bytes) AND every
+ * error/early-return branch (JSON error bodies) — MUST carry these same two
+ * headers, or the excluded route serves some responses with no security
+ * headers at all. Route every exit through `imageProxySecurityHeaders()` /
+ * `jsonError()` below instead of inlining header literals so success and
+ * error branches cannot drift apart again.
+ */
+function imageProxySecurityHeaders(): Record<string, string> {
+  return {
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "default-src 'none'",
+  };
+}
+
+/** JSON error response carrying the same security headers as the binary success responses. */
+function jsonError(body: { error: string; message: string; status: number }): NextResponse {
+  return NextResponse.json(body, {
+    status: body.status,
+    headers: imageProxySecurityHeaders(),
+  });
+}
+
 class ImageTooLargeError extends Error {}
 
 class HostNotAllowedError extends Error {}
@@ -92,28 +121,22 @@ export async function GET(request: NextRequest) {
   const targetUrlRaw = request.nextUrl.searchParams.get("url");
 
   if (!targetUrlRaw) {
-    return NextResponse.json({ error: "Bad Request", message: "Missing url query param.", status: 400 }, { status: 400 });
+    return jsonError({ error: "Bad Request", message: "Missing url query param.", status: 400 });
   }
 
   let targetUrl: URL;
   try {
     targetUrl = new URL(targetUrlRaw);
   } catch {
-    return NextResponse.json({ error: "Bad Request", message: "Invalid url query param.", status: 400 }, { status: 400 });
+    return jsonError({ error: "Bad Request", message: "Invalid url query param.", status: 400 });
   }
 
   if (targetUrl.protocol !== "https:") {
-    return NextResponse.json(
-      { error: "Bad Request", message: "Only https URLs are supported.", status: 400 },
-      { status: 400 },
-    );
+    return jsonError({ error: "Bad Request", message: "Only https URLs are supported.", status: 400 });
   }
 
   if (!isAllowedImageHost(targetUrl.hostname)) {
-    return NextResponse.json(
-      { error: "Bad Request", message: "Host is not on the image proxy allowlist.", status: 400 },
-      { status: 400 },
-    );
+    return jsonError({ error: "Bad Request", message: "Host is not on the image proxy allowlist.", status: 400 });
   }
 
   const cacheUrl = targetUrl.toString();
@@ -125,8 +148,7 @@ export async function GET(request: NextRequest) {
       headers: {
         "Content-Type": cached.contentType,
         "Cache-Control": CACHE_CONTROL_HEADER,
-        "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": "default-src 'none'",
+        ...imageProxySecurityHeaders(),
       },
     });
   }
@@ -146,16 +168,10 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     if (error instanceof HostNotAllowedError) {
       console.error(`[ImageProxy] Redirect off the host allowlist for ${cacheUrl}:`, error.message);
-      return NextResponse.json(
-        { error: "Bad Request", message: "Host is not on the image proxy allowlist.", status: 400 },
-        { status: 400 },
-      );
+      return jsonError({ error: "Bad Request", message: "Host is not on the image proxy allowlist.", status: 400 });
     }
     console.error(`[ImageProxy] Upstream fetch failed for ${cacheUrl}:`, error);
-    return NextResponse.json(
-      { error: "Bad Gateway", message: "Failed to fetch image from upstream.", status: 502 },
-      { status: 502 },
-    );
+    return jsonError({ error: "Bad Gateway", message: "Failed to fetch image from upstream.", status: 502 });
   }
 
   const contentType = response.headers["content-type"] || DEFAULT_CONTENT_TYPE;
@@ -165,16 +181,10 @@ export async function GET(request: NextRequest) {
     bytes = await bufferResponse(response);
   } catch (error) {
     if (error instanceof ImageTooLargeError) {
-      return NextResponse.json(
-        { error: "Payload Too Large", message: error.message, status: 413 },
-        { status: 413 },
-      );
+      return jsonError({ error: "Payload Too Large", message: error.message, status: 413 });
     }
     console.error(`[ImageProxy] Upstream stream failed for ${cacheUrl}:`, error);
-    return NextResponse.json(
-      { error: "Bad Gateway", message: "Failed to read image from upstream.", status: 502 },
-      { status: 502 },
-    );
+    return jsonError({ error: "Bad Gateway", message: "Failed to read image from upstream.", status: 502 });
   }
 
   // Best-effort — a cache-write failure must never fail the response.
@@ -185,8 +195,7 @@ export async function GET(request: NextRequest) {
     headers: {
       "Content-Type": contentType,
       "Cache-Control": CACHE_CONTROL_HEADER,
-      "X-Content-Type-Options": "nosniff",
-      "Content-Security-Policy": "default-src 'none'",
+      ...imageProxySecurityHeaders(),
     },
   });
 }
