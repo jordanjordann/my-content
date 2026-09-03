@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import nextConfig from "@/next.config";
 
@@ -15,11 +15,15 @@ type HeaderRule = {
   headers: { key: string; value: string }[];
 };
 
-async function getHeaderRules(): Promise<HeaderRule[]> {
-  if (typeof nextConfig.headers !== "function") {
+type NextConfigLike = {
+  headers?: () => unknown;
+};
+
+async function getHeaderRules(config: NextConfigLike = nextConfig): Promise<HeaderRule[]> {
+  if (typeof config.headers !== "function") {
     throw new Error("expected next.config.ts to export a headers() function");
   }
-  return (await nextConfig.headers()) as HeaderRule[];
+  return (await config.headers()) as HeaderRule[];
 }
 
 function getHeaderValue(rule: HeaderRule, key: string): string | undefined {
@@ -35,6 +39,23 @@ describe("next.config.ts security headers (issue #283)", () => {
     const rules = await getHeaderRules();
     expect(rules).toHaveLength(1);
     expect(rules[0].source).toBe("/((?!api/image-proxy).*)");
+  });
+
+  it("sets exactly these four header keys, in this order, with no duplicates", async () => {
+    // `getHeaderValue()` below uses `.find()`, which only ever inspects the
+    // FIRST header with a given key. Next.js applies "last matching header
+    // wins" at request time, so a second `Content-Security-Policy` entry
+    // appended to the array would sail through every `getHeaderValue()`
+    // assertion in this file while silently overriding the real policy on
+    // the wire. Pin the exact key set (and its length) so that mutation is
+    // caught here instead.
+    const [rule] = await getHeaderRules();
+    expect(rule.headers.map((header) => header.key)).toEqual([
+      "Content-Security-Policy",
+      "X-Content-Type-Options",
+      "Strict-Transport-Security",
+      "Referrer-Policy",
+    ]);
   });
 
   it("sets a Content-Security-Policy with frame-ancestors 'none' and no unvetted directive gaps", async () => {
@@ -70,5 +91,38 @@ describe("next.config.ts security headers (issue #283)", () => {
     expect(sourceRegex.test("/api/image-proxy")).toBe(false);
     expect(sourceRegex.test("/auth/pin")).toBe(true);
     expect(sourceRegex.test("/")).toBe(true);
+  });
+
+  describe("upgrade-insecure-requests (dev vs production)", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    });
+
+    it("is present in the production CSP", async () => {
+      vi.stubEnv("NODE_ENV", "production");
+      vi.resetModules();
+      const { default: prodConfig } = await import("@/next.config");
+      const [rule] = await getHeaderRules(prodConfig as NextConfigLike);
+      const csp = getHeaderValue(rule, "Content-Security-Policy");
+      expect(csp).toBe(
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+          "img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; " +
+          "base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests",
+      );
+    });
+
+    it("is absent from the dev CSP (would break plain-HTTP LAN access, e.g. phone testing)", async () => {
+      vi.stubEnv("NODE_ENV", "development");
+      vi.resetModules();
+      const { default: devConfig } = await import("@/next.config");
+      const [rule] = await getHeaderRules(devConfig as NextConfigLike);
+      const csp = getHeaderValue(rule, "Content-Security-Policy");
+      expect(csp).toBe(
+        "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
+          "img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; " +
+          "base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+      );
+    });
   });
 });

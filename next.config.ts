@@ -29,7 +29,11 @@ const CSP_DIRECTIVES = [
   "base-uri 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
-  "upgrade-insecure-requests",
+  // Inert on `localhost` (browsers exempt it), but would upgrade every
+  // subresource to HTTPS and break the page if the dev server is reached
+  // over plain HTTP on a LAN IP (e.g. testing on a real phone). Only ship
+  // it in production, same as `'unsafe-eval'` above being dev-only.
+  ...(isDev ? [] : ["upgrade-insecure-requests"]),
 ].join("; ");
 
 const SECURITY_HEADERS = [
