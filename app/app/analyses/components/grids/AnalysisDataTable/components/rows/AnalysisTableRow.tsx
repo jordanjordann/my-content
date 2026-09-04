@@ -8,7 +8,10 @@ import { AnalysisStyleCell } from "@/app/app/analyses/components/grids/AnalysisD
 import type { AnalysisListItemIndexed } from "@/lib/api/analyses/types";
 import { NOT_COMPARABLE_MULTIPLIER_CELL_COPY } from "@/lib/api/analyses/constants";
 import type { AnalysisTableColumnDef, AnalysisTableDensity } from "@/app/app/analyses/components/grids/AnalysisDataTable/types";
-import { ROW_HEIGHT_PX } from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
+import {
+  ROW_HEIGHT_PX,
+  STICKY_CONTENT_BODY_CELL_CLASSNAME,
+} from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
 import {
   formatPostedAge,
   formatPostedDate,
@@ -82,7 +85,11 @@ export function AnalysisTableRow({ row, columns, density, onOpen, rowRef }: Anal
       )}
     >
       {columns.map((column) => (
-        <td key={column.id} className="p-3 align-top">
+        <td
+          key={column.id}
+          data-column-id={column.id}
+          className={cn("p-3 align-top", column.id === "content" && STICKY_CONTENT_BODY_CELL_CLASSNAME)}
+        >
           {renderCell(column.id, row, { failed, failedLabel, comfortable })}
         </td>
       ))}

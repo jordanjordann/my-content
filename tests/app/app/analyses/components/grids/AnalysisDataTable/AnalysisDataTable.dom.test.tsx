@@ -545,30 +545,49 @@ describe("AnalysisDataTable — default render (OR-1, OR-7, OR-8)", () => {
     }
   });
 
-  // R-D11's actual mechanism: the footer BAR itself stays a single row (no `flex-wrap`) and
-  // the pagination side gets `min-w-0` so IT shrinks and yields the sentence room to wrap.
-  // `flex-wrap` on the bar is the wrong mechanism — flex line-breaking compares each item's
-  // max-content width before any text wraps, so once the sentence's own max-content width
-  // (~750px at this length/size) plus the pagination group's (~350px) exceeds the bar's
-  // width, `flex-wrap` pushes the whole pagination group onto its own row, and because
-  // `justify-between` puts one item per line, it lands left-aligned instead of right-aligned.
-  // This assertion is proven to fail on the wrong mechanism: reintroducing `flex-wrap` on the
-  // footer bar (Edit tool revert, observed failing, Edit tool restore, observed green — see
-  // PR description) makes this test fail without touching the string or the condition.
-  it("R-D11 — the footer bar does not wrap to a second row; the pagination side shrinks via min-w-0 instead, staying right-aligned", async () => {
+  // R-D11, amended by the ticket #335 owner ruling — the footer bar's non-wrapping mechanism
+  // now only applies AT `lg` (1024px) AND ABOVE, byte-identically to before: `lg:flex-nowrap`
+  // restores nowrap at that breakpoint, and the pagination side's `min-w-0` is still what
+  // gives the sentence room to wrap to a second line while the bar itself stays one row and
+  // pagination stays right-aligned via the bar's own `justify-between`. Below `lg`, the bar
+  // MAY now wrap (`flex-wrap`, unprefixed) — that is the owner-ruled fix for the 768px
+  // overflow, not a regression. Both literal utility classes are asserted so a "fix" that
+  // drops either the base `flex-wrap` (mobile branch) or the `lg:flex-nowrap` override
+  // (desktop branch) fails this test — consistent with the toolbar's `h-11 lg:h-7` pattern.
+  //
+  // The full class attribute is asserted with a literal `toBe`, not a substring match — a
+  // mutant that keeps `flex-wrap`/`lg:flex-nowrap`/`justify-between` present but changes other
+  // cosmetic classes (border, gap, text size/colour) is desktop-visible and must be caught.
+  // See PR #340 review F2.
+  it("R-D11 (lg+) — the footer bar's full class attribute is exactly the flex-wrap + lg:flex-nowrap variant, literally", async () => {
     renderTable();
     const sentence = await screen.findByText(
       "No totals — some posts are measured against views or plays, others against follower count. The two can't be added or averaged.",
     );
     const footerBar = sentence.parentElement;
-    expect(footerBar?.className).not.toMatch(/flex-wrap/);
-    expect(footerBar?.className).toMatch(/justify-between/);
+    expect(footerBar?.getAttribute("class")).toBe(
+      "flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 border-t p-3 text-sm text-muted-foreground",
+    );
 
     const paginationSide = screen.getByText(/^Page \d+ of \d+/).closest("div");
     expect(paginationSide?.className).toMatch(/min-w-0/);
     // The pagination side must be the footer bar's own direct child (not nested further),
     // so `justify-between` on the bar is what keeps it pinned to the end of the row.
     expect(paginationSide?.parentElement).toBe(footerBar);
+  });
+
+  // Below `lg`, the ticket #335 owner ruling explicitly allows the bar to wrap — this is the
+  // sub-`lg` branch's own assertion, with a different literal expected value from the lg+
+  // test above (`flex-wrap` present, unprefixed) so mutating away the base wrap class alone
+  // (while leaving `lg:flex-nowrap` in place) fails THIS test specifically.
+  it("R-D11 (below lg) — the footer bar carries the unprefixed flex-wrap utility so it is free to wrap below the lg breakpoint", async () => {
+    renderTable();
+    const sentence = await screen.findByText(
+      "No totals — some posts are measured against views or plays, others against follower count. The two can't be added or averaged.",
+    );
+    const footerBar = sentence.parentElement;
+    const classList = footerBar?.className.split(/\s+/) ?? [];
+    expect(classList).toContain("flex-wrap");
   });
 
   it("renders the shared Scores group header spanning columns 5-6, with Content/Performance sub-labels", async () => {

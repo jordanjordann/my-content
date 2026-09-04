@@ -233,30 +233,40 @@ export function AnalysisDataTable({
 
   return (
     <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
-      <div className="flex items-center justify-end gap-2 border-b p-2">
+      {/* Ticket #335 (TDD §6.1) — `flex-wrap` so the toolbar drops to a second line below `lg`
+          instead of clipping/overflowing, with >=44px touch targets below `lg` only (`h-11
+          lg:h-7` on each button — `lg:h-7` restores `Button size="sm"`'s own `h-7`, which
+          `cn()`/`twMerge` strips once `h-11` is present, so desktop height is unchanged).
+          The density segmented control's
+          `rounded-r-none`/`rounded-l-none` pairing must never wrap between its two halves, so
+          its `inline-flex` wrapper is kept as one unwrappable flex item alongside the Columns
+          menu and the "Density" label. */}
+      <div className="flex flex-wrap items-center justify-end gap-2 border-b p-2">
         <AnalysisColumnsMenu columns={menuColumns} visibleColumnIds={visibleColumnIds} onToggle={toggleColumn} />
-        <span className="text-xs text-muted-foreground">Density</span>
-        <div className="inline-flex rounded-md border">
-          <Button
-            type="button"
-            variant={density === "comfortable" ? "secondary" : "ghost"}
-            size="sm"
-            className="rounded-r-none"
-            aria-pressed={density === "comfortable"}
-            onClick={() => setDensity("comfortable")}
-          >
-            Comfortable
-          </Button>
-          <Button
-            type="button"
-            variant={density === "compact" ? "secondary" : "ghost"}
-            size="sm"
-            className="rounded-l-none"
-            aria-pressed={density === "compact"}
-            onClick={() => setDensity("compact")}
-          >
-            Compact
-          </Button>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Density</span>
+          <div className="inline-flex rounded-md border">
+            <Button
+              type="button"
+              variant={density === "comfortable" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-11 rounded-r-none lg:h-7"
+              aria-pressed={density === "comfortable"}
+              onClick={() => setDensity("comfortable")}
+            >
+              Comfortable
+            </Button>
+            <Button
+              type="button"
+              variant={density === "compact" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-11 rounded-l-none lg:h-7"
+              aria-pressed={density === "compact"}
+              onClick={() => setDensity("compact")}
+            >
+              Compact
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -272,7 +282,7 @@ export function AnalysisDataTable({
       </div>
 
       {!isPending && !isError && totalCount > 0 && (
-        <div className="flex items-center justify-between gap-2 border-t p-3 text-sm text-muted-foreground">
+        <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 border-t p-3 text-sm text-muted-foreground">
           {/* R-D1 (TDD §9.2, DESIGN-3C §4.1), amended by A5 (R-D11) — no aggregate/total/
               "typical engagement" row exists anywhere in this table (R-12.3.3). Where a user
               might reasonably expect one, the footer says so in words, exactly as specified.
@@ -283,15 +293,21 @@ export function AnalysisDataTable({
             No totals — some posts are measured against views or plays, others against follower count. The two
             can&apos;t be added or averaged.
           </span>
-          {/* R-D11 — the footer bar is NOT `flex-wrap`: wrapping the bar itself would let
-              flex line-breaking (which compares max-content widths before any text wraps)
-              push the whole pagination group onto its own row and left-align it, once the
-              sentence's ~750px max-content width plus the pagination's ~350px exceeds the
-              footer's width (around 1140px — inside ordinary 1280/1366px laptop widths).
-              Instead, only the pagination side gets `min-w-0` so IT can shrink below its
-              content width, which is what actually gives the sentence room to wrap to a
-              second line while the bar itself stays one row and pagination stays
-              right-aligned via the bar's own `justify-between`. */}
+          {/* R-D11, amended by the ticket #335 owner ruling (2026-09-03, issue #335 comment) —
+              below `lg` the footer bar MAY wrap (`flex-wrap`), because at those widths the
+              bar's own available width is the page's actual overflow source (F-13/T3
+              measurement: the `min-w-0` pagination group overflowed its flex slot by 59px at
+              768px) and the "zero visual change" hard rule only ever covered `>= lg`. At `lg`
+              and above, `lg:flex-nowrap` restores the ORIGINAL non-wrapping mechanism
+              byte-identically: wrapping the bar itself would let flex line-breaking (which
+              compares max-content widths before any text wraps) push the whole pagination
+              group onto its own row and left-align it, once the sentence's ~750px max-content
+              width plus the pagination's ~350px exceeds the footer's width (around 1140px —
+              inside ordinary 1280/1366px laptop widths). So at `lg`+, the pagination side's
+              `min-w-0` is still what actually gives the sentence room to wrap to a second line
+              while the bar itself stays one row and pagination stays right-aligned via the
+              bar's own `justify-between`. Do NOT delete this comment or "restore" unconditional
+              non-wrap below `lg` — that was the owner-ruled fix for the 768px overflow. */}
           <div className="flex min-w-0 items-center gap-4">
             <span>
               Page {safePage} of {totalPages} — {filteredCount} of {totalCount} analyses

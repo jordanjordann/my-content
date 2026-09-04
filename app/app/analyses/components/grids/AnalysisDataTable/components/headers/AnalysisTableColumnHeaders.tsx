@@ -2,6 +2,11 @@ import { AnalysisEngagementHeaderTooltip } from "@/app/app/analyses/components/g
 import type { EngagementHeaderTooltipColumnId } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/tooltips/AnalysisEngagementHeaderTooltip";
 import { cn } from "@/lib/utils";
 import type { AnalysisTableColumnDef } from "@/app/app/analyses/components/grids/AnalysisDataTable/types";
+import {
+  STICKY_CONTENT_COLUMN_WIDTH_PX,
+  STICKY_CONTENT_HEADER_CELL_CLASSNAME,
+  STICKY_CONTENT_LG_WIDTH_RESET_CLASSNAME,
+} from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
 
 /**
  * DESIGN-3C §4.2 (amendment A6), R-D5/R-D12 — the ONLY two column headers that carry the
@@ -53,16 +58,29 @@ export function AnalysisTableColumnHeaders({ columns }: AnalysisTableColumnHeade
             );
           }
 
+          const isContentColumn = column.id === "content";
+
           return (
             <th
               key={column.id}
               data-column-id={column.id}
               rowSpan={2}
               scope="col"
-              style={{ width: column.width, minWidth: column.width }}
+              style={
+                isContentColumn
+                  ? { width: STICKY_CONTENT_COLUMN_WIDTH_PX, minWidth: STICKY_CONTENT_COLUMN_WIDTH_PX }
+                  : { width: column.width, minWidth: column.width }
+              }
               className={cn(
                 "border-b px-3 py-2 align-bottom text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground",
                 column.headerColorClassName,
+                // Ticket #335 — sticky first column below `lg` only (TDD §6.2, C-3). The `lg:`
+                // width reset uses the important modifier because the column's own `width`/
+                // `minWidth` above is set via inline `style` (kept a literal 200px so tests can
+                // assert it without a viewport), and only an `!important` class declaration can
+                // out-rank a non-important inline style in the cascade.
+                isContentColumn &&
+                  cn(STICKY_CONTENT_HEADER_CELL_CLASSNAME, STICKY_CONTENT_LG_WIDTH_RESET_CLASSNAME),
               )}
             >
               {isEngagementTooltipColumnId(column.id) ? (
