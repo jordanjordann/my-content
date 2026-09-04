@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useAnalysesQuery } from "@/lib/api/analyses";
 import { ANALYSES_FETCH_ALL_PAGE_SIZE } from "@/lib/api/analyses/constants";
 import type { AnalysisListItemIndexed } from "@/lib/api/analyses/types";
+import { useIsBelowBreakpoint } from "@/lib/hooks/useIsBelowBreakpoint";
 import { AnalysisTableColumnHeaders } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/headers/AnalysisTableColumnHeaders";
 import { AnalysisTableRow } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/rows/AnalysisTableRow";
 import { AnalysisTableSkeletonRow } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/rows/AnalysisTableSkeletonRow";
@@ -14,6 +15,7 @@ import { AnalysisTableErrorState } from "@/app/app/analyses/components/grids/Ana
 import { AnalysisSinkDivider } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/dividers/AnalysisSinkDivider";
 import { AnalysisColumnsMenu } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/menus/AnalysisColumnsMenu";
 import type { AnalysisColumnsMenuColumn } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/menus/AnalysisColumnsMenu";
+import { AnalysisCardList } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/lists/AnalysisCardList";
 import {
   ANALYSES_TABLE_COLUMNS,
   ANALYSES_TABLE_PAGE_SIZE,
@@ -21,6 +23,8 @@ import {
   LOCKED_COLUMN_IDS,
   SKELETON_ROW_COUNT,
   STYLE_COLUMN,
+  buildFailedDividerLabel,
+  buildScorelessDividerLabel,
 } from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
 import { groupAnalysisRows } from "@/app/app/analyses/components/grids/AnalysisDataTable/helpers";
 import { matchesDimensions, matchesKeyword } from "@/app/app/analyses/helpers";
@@ -70,6 +74,13 @@ export function AnalysisDataTable({
   onClearFilters,
   filters = EMPTY_ANALYSIS_FILTERS,
 }: AnalysisDataTableProps) {
+  // Ticket #337 (TDD §6.3, C-5) — the ONE semantics source for which view mounts. Never both:
+  // rendering a <table> and an <AnalysisCardList> simultaneously and hiding one with
+  // `hidden sm:block` would double the DOM for up to 50 rows x 10 cells (popovers and
+  // tooltips included). No flash-of-wrong-layout risk either: this table fetches
+  // client-side and paints `SKELETON_ROW_COUNT` skeleton rows first (`isPending`), so
+  // `matchMedia` has already resolved by the time real rows exist.
+  const isBelowSm = useIsBelowBreakpoint("sm");
   const [page, setPage] = useState(1);
   // OR-5 / DESIGN-3C §6.3 (superseded 2026-08-09) — plain React state, no persistence of
   // any kind. Comfortable is the owner-ruled default (OR-7).
@@ -212,7 +223,7 @@ export function AnalysisDataTable({
         {groups.scoreless.length > 0 && (
           <AnalysisSinkDivider
             colSpan={displayColumns.length}
-            label={`${groups.scoreless.length} post${groups.scoreless.length === 1 ? "" : "s"} with no performance score — sorted separately`}
+            label={buildScorelessDividerLabel(groups.scoreless.length)}
           />
         )}
         {groups.scoreless.map(rowNode)}
@@ -224,7 +235,10 @@ export function AnalysisDataTable({
             failed` is §3.3's own approved row-level string). Flagged for a design ruling on the
             exact failed-group divider sentence before this ships as prose. */}
         {groups.nonCompleted.length > 0 && (
-          <AnalysisSinkDivider colSpan={displayColumns.length} label={`Analysis failed — ${groups.nonCompleted.length}`} />
+          <AnalysisSinkDivider
+            colSpan={displayColumns.length}
+            label={buildFailedDividerLabel(groups.nonCompleted.length)}
+          />
         )}
         {groups.nonCompleted.map(rowNode)}
       </>
@@ -270,16 +284,31 @@ export function AnalysisDataTable({
         </div>
       </div>
 
-      <div className="relative max-h-[720px] w-full overflow-auto">
-        <table className="w-full caption-bottom text-[12.5px]">
-          <caption className="sr-only">
-            Analyses — every analysed post, its content and performance scores, and how it
-            compares against the creator&apos;s own past posts.
-          </caption>
-          <AnalysisTableColumnHeaders columns={displayColumns} />
-          <tbody>{bodyContent}</tbody>
-        </table>
-      </div>
+      {isBelowSm ? (
+        <AnalysisCardList
+          isPending={isPending}
+          isError={isError}
+          errorMessage={error instanceof Error ? error.message : "Something went wrong."}
+          onRetry={() => refetch()}
+          noneAtAll={noneAtAll}
+          noMatch={noMatch}
+          onNewAnalysis={onNewAnalysis}
+          onClearFilters={onClearFilters ?? (() => {})}
+          groups={groups}
+          onOpen={onAnalysisClick}
+        />
+      ) : (
+        <div className="relative max-h-[720px] w-full overflow-auto">
+          <table className="w-full caption-bottom text-[12.5px]">
+            <caption className="sr-only">
+              Analyses — every analysed post, its content and performance scores, and how it
+              compares against the creator&apos;s own past posts.
+            </caption>
+            <AnalysisTableColumnHeaders columns={displayColumns} />
+            <tbody>{bodyContent}</tbody>
+          </table>
+        </div>
+      )}
 
       {!isPending && !isError && totalCount > 0 && (
         <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 border-t p-3 text-sm text-muted-foreground">
