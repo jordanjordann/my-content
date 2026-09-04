@@ -42,6 +42,14 @@ describe("getTrapFocusTarget", () => {
     expect(getTrapFocusTarget([], -1, true)).toBe(null);
   });
 
+  it("force-wraps to the first focusable on Tab when the active element is not tracked (activeIndex -1)", () => {
+    expect(getTrapFocusTarget(els, -1, false)).toBe(els[0]);
+  });
+
+  it("force-wraps to the last focusable on Shift+Tab when the active element is not tracked (activeIndex -1)", () => {
+    expect(getTrapFocusTarget(els, -1, true)).toBe(els[2]);
+  });
+
   it("wraps correctly for a two-element list in both directions", () => {
     const pair = [{ id: "a" } as unknown as HTMLElement, { id: "b" } as unknown as HTMLElement];
 

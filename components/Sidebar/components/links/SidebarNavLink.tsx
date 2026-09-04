@@ -12,7 +12,13 @@ import type { SidebarNavLinkProps } from "@/components/Sidebar/types";
  * post-hydration user click on the toggle, so there is no flash risk. An
  * explicit `aria-label` keeps the accessible name stable in every state.
  * Active state relies on three redundant, non-colour-only cues: filled vs.
- * outline icon, accent colour, and a 3px accent left bar.
+ * outline icon, accent colour, and a 3px accent left bar. Per design §3.1
+ * these three cues (plus the taller `min-h-11` row) are scoped to the
+ * compact rail only (below `lg`) via `lg:` variants — at `lg` and above the
+ * row must render byte-identical to `main` pre-#284: 40px row height
+ * (`lg:min-h-0`), no left accent bar (`lg:border-l-0`), no icon fill
+ * (`lg:fill-none`), and the icon always `text-accent` regardless of active
+ * state (`lg:text-accent`).
  */
 export function SidebarNavLink({ href, label, icon: Icon, isActive, isModal }: SidebarNavLinkProps) {
   return (
@@ -21,13 +27,15 @@ export function SidebarNavLink({ href, label, icon: Icon, isActive, isModal }: S
       aria-label={label}
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "relative flex min-h-11 items-center gap-3 rounded-lg border-l-[3px] border-transparent px-3 py-2.5 text-sm font-medium transition-colors hover:bg-sidebar-accent",
+        "relative flex min-h-11 lg:min-h-0 items-center gap-3 rounded-lg border-l-[3px] lg:border-l-0 border-transparent px-3 py-2.5 text-sm font-medium transition-colors hover:bg-sidebar-accent",
         isActive && "border-accent bg-sidebar-accent text-sidebar-foreground",
       )}
     >
       <Icon
-        className={cn("size-4 shrink-0", isActive ? "text-accent" : "text-muted-foreground")}
-        fill={isActive ? "currentColor" : "none"}
+        className={cn(
+          "size-4 shrink-0 lg:text-accent lg:fill-none",
+          isActive ? "text-accent fill-current" : "text-muted-foreground fill-none",
+        )}
         aria-hidden="true"
       />
       <span className={isModal ? "not-sr-only" : "sr-only lg:not-sr-only"}>{label}</span>

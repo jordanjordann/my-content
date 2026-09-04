@@ -5,9 +5,12 @@
  *
  * `focusables` is the ordered list of tab-stops inside the rail (toggle +
  * nav links). `activeIndex` is the index of `document.activeElement` within
- * that list (or `-1` if focus is currently outside the rail — treated the
- * same as "no wrap needed" since the caller only invokes this while focus is
- * already known to be inside the trap).
+ * that list, or `-1` when the active element is not one of the tracked
+ * focusables (e.g. focus landed on the `<aside>` container itself, or on
+ * some other element inside the trap that isn't `button`/`a[href]`). `-1` is
+ * force-wrapped rather than treated as "no wrap needed" — letting the
+ * browser's default `Tab` behaviour run from an untracked active element is
+ * exactly how focus escapes the dialog.
  *
  * Returns the element focus should wrap to, or `null` when the browser's
  * default `Tab` behaviour already lands on a valid in-trap target and no
@@ -23,6 +26,10 @@ export function getTrapFocusTarget(
   }
 
   const lastIndex = focusables.length - 1;
+
+  if (activeIndex === -1) {
+    return shiftKey ? focusables[lastIndex] : focusables[0];
+  }
 
   if (shiftKey) {
     // Shift+Tab off the first element wraps to the last.

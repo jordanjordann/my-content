@@ -111,10 +111,10 @@ export function Sidebar({ children }: SidebarProps) {
       }
     };
 
-    document.addEventListener("keydown", handleKeyDown);
+    asideEl.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      document.removeEventListener("keydown", handleKeyDown);
+      asideEl.removeEventListener("keydown", handleKeyDown);
     };
   }, [isModal, collapse]);
 
