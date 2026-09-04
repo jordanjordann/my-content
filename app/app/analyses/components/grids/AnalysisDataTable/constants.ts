@@ -85,6 +85,20 @@ export const ANALYSES_TABLE_PAGE_SIZE = 50;
 export const SKELETON_ROW_COUNT = 8;
 
 /**
+ * Ticket #337 (TDD §6.3, C-6/C-7) — the sink-group divider label strings, hoisted here so
+ * both the table body's inline dividers (`AnalysisDataTable.tsx`) and the <640px card list's
+ * plain-`<p>` separators (`AnalysisCardList.tsx`) read this one source rather than each
+ * retyping the sentence (the exact strings PR #198's review already approved for the table).
+ */
+export function buildScorelessDividerLabel(count: number): string {
+  return `${count} post${count === 1 ? "" : "s"} with no performance score — sorted separately`;
+}
+
+export function buildFailedDividerLabel(count: number): string {
+  return `Analysis failed — ${count}`;
+}
+
+/**
  * Ticket #335 (TDD §6.2, design §8) — the `content` column's fixed width below `lg` (design's
  * 180-220px band; 200px chosen). At `lg` and above the column reverts to its existing 300px
  * (`ANALYSES_TABLE_COLUMNS[0].width`) via the `lg:` variant baked into the class strings below,
