@@ -17,6 +17,7 @@ import { AnalysisColumnsMenu } from "@/app/app/analyses/components/grids/Analysi
 import type { AnalysisColumnsMenuColumn } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/menus/AnalysisColumnsMenu";
 import { AnalysisCardList } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/lists/AnalysisCardList";
 import {
+  ANALYSES_ACCESSIBLE_DESCRIPTION,
   ANALYSES_TABLE_COLUMNS,
   ANALYSES_TABLE_PAGE_SIZE,
   DEFAULT_VISIBLE_COLUMN_IDS,
@@ -173,7 +174,15 @@ export function AnalysisDataTable({
   const noMatch = !isPending && !isError && totalCount > 0 && filteredCount === 0;
   const noneAtAll = !isPending && !isError && totalCount === 0;
 
-  const bodyContent = (() => {
+  // PR #348 review, P3 — only computed for the table branch. Below `sm`, `AnalysisCardList`
+  // renders instead and never reads `bodyContent`; building up to 50 `AnalysisTableRow`
+  // elements just to discard them was dead work.
+  let bodyContent: ReturnType<typeof buildTableBodyContent> | null = null;
+  if (!isBelowSm) {
+    bodyContent = buildTableBodyContent();
+  }
+
+  function buildTableBodyContent() {
     if (isPending) {
       return Array.from({ length: SKELETON_ROW_COUNT }, (_, index) => (
         <AnalysisTableSkeletonRow key={index} />
@@ -243,7 +252,7 @@ export function AnalysisDataTable({
         {groups.nonCompleted.map(rowNode)}
       </>
     );
-  })();
+  }
 
   return (
     <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
@@ -300,10 +309,7 @@ export function AnalysisDataTable({
       ) : (
         <div className="relative max-h-[720px] w-full overflow-auto">
           <table className="w-full caption-bottom text-[12.5px]">
-            <caption className="sr-only">
-              Analyses — every analysed post, its content and performance scores, and how it
-              compares against the creator&apos;s own past posts.
-            </caption>
+            <caption className="sr-only">{ANALYSES_ACCESSIBLE_DESCRIPTION}</caption>
             <AnalysisTableColumnHeaders columns={displayColumns} />
             <tbody>{bodyContent}</tbody>
           </table>

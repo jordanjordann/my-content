@@ -243,18 +243,18 @@ describe("AnalysisCardList — exactly one view mounts (C-5)", () => {
 });
 
 describe("AnalysisCardList — cards and table show the same rows, in the same order", () => {
-  it("card branch renders the literal ordered id list", async () => {
+  it("card branch renders the literal ordered row-id list (stable ids, not titles — PR #348 review, P3)", async () => {
     belowSm();
     renderTable(THREE_ROWS);
 
     const cards = await screen.findAllByTestId("analysis-summary-card");
-    const ids = cards.map((card) => card.getAttribute("aria-label"));
+    const ids = cards.map((card) => card.getAttribute("data-row-id"));
     // Row order is scored-then-scoreless (R-S1/R-S2): A (scored), B (scored), then C
     // (scoreless, after its own divider) — same partition `AnalysisDataTable` computes.
-    expect(ids).toEqual(["Nasi Goreng Kampung", "10 Ide Konten Ramadan", "Quiet post"]);
+    expect(ids).toEqual(["row-a-scored", "row-b-followers", "row-c-scoreless"]);
   });
 
-  it("table branch renders the same literal ordered id list, asserted independently (never compared to the card branch directly)", async () => {
+  it("table branch renders the same literal ordered title list, asserted independently (never compared to the card branch directly)", async () => {
     atOrAboveSm();
     renderTable(THREE_ROWS);
 
@@ -293,6 +293,43 @@ describe("AnalysisCardList — denominators survive (C-6)", () => {
   });
 });
 
+describe("AnalysisCardList — Performance score keeps its pips + accessible label on mobile (PR #348 review, P1)", () => {
+  it("renders a role=group with 5 discrete pips and the `N out of 5` accessible label — not a bare numeral", async () => {
+    belowSm();
+    renderTable([ROW_A_SCORED]);
+
+    const card = await screen.findByTestId("analysis-summary-card");
+    const group = within(card).getByRole("group", { name: /^Performance 4 out of 5/ });
+
+    // DESIGN-3C §5, Trap 1 — five discrete square pips, never a bar. A mutant that drops the
+    // pip track (or renders fewer/more than 5) fails this count; a mutant that drops the
+    // `role="group"`/accessible label (e.g. reverting to a bare `<p>{cell.score}</p>`) fails
+    // `getByRole` above outright.
+    expect(group.querySelectorAll('span[aria-hidden="true"] > span').length).toBe(5);
+
+    // The numeral itself is `aria-hidden` — it is decoration next to the accessible label,
+    // never the sole carrier of the value (Trap 2).
+    const numeral = within(group).getByText("4", { selector: "[aria-hidden='true']" });
+    expect(numeral).toBeInTheDocument();
+  });
+
+  it("matches the table's own accessible label for the identical row (parity)", async () => {
+    belowSm();
+    const belowResult = renderTable([ROW_A_SCORED]);
+    const card = await screen.findByTestId("analysis-summary-card");
+    const cardLabel = within(card).getByRole("group", { name: /^Performance/ }).getAttribute("aria-label");
+    belowResult.unmount();
+
+    atOrAboveSm();
+    renderTable([ROW_A_SCORED]);
+    await screen.findByText("Nasi Goreng Kampung");
+    const tableLabel = screen.getByRole("group", { name: /^Performance/ }).getAttribute("aria-label");
+
+    expect(cardLabel).toEqual(tableLabel);
+    expect(cardLabel).toBe("Performance 4 out of 5, compared to their usual, high confidence");
+  });
+});
+
 describe("AnalysisCardList — sink group divider text comes from one shared constant (do not retype it)", () => {
   it("card branch renders the exact literal scoreless-divider sentence", async () => {
     belowSm();
@@ -321,7 +358,7 @@ describe("AnalysisCardList — tap opens the detail modal with the right id", ()
     const { onAnalysisClick } = renderTable(THREE_ROWS);
 
     const cards = await screen.findAllByTestId("analysis-summary-card");
-    const rowBCard = cards.find((card) => card.getAttribute("aria-label") === "10 Ide Konten Ramadan")!;
+    const rowBCard = cards.find((card) => card.getAttribute("data-row-id") === "row-b-followers")!;
     fireEvent.click(rowBCard);
 
     expect(onAnalysisClick).toHaveBeenCalledTimes(1);

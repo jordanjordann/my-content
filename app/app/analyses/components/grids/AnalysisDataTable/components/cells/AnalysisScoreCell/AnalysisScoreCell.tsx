@@ -1,14 +1,7 @@
-"use client";
-
-import { cn } from "@/lib/utils";
-import { MAX_SCORE } from "@/app/app/analyses/constants";
 import { AnalysisScoreExplainPopover } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/popovers/AnalysisScoreExplainPopover";
-import {
-  SCORE_NUMERAL_COLOR_CLASSNAME,
-  SCORE_PIP_EMPTY_CLASSNAME,
-  SCORE_PIP_FILL_CLASSNAME,
-} from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisScoreCell/constants";
 import { buildScoreAccessibleLabel } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisScoreCell/helpers";
+import { ScorePerformanceGroup } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisScoreCell/ScorePerformanceGroup";
+import { ScorePipTrackAndNumeral } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisScoreCell/ScorePipTrackAndNumeral";
 import type { AnalysisScoreCellProps } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisScoreCell/types";
 
 /**
@@ -29,74 +22,28 @@ import type { AnalysisScoreCellProps } from "@/app/app/analyses/components/grids
  * branch unconditionally renders the second-line wrapper (`data-testid` below), even when a
  * value inside it happens to be empty, so the wrapper's absence is always a real regression,
  * never a legitimately-empty state that looks the same.
+ *
+ * The "performance" variant's rendering is factored out into `ScorePerformanceGroup` (PR #348
+ * review, P1) so `AnalysisSummaryCard` — the <640px card — reuses the exact same pips +
+ * `role="group"` accessible-label markup rather than reinventing it.
  */
 export function AnalysisScoreCell(props: AnalysisScoreCellProps) {
-  const pipFill = SCORE_PIP_FILL_CLASSNAME[props.variant];
-  const numeralColorClassName = SCORE_NUMERAL_COLOR_CLASSNAME[props.variant];
-
   if (props.variant === "content") {
     const accessibleLabel = buildScoreAccessibleLabel({ variant: "content", score: props.score });
     return (
-      <span role="group" aria-label={accessibleLabel} className="inline-flex items-center gap-1.5 text-[12.5px]">
-        <span aria-hidden="true" className={cn("tabular-nums font-semibold", numeralColorClassName)}>
-          {props.score}
-        </span>
-        <ScorePipTrack score={props.score} fillClassName={pipFill} />
+      <span role="group" aria-label={accessibleLabel}>
+        <ScorePipTrackAndNumeral variant="content" score={props.score} />
       </span>
     );
   }
 
-  const accessibleLabel = buildScoreAccessibleLabel({
-    variant: "performance",
-    score: props.score,
-    tierPhrase: props.tierPhrase,
-    confidenceWord: props.confidenceWord,
-  });
-
   return (
-    <div role="group" aria-label={accessibleLabel}>
-      <span className="inline-flex items-center gap-1.5 text-[12.5px]">
-        <span aria-hidden="true" className={cn("tabular-nums font-semibold", numeralColorClassName)}>
-          {props.score}
-        </span>
-        <ScorePipTrack score={props.score} fillClassName={pipFill} />
-      </span>
-      <div data-testid="performance-score-second-line">
-        {props.tierPhrase != null && (
-          <p className={cn("text-[11px] text-muted-foreground", props.isTier3 && "italic")}>
-            <span aria-hidden="true">{props.tierPhrase}</span>
-            {" "}
-            <AnalysisScoreExplainPopover row={props.row} />
-          </p>
-        )}
-        {props.tierPhrase == null && (
-          // Still one `ⓘ` per row even in the (structurally unreachable today) case where
-          // a score exists with no tier phrase — the affordance must never depend on the
-          // tier phrase resolving, only on the score existing.
-          <p className="text-[11px] text-muted-foreground">
-            <AnalysisScoreExplainPopover row={props.row} />
-          </p>
-        )}
-        {props.confidenceWord != null && (
-          <p aria-hidden="true" className="text-[11px] text-muted-foreground">{props.confidenceWord}</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ScorePipTrack({ score, fillClassName }: { score: number; fillClassName: string }) {
-  return (
-    <span aria-hidden="true" className="inline-flex gap-0.5">
-      {Array.from({ length: MAX_SCORE }, (_, index) => (
-        <span
-          key={index}
-          className={cn(
-            "size-[7px] rounded-[2px]",
-            index < score ? fillClassName : SCORE_PIP_EMPTY_CLASSNAME,
-          )}
-        />
-      ))}
-    </span>
+    <ScorePerformanceGroup
+      score={props.score}
+      tierPhrase={props.tierPhrase}
+      isTier3={props.isTier3}
+      confidenceWord={props.confidenceWord}
+      explainTrigger={<AnalysisScoreExplainPopover row={props.row} />}
+    />
   );
 }

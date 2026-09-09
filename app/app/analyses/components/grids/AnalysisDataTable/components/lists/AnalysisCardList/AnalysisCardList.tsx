@@ -2,6 +2,7 @@ import { AlertTriangle, BarChart3, SearchX } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
+  ANALYSES_ACCESSIBLE_DESCRIPTION,
   SKELETON_ROW_COUNT,
   buildFailedDividerLabel,
   buildScorelessDividerLabel,
@@ -102,10 +103,13 @@ export function AnalysisCardList({
   );
 
   return (
-    <ul>
+    <ul aria-label={ANALYSES_ACCESSIBLE_DESCRIPTION}>
       {groups.scored.map(cardItem)}
       {groups.scoreless.length > 0 && (
-        <li className="border-b bg-muted/30 px-3 py-1.5">
+        // `role="presentation"` (PR #348 review, P3) — this is a section divider, not a
+        // list item; without it a screen reader counts it toward the list's item count
+        // (e.g. "list, 4 items" for 3 real cards).
+        <li role="presentation" className="border-b bg-muted/30 px-3 py-1.5">
           <p className="text-[10.5px] uppercase tracking-wider text-muted-foreground">
             {buildScorelessDividerLabel(groups.scoreless.length)}
           </p>
@@ -113,7 +117,7 @@ export function AnalysisCardList({
       )}
       {groups.scoreless.map(cardItem)}
       {groups.nonCompleted.length > 0 && (
-        <li className="border-b bg-muted/30 px-3 py-1.5">
+        <li role="presentation" className="border-b bg-muted/30 px-3 py-1.5">
           <p className="text-[10.5px] uppercase tracking-wider text-muted-foreground">
             {buildFailedDividerLabel(groups.nonCompleted.length)}
           </p>

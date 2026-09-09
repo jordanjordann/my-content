@@ -4,14 +4,11 @@ import { cn } from "@/lib/utils";
 import { AnalysisContentCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisContentCell";
 import { AnalysisCreatorCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisCreatorCell";
 import { AnalysisEngagementCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisEngagementCell";
+import { AnalysisPerformanceCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisPerformanceCell";
+import { AnalysisPostedCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisPostedCell";
 import { ANALYSES_TABLE_COLUMNS } from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
-import {
-  formatPostedAge,
-  formatPostedDate,
-  isNonCompletedRow,
-} from "@/app/app/analyses/components/grids/AnalysisDataTable/helpers";
+import { isNonCompletedRow } from "@/app/app/analyses/components/grids/AnalysisDataTable/helpers";
 import type { AnalysisSummaryCardProps } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/lists/AnalysisCardList/types";
-import type { AnalysisListItemIndexed } from "@/lib/api/analyses/types";
 
 /**
  * Ticket #337 (TDD §6.3, C-6) / owner decision on issue #337 (2026-09-03) — the exact ordered
@@ -23,45 +20,62 @@ import type { AnalysisListItemIndexed } from "@/lib/api/analyses/types";
  */
 type CardFieldId = "content" | "performance" | "engagementReach" | "engagementFollowers" | "creator" | "posted";
 
-function columnLabel(id: CardFieldId): string {
-  const column = ANALYSES_TABLE_COLUMNS.find((candidate) => candidate.id === id);
-  if (!column) {
-    throw new Error(`AnalysisSummaryCard: no ANALYSES_TABLE_COLUMNS entry for "${id}"`);
-  }
-  return column.label;
+function findColumnLabel(id: CardFieldId): string {
+  return ANALYSES_TABLE_COLUMNS.find((candidate) => candidate.id === id)?.label ?? id;
 }
 
 /**
+ * PR #348 review, P2 — a `Record<CardFieldId, string>` literal, built once at module scope.
+ * A missing (or renamed) `CardFieldId` key is now a `tsc` error at this object literal, not a
+ * runtime `throw` that would crash the whole analyses page below 640px if `ANALYSES_TABLE_COLUMNS`
+ * ever drops an entry this card depends on.
+ */
+const CARD_FIELD_LABELS: Record<CardFieldId, string> = {
+  content: findColumnLabel("content"),
+  performance: findColumnLabel("performance"),
+  engagementReach: findColumnLabel("engagementReach"),
+  engagementFollowers: findColumnLabel("engagementFollowers"),
+  creator: findColumnLabel("creator"),
+  posted: findColumnLabel("posted"),
+};
+
+/**
  * One stacked card (<640px, design §8) — the phone equivalent of one `AnalysisTableRow`. A
- * real `<button>` (>=44px tall via `min-h-11`) so tap-to-open is native and keyboard-operable,
- * named by the post's own title/caption via `aria-label` (mirrors `AnalysisContentCell`'s own
- * title fallback ladder). `Enter` is handled explicitly (mirrors `AnalysisTableRow`'s own
- * `<tr>` handling) and calls `preventDefault` so a real browser's own native Enter-triggers-
- * click activation never fires `onOpen` a second time for the same keypress; `onClick` alone
- * covers mouse/touch and Space (native button activation).
+ * real `<button>` (>=44px tall via `min-h-11`) so tap-to-open is native and keyboard-operable.
+ * `Enter` is handled explicitly (mirrors `AnalysisTableRow`'s own `<tr>` handling) and calls
+ * `preventDefault` so a real browser's own native Enter-triggers-click activation never fires
+ * `onOpen` a second time for the same keypress; `onClick` alone covers mouse/touch and Space
+ * (native button activation).
  *
- * Field content (Performance, Posted) mirrors `AnalysisTableRow.tsx`'s private
- * `PerformanceCell`/inline `"posted"` branch's COPY exactly, using the same pure formatters
- * (`formatPostedDate`/`formatPostedAge`) — not `AnalysisTableRow.tsx` itself, which #337's own
- * file-affected list does not include (owned by ticket #335). No new copy is invented anywhere
- * in this file.
+ * Field content (Performance, Posted) is rendered by the shared `AnalysisPerformanceCell` /
+ * `AnalysisPostedCell` components — the same components `AnalysisTableRow.tsx` uses for the
+ * table's own Performance/Posted cells (PR #348 review, P2) — so the two views read from one
+ * source and cannot drift out of copy sync.
  *
- * Deliberate deviation for the "score" branch only: the table's `PerformanceCell` renders
- * `AnalysisScoreCell`, which embeds `AnalysisScoreExplainPopover` — a real, focusable
- * `<button>`. Nesting a `<button>` inside this card's own whole-card `<button>` is invalid
- * HTML (interactive content cannot contain interactive content) and would let a tap on the
- * inner popover trigger bubble into this card's own `onClick`, firing `onOpen` when the user
- * only meant to open the popover. The ticket's own field list only mandates reusing
- * `AnalysisContentCell` and `AnalysisEngagementCell` verbatim — for Performance it only
- * requires the same approved COPY, which this file reproduces (score, tier phrase,
- * confidence word, and every absent-value reason string), just without the inline explain
- * trigger. Full detail remains one tap away via the card's own primary action (opening the
- * detail modal).
+ * Accessible name (PR #348 review, P2): the button carries NO `aria-label`. Overriding the
+ * name with just the title (the previous approach) discards every other field for a screen
+ * reader that treats this button as an atomic control — exactly the risk mobile VoiceOver/
+ * TalkBack pose, per the review's own AX-tree evidence. Leaving the name unset lets it compute
+ * from the button's visible text content (the browser/AT "name from content" algorithm), so
+ * Content, Performance, Eng. / reach, Eng. / followers, Creator and Posted are all included in
+ * what gets announced — nothing sighted users can see is silently dropped for AT users.
+ * `aria-hidden` spans inside (numerals duplicated by a sibling `role="group"` accessible label,
+ * decorative pips) are excluded from that computed name, same as they already are on the table.
+ * A live-device (iOS VoiceOver / Android TalkBack) confirmation of the resulting utterance is
+ * still open — this fix is verified structurally (jsdom / Chromium AX tree), not on a real
+ * mobile screen reader; flagged explicitly in the PR rather than silently claimed as done.
+ *
+ * Deliberate deviation for the "score" branch only: the table's Performance cell embeds
+ * `AnalysisScoreExplainPopover`, a real, focusable `<button>`. Nesting a `<button>` inside this
+ * card's own whole-card `<button>` is invalid HTML (interactive content cannot contain
+ * interactive content) and would let a tap on the inner popover trigger bubble into this
+ * card's own `onClick`. `AnalysisPerformanceCell`'s `withExplainTrigger={false}` omits only
+ * that interactive trigger — the pips, the `role="group"`/`n out of 5` accessible label, the
+ * tier phrase and the confidence word all render identically to the table (DESIGN-3C §5).
  */
 export function AnalysisSummaryCard({ row, onOpen }: AnalysisSummaryCardProps) {
   const failed = isNonCompletedRow(row);
   const failedLabel = failed ? (row.status === "failed" ? "Analysis failed" : "Queued") : null;
-  const ariaLabel = row.title || row.caption || "Untitled";
 
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key === "Enter") {
@@ -74,12 +88,15 @@ export function AnalysisSummaryCard({ row, onOpen }: AnalysisSummaryCardProps) {
     <button
       type="button"
       data-testid="analysis-summary-card"
-      aria-label={ariaLabel}
+      data-row-id={row.id}
       onClick={() => onOpen(row.id)}
       onKeyDown={handleKeyDown}
-      className="flex min-h-11 w-full flex-col gap-3 p-3 text-left transition-colors hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className={cn(
+        "flex min-h-11 w-full flex-col gap-3 p-3 text-left transition-colors hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        failed && "border-l-[3px] border-l-rose-500",
+      )}
     >
-      <CardField label={columnLabel("content")}>
+      <CardField label={CARD_FIELD_LABELS.content}>
         <AnalysisContentCell
           title={row.title}
           caption={row.caption}
@@ -91,11 +108,11 @@ export function AnalysisSummaryCard({ row, onOpen }: AnalysisSummaryCardProps) {
         />
       </CardField>
 
-      <CardField label={columnLabel("performance")}>
-        <PerformanceValue row={row} failed={failed} />
+      <CardField label={CARD_FIELD_LABELS.performance}>
+        <AnalysisPerformanceCell row={row} failed={failed} withExplainTrigger={false} />
       </CardField>
 
-      <CardField label={columnLabel("engagementReach")}>
+      <CardField label={CARD_FIELD_LABELS.engagementReach}>
         {failed || row.tableDerived == null ? (
           <span className="text-[12.5px] text-muted-foreground">—</span>
         ) : (
@@ -103,7 +120,7 @@ export function AnalysisSummaryCard({ row, onOpen }: AnalysisSummaryCardProps) {
         )}
       </CardField>
 
-      <CardField label={columnLabel("engagementFollowers")}>
+      <CardField label={CARD_FIELD_LABELS.engagementFollowers}>
         {failed || row.tableDerived == null ? (
           <span className="text-[12.5px] text-muted-foreground">—</span>
         ) : (
@@ -111,12 +128,12 @@ export function AnalysisSummaryCard({ row, onOpen }: AnalysisSummaryCardProps) {
         )}
       </CardField>
 
-      <CardField label={columnLabel("creator")}>
+      <CardField label={CARD_FIELD_LABELS.creator}>
         <AnalysisCreatorCell username={row.username} platform={row.platform} comfortable />
       </CardField>
 
-      <CardField label={columnLabel("posted")}>
-        <PostedValue row={row} failed={failed} />
+      <CardField label={CARD_FIELD_LABELS.posted}>
+        <AnalysisPostedCell row={row} failed={failed} />
       </CardField>
     </button>
   );
@@ -134,67 +151,5 @@ function CardField({ label, children }: { label: string; children: ReactNode }) 
       </p>
       <div className="mt-0.5">{children}</div>
     </div>
-  );
-}
-
-/** Mirrors `AnalysisTableRow.tsx`'s private `PerformanceCell` branch-for-branch. */
-function PerformanceValue({ row, failed }: { row: AnalysisListItemIndexed; failed: boolean }) {
-  if (failed) {
-    return <span className="text-[12.5px] text-muted-foreground">Not analysed</span>;
-  }
-
-  if (row.tableDerived == null) {
-    return <p className="text-[11px] text-muted-foreground">Performance wasn&apos;t measured</p>;
-  }
-
-  const cell = row.tableDerived.performanceCell;
-
-  if (cell.kind === "dash") {
-    return <span className="text-[12.5px] text-muted-foreground">—</span>;
-  }
-
-  if (cell.kind === "no-judgement") {
-    // See this file's module doc — the interactive explain-popover trigger is intentionally
-    // omitted here (nested-button hazard); the approved copy itself is unchanged.
-    return <p className="text-[11px] text-muted-foreground">No 1–5 for this post</p>;
-  }
-
-  if (cell.kind === "reason") {
-    return <p className="text-[11px] text-muted-foreground">{cell.text}</p>;
-  }
-
-  return (
-    <div>
-      <p className="text-[12.5px] font-semibold tabular-nums text-primary">{cell.score}</p>
-      {cell.tierPhrase != null && (
-        <p className={cn("text-[11px] text-muted-foreground", cell.isTier3 && "italic")}>{cell.tierPhrase}</p>
-      )}
-      {cell.confidenceWord != null && (
-        <p className="text-[11px] text-muted-foreground">{cell.confidenceWord}</p>
-      )}
-    </div>
-  );
-}
-
-/** Mirrors `AnalysisTableRow.tsx`'s inline `"posted"` render branch byte-for-byte. */
-function PostedValue({ row, failed }: { row: AnalysisListItemIndexed; failed: boolean }) {
-  if (failed) {
-    return <span className="text-[12.5px] text-muted-foreground">—</span>;
-  }
-  return (
-    <>
-      <p className="text-[12.5px]">{formatPostedDate(row.postDate) ?? "—"}</p>
-      <p className="text-[11px] text-muted-foreground">
-        {formatPostedAge(row.postDate) ?? "—"}
-        {row.performance?.computed.provisional && (
-          <>
-            {" · "}
-            <span className="rounded bg-accent/12 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
-              Early
-            </span>
-          </>
-        )}
-      </p>
-    </>
   );
 }
