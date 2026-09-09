@@ -5,6 +5,8 @@ import { AnalysisScoreCell } from "@/app/app/analyses/components/grids/AnalysisD
 import { AnalysisContentCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisContentCell";
 import { AnalysisCreatorCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisCreatorCell";
 import { AnalysisStyleCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisStyleCell";
+import { AnalysisPerformanceCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisPerformanceCell";
+import { AnalysisPostedCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisPostedCell";
 import type { AnalysisListItemIndexed } from "@/lib/api/analyses/types";
 import { NOT_COMPARABLE_MULTIPLIER_CELL_COPY } from "@/lib/api/analyses/constants";
 import type { AnalysisTableColumnDef, AnalysisTableDensity } from "@/app/app/analyses/components/grids/AnalysisDataTable/types";
@@ -12,14 +14,9 @@ import {
   ROW_HEIGHT_PX,
   STICKY_CONTENT_BODY_CELL_CLASSNAME,
 } from "@/app/app/analyses/components/grids/AnalysisDataTable/constants";
-import {
-  formatPostedAge,
-  formatPostedDate,
-  isNonCompletedRow,
-} from "@/app/app/analyses/components/grids/AnalysisDataTable/helpers";
+import { isNonCompletedRow } from "@/app/app/analyses/components/grids/AnalysisDataTable/helpers";
 import { AnalysisCountsCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisCountsCell";
 import { AnalysisEngagementCell } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/cells/AnalysisEngagementCell";
-import { AnalysisScoreExplainPopover } from "@/app/app/analyses/components/grids/AnalysisDataTable/components/popovers/AnalysisScoreExplainPopover";
 
 type AnalysisTableRowProps = {
   row: AnalysisListItemIndexed;
@@ -120,23 +117,7 @@ function renderCell(
       return <AnalysisCreatorCell username={row.username} platform={row.platform} comfortable={ctx.comfortable} />;
 
     case "posted":
-      if (ctx.failed) return <span className="text-[12.5px] text-muted-foreground">—</span>;
-      return (
-        <>
-          <p className="text-[12.5px]">{formatPostedDate(row.postDate) ?? "—"}</p>
-          <p className="text-[11px] text-muted-foreground">
-            {formatPostedAge(row.postDate) ?? "—"}
-            {row.performance?.computed.provisional && (
-              <>
-                {" · "}
-                <span className="rounded bg-accent/12 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
-                  Early
-                </span>
-              </>
-            )}
-          </p>
-        </>
-      );
+      return <AnalysisPostedCell row={row} failed={ctx.failed} />;
 
     case "counts":
       if (ctx.failed || row.tableDerived == null) return <span className="text-[12.5px] text-muted-foreground">—</span>;
@@ -155,7 +136,7 @@ function renderCell(
       return <AnalysisScoreCell variant="content" score={row.overallScore} />;
 
     case "performance":
-      return <PerformanceCell row={row} failed={ctx.failed} />;
+      return <AnalysisPerformanceCell row={row} failed={ctx.failed} withExplainTrigger />;
 
     case "multiplier":
       return <MultiplierCell row={row} failed={ctx.failed} />;
@@ -175,56 +156,6 @@ function renderCell(
     default:
       return <span className="text-[12.5px] text-muted-foreground">—</span>;
   }
-}
-
-function PerformanceCell({ row, failed }: { row: AnalysisListItemIndexed; failed: boolean }) {
-  if (failed) {
-    return <span className="text-[12.5px] text-muted-foreground">Not analysed</span>;
-  }
-
-  if (row.tableDerived == null) {
-    // Row 9 (DESIGN-3B §5.5) — a completed analysis with no performance block at all. NOT
-    // the failed treatment: nothing failed, so no rose edge and no "Not analysed" (that
-    // string is row 7's). There is no computed block for a popover to show, so this row
-    // carries no `ⓘ` — the affordance must never open onto an empty popover.
-    return <p className="text-[11px] text-muted-foreground">Performance wasn&apos;t measured</p>;
-  }
-
-  const cell = row.tableDerived.performanceCell;
-
-  if (cell.kind === "dash") {
-    // `INSUFFICIENT_HISTORY` — declared on `UnavailableReason`, never produced (DESIGN-3B
-    // §5.5). No approved copy exists for it; the muted "—" stays, on purpose.
-    return <span className="text-[12.5px] text-muted-foreground">—</span>;
-  }
-
-  if (cell.kind === "no-judgement") {
-    // Row 8 (DESIGN-3B §5.5) — a performance block exists and the model declined to score
-    // it. The row keeps its single `ⓘ`: a computed block exists, so the popover has real
-    // content. `AnalysisScoreExplainPopover` is reused directly (not duplicated) because
-    // `AnalysisScoreCell`'s "performance" variant — the popover's other call site — only
-    // renders when a score exists, which row 8 does not have.
-    return (
-      <p className="text-[11px] text-muted-foreground">
-        No 1–5 for this post <AnalysisScoreExplainPopover row={row} />
-      </p>
-    );
-  }
-
-  if (cell.kind === "reason") {
-    return <p className="text-[11px] text-muted-foreground">{cell.text}</p>;
-  }
-
-  return (
-    <AnalysisScoreCell
-      variant="performance"
-      score={cell.score}
-      tierPhrase={cell.tierPhrase}
-      isTier3={cell.isTier3}
-      confidenceWord={cell.confidenceWord}
-      row={row}
-    />
-  );
 }
 
 function MultiplierCell({ row, failed }: { row: AnalysisListItemIndexed; failed: boolean }) {

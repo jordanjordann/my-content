@@ -85,6 +85,29 @@ export const ANALYSES_TABLE_PAGE_SIZE = 50;
 export const SKELETON_ROW_COUNT = 8;
 
 /**
+ * PR #348 review, P3 — the table's `<caption className="sr-only">` accessible name/description
+ * had no <640px card-list equivalent, so a screen reader user below 640px got no name for the
+ * list at all. Hoisted here so the table's `<caption>` and the card list's `<ul aria-label>`
+ * read the same sentence from one source rather than risking a second hand-typed copy.
+ */
+export const ANALYSES_ACCESSIBLE_DESCRIPTION =
+  "Analyses — every analysed post, its content and performance scores, and how it compares against the creator's own past posts.";
+
+/**
+ * Ticket #337 (TDD §6.3, C-6/C-7) — the sink-group divider label strings, hoisted here so
+ * both the table body's inline dividers (`AnalysisDataTable.tsx`) and the <640px card list's
+ * plain-`<p>` separators (`AnalysisCardList.tsx`) read this one source rather than each
+ * retyping the sentence (the exact strings PR #198's review already approved for the table).
+ */
+export function buildScorelessDividerLabel(count: number): string {
+  return `${count} post${count === 1 ? "" : "s"} with no performance score — sorted separately`;
+}
+
+export function buildFailedDividerLabel(count: number): string {
+  return `Analysis failed — ${count}`;
+}
+
+/**
  * Ticket #335 (TDD §6.2, design §8) — the `content` column's fixed width below `lg` (design's
  * 180-220px band; 200px chosen). At `lg` and above the column reverts to its existing 300px
  * (`ANALYSES_TABLE_COLUMNS[0].width`) via the `lg:` variant baked into the class strings below,

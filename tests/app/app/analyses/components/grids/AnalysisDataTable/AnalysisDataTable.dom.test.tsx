@@ -1092,6 +1092,38 @@ describe("AnalysisDataTable — Columns menu (DESIGN-3C §6.3, ticket #149)", ()
   });
 });
 
+describe("AnalysisDataTable — toolbar (Columns/Density) is hidden below 640px, never inert-but-visible (PR #348 review, blocker 2)", () => {
+  // jsdom never applies the site's actual Tailwind stylesheet, so a real `display: none` from a
+  // `sm:` media query is invisible to `getComputedStyle`/`toBeVisible()` in this test
+  // environment — the same reason the footer bar's own `flex-wrap`/`lg:flex-nowrap` regression
+  // tests above assert on the literal class list rather than on computed visibility. This
+  // asserts the toolbar wrapper carries Tailwind's `hidden` (display:none by default) plus the
+  // `sm:flex` override that un-hides it at exactly the same 640px breakpoint `isBelowSm` reads
+  // from `BREAKPOINT_PX.sm` — so a mutant that drops either utility, or that changes the
+  // breakpoint prefix (e.g. to `md:flex`), fails this test.
+  it("the toolbar wrapper is `hidden` by default and un-hidden only from `sm:` up, matching the card-list breakpoint", async () => {
+    renderTable();
+    const columnsButton = await screen.findByRole("button", { name: /^columns/i });
+    const toolbar = columnsButton.closest("div.border-b");
+    const classList = toolbar?.className.split(/\s+/) ?? [];
+
+    expect(classList).toContain("hidden");
+    expect(classList).toContain("sm:flex");
+    expect(classList).not.toContain("flex");
+  });
+
+  it("at/above 640px, where the toolbar is visible, the Columns and Density controls remain fully functional", async () => {
+    renderTable();
+    await screen.findAllByRole("columnheader");
+
+    expect(screen.getByRole("button", { name: /^columns/i })).toBeInTheDocument();
+    const compactButton = screen.getByRole("button", { name: /^compact$/i });
+    expect(compactButton).toBeInTheDocument();
+    fireEvent.click(compactButton);
+    expect(compactButton).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
 describe("AnalysisDataTable — Style column, off by default, toggled on, never persisted (Q3, OR-5, ticket #149 scope addition)", () => {
   it("Style is absent on first render", async () => {
     renderTable();
