@@ -11,9 +11,14 @@ import { AnalysisDataTable } from "@/app/app/analyses/components/grids/AnalysisD
  * toolbar's own class string, and the segmented control's own wrapper class string is
  * asserted UNCHANGED so a "fix" that breaks its `rounded-r-none`/`rounded-l-none` pairing by
  * making it wrap internally would fail this test.
+ *
+ * PR #348 review, blocker 2 — the toolbar is now also `hidden` below the `sm` breakpoint
+ * (640px) so Columns/Density are never visible-but-inert once `<AnalysisCardList>` replaces
+ * the `<table>` at that width; `sm:flex sm:flex-wrap` restores this test's original always-on
+ * `flex flex-wrap` behaviour from `sm` up.
  */
 
-const EXPECTED_TOOLBAR_CLASS = "flex flex-wrap items-center justify-end gap-2 border-b p-2";
+const EXPECTED_TOOLBAR_CLASS = "hidden items-center justify-end gap-2 border-b p-2 sm:flex sm:flex-wrap";
 const EXPECTED_SEGMENTED_WRAPPER_CLASS = "inline-flex rounded-md border";
 
 // `Button size="sm"` is `h-7`. `cn()` (`twMerge(clsx(...))`) drops that unprefixed `h-7` the

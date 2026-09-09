@@ -263,8 +263,16 @@ export function AnalysisDataTable({
           The density segmented control's
           `rounded-r-none`/`rounded-l-none` pairing must never wrap between its two halves, so
           its `inline-flex` wrapper is kept as one unwrappable flex item alongside the Columns
-          menu and the "Density" label. */}
-      <div className="flex flex-wrap items-center justify-end gap-2 border-b p-2">
+          menu and the "Density" label.
+          PR #348 review, blocker 2 — `hidden sm:flex` hides the entire toolbar (Columns menu +
+          Density control) below 640px, the exact same breakpoint `isBelowSm` above switches on
+          (`BREAKPOINT_PX.sm` in `useIsBelowBreakpoint/constants.ts`). Below that width the
+          `<AnalysisCardList>` branch mounts instead of the `<table>`, and neither Columns nor
+          Density has any effect on the card list (it always shows all six locked/required
+          fields at one fixed density) — leaving the toolbar visible there made two live-looking
+          controls silently inert. `sm:` is Tailwind's own `min-width: 640px` variant, so this
+          never needs a second breakpoint constant to stay in sync with the hook. */}
+      <div className="hidden items-center justify-end gap-2 border-b p-2 sm:flex sm:flex-wrap">
         <AnalysisColumnsMenu columns={menuColumns} visibleColumnIds={visibleColumnIds} onToggle={toggleColumn} />
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Density</span>

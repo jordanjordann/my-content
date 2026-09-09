@@ -330,6 +330,29 @@ describe("AnalysisCardList — Performance score keeps its pips + accessible lab
   });
 });
 
+describe("AnalysisCardList — card button's accessible name is never overridden to just the title (PR #348 review, P2 regression guard)", () => {
+  it("the card carries no explicit `aria-label` — its accessible name is computed from its visible content, not a title-only override", async () => {
+    belowSm();
+    renderTable([ROW_A_SCORED]);
+
+    const card = await screen.findByTestId("analysis-summary-card");
+    expect(card).not.toHaveAttribute("aria-label");
+  });
+
+  it("the card's computed accessible name includes fields beyond the title (author, not just 'Nasi Goreng Kampung')", async () => {
+    belowSm();
+    renderTable([ROW_A_SCORED]);
+
+    const card = await screen.findByTestId("analysis-summary-card");
+    // `aria-label={row.title}` (the regression this guards) would collapse the accessible name
+    // to the literal title alone — asserting the computed name also contains the creator's
+    // username fails if that override ever comes back, without depending on the exact wording
+    // of every other field on the card.
+    expect(card).toHaveAccessibleName(new RegExp(ROW_A_SCORED.username!));
+    expect(card).not.toHaveAccessibleName(ROW_A_SCORED.title);
+  });
+});
+
 describe("AnalysisCardList — sink group divider text comes from one shared constant (do not retype it)", () => {
   it("card branch renders the exact literal scoreless-divider sentence", async () => {
     belowSm();

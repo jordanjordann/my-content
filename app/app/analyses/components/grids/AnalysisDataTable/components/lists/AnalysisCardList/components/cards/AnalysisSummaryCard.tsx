@@ -25,10 +25,12 @@ function findColumnLabel(id: CardFieldId): string {
 }
 
 /**
- * PR #348 review, P2 — a `Record<CardFieldId, string>` literal, built once at module scope.
- * A missing (or renamed) `CardFieldId` key is now a `tsc` error at this object literal, not a
- * runtime `throw` that would crash the whole analyses page below 640px if `ANALYSES_TABLE_COLUMNS`
- * ever drops an entry this card depends on.
+ * PR #348 review, P2 — a `Record<CardFieldId, string>` literal, built once at module scope. A
+ * missing (or renamed) `CardFieldId` key is a `tsc` error at this object literal. Note this
+ * only guards the key set, not the label value: `findColumnLabel`'s own `?? id` fallback means
+ * a `CardFieldId` that no longer matches any `ANALYSES_TABLE_COLUMNS.id` (that column's own id
+ * renamed elsewhere) silently falls back to the raw id string rather than failing `tsc` or
+ * throwing at runtime.
  */
 const CARD_FIELD_LABELS: Record<CardFieldId, string> = {
   content: findColumnLabel("content"),
