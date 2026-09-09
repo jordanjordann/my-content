@@ -43,3 +43,48 @@ export function classifyUrl(url: string): ClassifiedUrl | null {
   }
   return null;
 }
+
+/**
+ * Canonical path segment for each media type recognised by `classifyUrl()`.
+ * `carousel` has no regex above (nothing produces it yet) — deliberately
+ * excluded so a future carousel regex must extend this map explicitly
+ * rather than the map silently emitting a wrong prefix.
+ */
+const CANONICAL_PATH_SEGMENT: Partial<Record<MediaType, string>> = {
+  reel: "reel",
+  post: "p",
+  short: "shorts",
+};
+
+/**
+ * Builds the canonical dedupe key for a URL `classifyUrl()` accepts.
+ *
+ * NOT a replacement URL — do not hand this to the fetch/analyse path.
+ * `runAnalysis()` / `lib/server/analysis/fetcher` must keep using the raw,
+ * unmodified user URL (ticket #295: Gemini fetches YouTube video server-side
+ * from the exact string it's given).
+ *
+ * Reuses `classifyUrl()`'s regexes rather than re-deriving acceptance rules,
+ * so normalisation and classification can never drift apart (TR-1).
+ */
+export function normaliseAnalysisUrl(url: string): string | null {
+  const classified = classifyUrl(url);
+  if (!classified) {
+    return null;
+  }
+
+  const pathSegment = CANONICAL_PATH_SEGMENT[classified.mediaType];
+  if (!pathSegment) {
+    return null;
+  }
+
+  const parsed = new URL(url);
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+  // Path shape is guaranteed by classifyUrl(): /<prefix>/<id>(/)?(?query)?
+  // Case of the id is preserved verbatim — Instagram shortcodes and
+  // YouTube video ids are case-sensitive.
+  const segments = parsed.pathname.split("/").filter(Boolean);
+  const id = segments[1];
+
+  return `https://${host}/${pathSegment}/${id}`;
+}
