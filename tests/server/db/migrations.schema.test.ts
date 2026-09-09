@@ -156,6 +156,28 @@ const EXPECTED_FINGERPRINT_COLUMNS = [
 
 const EXPECTED_FINGERPRINT_INDEXES = ["idx_profile_style_fingerprints_profile_id"];
 
+// Migration 015 (ticket #351, 3A-M1a): the jobs table.
+const EXPECTED_JOBS_COLUMNS = [
+  "id",
+  "kind",
+  "status",
+  "payload",
+  "dedupe_key",
+  "attempts",
+  "max_attempts",
+  "claimed_at",
+  "claimed_by",
+  "heartbeat_at",
+  "last_error",
+  "analysis_id",
+  "progress_step",
+  "progress_message",
+  "created_at",
+  "updated_at",
+];
+
+const EXPECTED_JOBS_INDEXES = ["idx_jobs_dedupe", "idx_jobs_status_created", "idx_jobs_heartbeat"];
+
 async function runMigrations(db: Client): Promise<void> {
   const migrationsDir = join(process.cwd(), "migrations");
   const files = readdirSync(migrationsDir)
@@ -686,5 +708,203 @@ describe("migration chain (001 -> latest) — profile_style_fingerprints schema 
     const indexes = result.rows.map((row) => row.name as string).filter((name) => name.startsWith("idx_"));
 
     expect(indexes.sort()).toEqual([...EXPECTED_FINGERPRINT_INDEXES].sort());
+  });
+});
+
+describe("migration chain (001 -> latest) — jobs schema assertion (ticket #351, 3A-M1a)", () => {
+  let db: Client | undefined;
+
+  afterEach(() => {
+    db?.close();
+    db = undefined;
+  });
+
+  it("produces exactly the expected named columns on `jobs`, in order", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    const result = await db.execute("PRAGMA table_info(jobs)");
+    const columns = result.rows.map((row) => row.name as string);
+
+    expect(columns).toEqual(EXPECTED_JOBS_COLUMNS);
+  });
+
+  it("produces exactly the expected indexes on `jobs`, with no drops", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    const result = await db.execute("PRAGMA index_list(jobs)");
+    const indexes = result.rows.map((row) => row.name as string).filter((name) => name.startsWith("idx_"));
+
+    expect(indexes.sort()).toEqual([...EXPECTED_JOBS_INDEXES].sort());
+  });
+
+  // Plan §4.4 decision 2 / R9: a real FK here would either block the
+  // pipeline's `DELETE FROM analyses` on the new-analysis failure path, or
+  // (with ON DELETE SET NULL) erase the only forensic link. This test pins
+  // that `analysis_id` carries no FK — re-adding
+  // `REFERENCES analyses(id)` to the migration must fail this test.
+  it("carries no foreign key on analysis_id — PRAGMA foreign_key_list(jobs) is empty", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    const result = await db.execute("PRAGMA foreign_key_list(jobs)");
+
+    expect(result.rows).toHaveLength(0);
+  });
+
+  // max_attempts DEFAULT must be 1 (owner ruling, plan Q1/R3) — proven by
+  // inserting WITHOUT the column and reading back what SQLite filled in,
+  // not by inserting the value and reading it back (which would prove
+  // nothing about the default).
+  it("defaults max_attempts to 1 on insert, without the caller supplying it", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await db.execute({
+      sql: `INSERT INTO jobs (id, kind, status, payload) VALUES (?, ?, ?, ?)`,
+      args: ["job-1", "analysis", "queued", "{}"],
+    });
+
+    const result = await db.execute({
+      sql: `SELECT max_attempts FROM jobs WHERE id = ?`,
+      args: ["job-1"],
+    });
+
+    expect(result.rows[0]!.max_attempts).toBe(1);
+  });
+
+  it("defaults attempts to 0 on insert", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await db.execute({
+      sql: `INSERT INTO jobs (id, kind, status, payload) VALUES (?, ?, ?, ?)`,
+      args: ["job-1", "analysis", "queued", "{}"],
+    });
+
+    const result = await db.execute({
+      sql: `SELECT attempts FROM jobs WHERE id = ?`,
+      args: ["job-1"],
+    });
+
+    expect(result.rows[0]!.attempts).toBe(0);
+  });
+
+  it("rejects a status value outside the queued/claimed/running/succeeded/failed/dead enum", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `INSERT INTO jobs (id, kind, status, payload) VALUES (?, ?, ?, ?)`,
+        args: ["job-1", "analysis", "bogus", "{}"],
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("accepts every value in the status enum", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    const statuses = ["queued", "claimed", "running", "succeeded", "failed", "dead"];
+
+    for (const [index, status] of statuses.entries()) {
+      await expect(
+        db.execute({
+          sql: `INSERT INTO jobs (id, kind, status, payload) VALUES (?, ?, ?, ?)`,
+          args: [`job-${index}`, "analysis", status, "{}"],
+        }),
+      ).resolves.toBeDefined();
+    }
+  });
+
+  it("rejects a kind value outside the analysis enum", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await expect(
+      db.execute({
+        sql: `INSERT INTO jobs (id, kind, status, payload) VALUES (?, ?, ?, ?)`,
+        args: ["job-1", "bogus", "queued", "{}"],
+      }),
+    ).rejects.toThrow();
+  });
+
+  // idx_jobs_dedupe: rejects a second live row sharing a dedupe_key while
+  // the first is still queued/claimed/running, but allows it once the
+  // first reaches a terminal state. Both directions, by execution.
+  it("rejects a second queued row with the same dedupe_key while the first is still queued", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await db.execute({
+      sql: `INSERT INTO jobs (id, kind, status, payload, dedupe_key) VALUES (?, ?, ?, ?, ?)`,
+      args: ["job-1", "analysis", "queued", "{}", "dedupe-key-a"],
+    });
+
+    await expect(
+      db.execute({
+        sql: `INSERT INTO jobs (id, kind, status, payload, dedupe_key) VALUES (?, ?, ?, ?, ?)`,
+        args: ["job-2", "analysis", "queued", "{}", "dedupe-key-a"],
+      }),
+    ).rejects.toThrow();
+  });
+
+  it.each(["claimed", "running"] as const)(
+    "rejects a second %s row with the same dedupe_key while the first is queued",
+    async (status) => {
+      db = createClient({ url: ":memory:" });
+      await runMigrations(db);
+
+      await db.execute({
+        sql: `INSERT INTO jobs (id, kind, status, payload, dedupe_key) VALUES (?, ?, ?, ?, ?)`,
+        args: ["job-1", "analysis", "queued", "{}", "dedupe-key-a"],
+      });
+
+      await expect(
+        db.execute({
+          sql: `INSERT INTO jobs (id, kind, status, payload, dedupe_key) VALUES (?, ?, ?, ?, ?)`,
+          args: ["job-2", "analysis", status, "{}", "dedupe-key-a"],
+        }),
+      ).rejects.toThrow();
+    },
+  );
+
+  it.each(["succeeded", "failed", "dead"] as const)(
+    "allows a second row with the same dedupe_key once the first is %s",
+    async (status) => {
+      db = createClient({ url: ":memory:" });
+      await runMigrations(db);
+
+      await db.execute({
+        sql: `INSERT INTO jobs (id, kind, status, payload, dedupe_key) VALUES (?, ?, ?, ?, ?)`,
+        args: ["job-1", "analysis", status, "{}", "dedupe-key-a"],
+      });
+
+      await expect(
+        db.execute({
+          sql: `INSERT INTO jobs (id, kind, status, payload, dedupe_key) VALUES (?, ?, ?, ?, ?)`,
+          args: ["job-2", "analysis", "queued", "{}", "dedupe-key-a"],
+        }),
+      ).resolves.toBeDefined();
+    },
+  );
+
+  it("allows multiple rows with a NULL dedupe_key (partial unique index does not constrain NULLs)", async () => {
+    db = createClient({ url: ":memory:" });
+    await runMigrations(db);
+
+    await db.execute({
+      sql: `INSERT INTO jobs (id, kind, status, payload) VALUES (?, ?, ?, ?)`,
+      args: ["job-1", "analysis", "queued", "{}"],
+    });
+
+    await expect(
+      db.execute({
+        sql: `INSERT INTO jobs (id, kind, status, payload) VALUES (?, ?, ?, ?)`,
+        args: ["job-2", "analysis", "queued", "{}"],
+      }),
+    ).resolves.toBeDefined();
   });
 });

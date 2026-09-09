@@ -969,7 +969,7 @@ describe("scripts/migrate.ts — Check A: order regression (ticket #307, catches
     renameSync(join(tmpDir, "012_performance_block.sql"), join(tmpDir, "012_performance_block_v2.sql"));
 
     await expect(runMigrations(db, tmpDir)).rejects.toThrow(
-      /012_performance_block_v2\.sql[\s\S]*014_profile_lookup_failure\.sql/,
+      /012_performance_block_v2\.sql[\s\S]*015_jobs\.sql/,
     );
 
     const row = await readPerfBlock(db);
@@ -1253,8 +1253,8 @@ describe("scripts/migrate.ts — real migration chain, full end-to-end guard beh
     const log = await runMigrations(db, REAL_MIGRATIONS_DIR_307);
 
     const fileCount = readdirSync(REAL_MIGRATIONS_DIR_307).filter((f) => f.endsWith(".sql")).length;
-    expect(fileCount).toEqual(14);
-    expect(log).toHaveLength(14);
+    expect(fileCount).toEqual(15);
+    expect(log).toHaveLength(15);
     expect(log.every((entry) => entry.action === "applied")).toBe(true);
     db.close();
   });
@@ -1338,12 +1338,23 @@ describe("scripts/migrate.ts — full real chain through the escape hatch (ticke
     // Manual step, per the RUNBOOK: restore 014's bookkeeping row with its
     // real on-disk checksum, AFTER the crash (not before -- Check A would
     // reject restoring a later file's row while 012/013 were still pending).
+    // 015's bookkeeping row must be restored too: deploy 1 died on 014
+    // before ever reaching 015, but 015's `CREATE TABLE jobs` already
+    // physically succeeded in the original full run (line above) and was
+    // never touched by 012/013's `analyses`-only rebuild -- so without its
+    // own bookkeeping row, deploy 2 would try to re-run 015 against a table
+    // that already exists and crash identically to 014.
     const checksum014 = computeChecksum(
       readFileSync(join(tmpDir, "014_profile_lookup_failure.sql"), "utf8"),
     );
+    const checksum015 = computeChecksum(readFileSync(join(tmpDir, "015_jobs.sql"), "utf8"));
     await db.execute({
       sql: "INSERT INTO _migrations (name, checksum) VALUES (?, ?)",
       args: ["014_profile_lookup_failure.sql", checksum014],
+    });
+    await db.execute({
+      sql: "INSERT INTO _migrations (name, checksum) VALUES (?, ?)",
+      args: ["015_jobs.sql", checksum015],
     });
 
     // Deploy 2: no env var needed. This is the actual proof the escape
@@ -1354,9 +1365,13 @@ describe("scripts/migrate.ts — full real chain through the escape hatch (ticke
       file: "014_profile_lookup_failure.sql",
       action: "unchanged",
     });
+    expect(log.find((e) => e.file === "015_jobs.sql")).toEqual({
+      file: "015_jobs.sql",
+      action: "unchanged",
+    });
 
     const tracked = await db.execute("SELECT name FROM _migrations");
-    expect(tracked.rows).toHaveLength(14);
+    expect(tracked.rows).toHaveLength(15);
 
     const analysesRows = await db.execute("SELECT COUNT(*) as c FROM analyses");
     expect(analysesRows.rows[0]!.c).toEqual(0);
