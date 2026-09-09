@@ -435,8 +435,11 @@ export type AnalysisDetailClassified = AnalysisDetail & {
   likeCountState: CountState;
   /**
    * Ticket #294 — `true` iff `platform === "youtube"` AND `storedAnalysisMode ===
-   * "metadata_only"`: the video was never downloaded (yt-dlp bot-blocked), so Gemini ran on
-   * the caption/title alone and any visual claims in the result are fabricated. Computed once
+   * "metadata_only"`: `metadata_only` is the pipeline's conservative default, written before the
+   * Gemini call and only upgraded to `full_video` once `hasVideoModalityEvidence()` confirms
+   * Gemini actually consumed the video (#295). A row stuck on the default means that evidence
+   * never arrived, so Gemini ran on the caption/title alone and any visual claims in the result
+   * are fabricated. Computed once
    * here (`lib/api/analyses/helpers.ts`'s `isUntrustedYoutubeMetadataOnly`) per AGENTS.md's
    * data-transformation rule — the modal only branches on this flag, never re-derives it.
    */

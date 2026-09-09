@@ -528,10 +528,12 @@ function deriveAnalysisMode(tier2: PerformanceTier2 | null): AnalysisMode | null
  * `lib/server/db.ts` -> the API route -> `AnalysisDetail`) rather than extending
  * `deriveAnalysisMode` above: that function's input, `computed.tier2`, is `null` whenever no
  * performance block was computed for the row, which would silently suppress a correctness
- * warning exactly when the underlying fact ("Gemini never saw the video") is still true. `yt-dlp`
- * is bot-blocked from the production server (#288); when it fails, the pipeline still calls
- * Gemini with no video attached and stores `analysis_mode = 'metadata_only'` — the resulting
- * analysis can describe timestamps, editing and visuals that were never in the video.
+ * warning exactly when the underlying fact ("Gemini never saw the video") is still true.
+ * `metadata_only` is the pipeline's conservative default, written before the Gemini call and
+ * only upgraded once `hasVideoModalityEvidence()` confirms Gemini actually consumed the video
+ * (#295) — a row stuck on that default means the evidence never arrived (or the process died
+ * mid-flight), and the resulting analysis can describe timestamps, editing and visuals that were
+ * never in the video. Rows predating #295 are the historical `yt-dlp` bot-blocked cases (#288).
  *
  * `true` iff `platform === "youtube"` AND `storedAnalysisMode === "metadata_only"`. Every other
  * combination is `false`, including a non-YouTube `metadata_only` row. That is deliberately

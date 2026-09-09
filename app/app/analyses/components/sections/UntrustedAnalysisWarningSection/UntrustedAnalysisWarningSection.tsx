@@ -8,9 +8,11 @@ import {
 /**
  * Ticket #294 (parent #288) — the detail modal's untrusted-analysis banner.
  *
- * `yt-dlp` is bot-blocked from the production server, so some stored YouTube analyses were
- * produced with the video never downloaded: Gemini ran on the title/caption alone and its
- * output can describe timestamps, editing and visuals that are not in the video. The existing
+ * `metadata_only` is the pipeline's conservative default, written before the Gemini call and
+ * only upgraded once `hasVideoModalityEvidence()` confirms Gemini actually consumed the video
+ * (#295). Some stored YouTube analyses never got that upgrade — Gemini ran on the title/caption
+ * alone and its output can describe timestamps, editing and visuals that are not in the video
+ * (rows predating #295 are the historical `yt-dlp` bot-blocked cases, #288). The existing
  * `Caption only` table chip (`AnalysisContentCell`) is not enough warning for content that may
  * be fabricated, so this renders a second, visually distinct, always-on-top banner inside the
  * detail modal.
